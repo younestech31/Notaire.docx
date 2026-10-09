@@ -26,6 +26,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import {
+  ClauseVariableGroup,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
@@ -57,10 +58,12 @@ interface SidebarWorkspaceProps {
   // 2. Parties & Designations + Subdivision Table
   partyFields: PartyField[];
   extractedPlaceholders: string[];
+  clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
   onOpenSmartVariablesModal: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
+  onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
   onAddCustomField: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
   onInsertValueAtCaret: (value: string) => void;
@@ -131,10 +134,12 @@ export default function SidebarWorkspace({
   onDeleteClause,
   partyFields,
   extractedPlaceholders,
+  clauseGroups,
   unfilledCount,
   fieldValues,
   onOpenSmartVariablesModal,
   onUpdateFieldValue,
+  onChangeFieldInputType,
   onAddCustomField,
   onInsertPlaceholderAtCaret,
   onInsertValueAtCaret,
@@ -833,37 +838,105 @@ export default function SidebarWorkspace({
                   )}
                 </div>
 
-                {/* Detected Placeholders in Current Document */}
-                {extraDocumentKeys.length > 0 && (
-                  <div className="border border-amber-200 bg-amber-50/50 rounded-md p-3 space-y-2">
-                    <div className="text-xs font-bold text-amber-950">
-                      وسوم ذكية مستخرجة من العقد الحالي ({extraDocumentKeys.length})
+                {/* Dynamic Variables Grouped by Clause in Current Document */}
+                {clauseGroups.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="text-xs font-bold text-slate-900 flex items-center justify-between">
+                      <span>الاستمارة الديناميكية حسب بنود العقد ({clauseGroups.length})</span>
                     </div>
-                    {extraDocumentKeys.map((key) => (
-                      <div key={key} className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[11px] font-medium text-slate-800">
-                            {key}
-                          </label>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              onSaveSelectionBookmark();
-                            }}
-                            onClick={() => onInsertPlaceholderAtCaret(key)}
-                            className="text-[10px] text-pink-800 font-semibold hover:underline"
-                          >
-                            + إدراج الوسم
-                          </button>
+                    {clauseGroups.map((group) => (
+                      <div
+                        key={group.clauseId}
+                        className="border border-pink-200 bg-pink-50/30 rounded-md p-2.5 space-y-2"
+                      >
+                        <div className="text-[11px] font-bold text-pink-950 border-b border-pink-200/70 pb-1 flex items-center justify-between">
+                          <span className="truncate">{group.clauseTitle}</span>
+                          <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-pink-200 shrink-0">
+                            {group.variables.length} متغير
+                          </span>
                         </div>
-                        <input
-                          type="text"
-                          value={fieldValues[key] || ''}
-                          onChange={(e) => onUpdateFieldValue(key, e.target.value)}
-                          placeholder={`أدخل قيمة ${key}...`}
-                          className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded focus:border-blue-800 focus:outline-none"
-                        />
+                        {group.variables.map((key) => {
+                          const meta = partyFields.find((f) => f.key === key);
+                          const label = meta?.label || key.replace(/_/g, ' ');
+                          const currentType: 'text' | 'number' | 'date' =
+                            meta?.inputType === 'number'
+                              ? 'number'
+                              : meta?.inputType === 'date'
+                              ? 'date'
+                              : 'text';
+                          return (
+                            <div key={key} className="space-y-1 bg-white p-2 rounded border border-slate-200">
+                              <div className="flex items-center justify-between gap-1">
+                                <label className="text-[11px] font-semibold text-slate-800 truncate">
+                                  {label}
+                                </label>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <div className="inline-flex items-center bg-slate-100 rounded p-0.5 text-[9px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => onChangeFieldInputType(key, 'text')}
+                                      className={`px-1 rounded ${
+                                        currentType === 'text'
+                                          ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                                          : 'text-slate-500'
+                                      }`}
+                                    >
+                                      نص
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => onChangeFieldInputType(key, 'number')}
+                                      className={`px-1 rounded ${
+                                        currentType === 'number'
+                                          ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                                          : 'text-slate-500'
+                                      }`}
+                                    >
+                                      رقم
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => onChangeFieldInputType(key, 'date')}
+                                      className={`px-1 rounded ${
+                                        currentType === 'date'
+                                          ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                                          : 'text-slate-500'
+                                      }`}
+                                    >
+                                      تاريخ
+                                    </button>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      onSaveSelectionBookmark();
+                                    }}
+                                    onClick={() => onInsertPlaceholderAtCaret(key)}
+                                    className="text-[10px] text-pink-800 font-semibold hover:underline"
+                                  >
+                                    +وسم
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type={
+                                  currentType === 'date'
+                                    ? 'date'
+                                    : currentType === 'number'
+                                    ? 'number'
+                                    : 'text'
+                                }
+                                value={fieldValues[key] || ''}
+                                onChange={(e) => onUpdateFieldValue(key, e.target.value)}
+                                placeholder={`أدخل ${label}...`}
+                                className={`w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-800 focus:outline-none ${
+                                  currentType === 'number' ? 'tabular-nums font-mono' : ''
+                                }`}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>

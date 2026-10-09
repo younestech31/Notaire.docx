@@ -59,7 +59,9 @@ interface EditorRibbonProps {
   fieldValues: Record<string, string>;
   derivedTemplates: DerivedDocTemplate[];
   onOpenSmartVariablesModal: () => void;
+  onConvertSelectionToSmartTag: () => void;
   onInsertSmartTagAtCaret: (varKey: string) => void;
+  onInsertNewClauseHeadingAtCaret: () => void;
   onOpenVersionDiffModal: () => void;
   onGenerateDerivedDoc: (tpl: DerivedDocTemplate) => void;
   onEditDerivedTemplateInEditor: (tpl: DerivedDocTemplate) => void;
@@ -128,7 +130,9 @@ export default function EditorRibbon({
   fieldValues,
   derivedTemplates,
   onOpenSmartVariablesModal,
+  onConvertSelectionToSmartTag,
   onInsertSmartTagAtCaret,
+  onInsertNewClauseHeadingAtCaret,
   onOpenVersionDiffModal,
   onGenerateDerivedDoc,
   onEditDerivedTemplateInEditor,
@@ -692,7 +696,22 @@ export default function EditorRibbon({
           ) : null}
         </button>
 
-        {/* QUICK SMART TAG INSERTER BUTTON ({{ }} إدراج وسم) */}
+        {/* 1-CLICK SELECTION TO SMART TAG CONVERTER (تحويل النص المحدد إلى وسم بضغطة واحدة دون فتح نافذة) */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSaveSelectionBookmark();
+          }}
+          onClick={onConvertSelectionToSmartTag}
+          className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-bold bg-pink-800 text-white hover:bg-pink-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
+          title="حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم ذكي {{...}} دون فتح أي نافذة (Alt+V)"
+        >
+          <span className="font-mono text-[11px] bg-pink-950/40 px-1 rounded">[ ]</span>
+          <span>تحويل المحدد لوسم</span>
+        </button>
+
+        {/* QUICK SMART TAG INSERTER DROPDOWN ({{ }} إدراج وسم) */}
         <div className="relative">
           <button
             type="button"
@@ -705,11 +724,10 @@ export default function EditorRibbon({
               closeAllMenus();
               setShowTagInserterMenu(next);
             }}
-            className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-semibold bg-pink-50 border border-pink-200 text-pink-900 hover:bg-pink-100 transition-colors whitespace-nowrap shrink-0"
-            title="إدراج وسم ذكي {{...}} مباشرة عند موضع المؤشر في العقد"
+            className="inline-flex items-center gap-1 h-8 px-2 rounded text-xs font-semibold bg-pink-50 border border-pink-200 text-pink-900 hover:bg-pink-100 transition-colors whitespace-nowrap shrink-0"
+            title="إدراج وسم ذكي جاهز من القائمة عند موضع المؤشر"
           >
             <span className="font-mono font-bold text-[11px]">{`{{ }}`}</span>
-            <span>إدراج وسم</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
 
@@ -804,6 +822,21 @@ export default function EditorRibbon({
             </div>
           )}
         </div>
+
+        {/* # NEW CLAUSE HEADING & CONTAINER AT CARET (زر # بند جديد) */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSaveSelectionBookmark();
+          }}
+          onClick={onInsertNewClauseHeadingAtCaret}
+          className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0"
+          title="تحويل السطر/التحديد الحالي إلى عنوان بند جديد أو إدراج حاوية بند جديدة مربوطة بالقائمة الجانبية"
+        >
+          <span className="font-mono font-bold text-amber-300">#</span>
+          <span>بند جديد</span>
+        </button>
 
         {/* DERIVED DOCUMENTS GENERATOR DROPDOWN */}
         <div className="relative">

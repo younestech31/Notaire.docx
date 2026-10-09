@@ -1,4 +1,5 @@
 import {
+  ClauseVariableGroup,
   SerializedSelectionPath,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
@@ -418,6 +419,278 @@ export function extractPlaceholdersFromHtml(...htmlParts: string[]): string[] {
     if (key) found.add(key);
   }
   return Array.from(found);
+}
+
+/**
+ * Extracts placeholders from the live A4 Editor DOM grouped by the Clause (.clause-container)
+ * or section heading they appear under, powering the "Dynamic Variables Form by Clause".
+ */
+export function extractPlaceholdersGroupedByClause(
+  rootEl: HTMLElement | null,
+  fallbackPlaceholders: string[] = []
+): ClauseVariableGroup[] {
+  if (!rootEl) {
+    return fallbackPlaceholders.length > 0
+      ? [
+          {
+            clauseId: 'general_doc',
+            clauseTitle: '1. فقرات العقد العامة والديباجة',
+            variables: fallbackPlaceholders,
+          },
+        ]
+      : [];
+  }
+
+  const groups: ClauseVariableGroup[] = [];
+  const assignedVars = new Set<string>();
+
+  const extractVarsFromElement = (el: HTMLElement): string[] => {
+    const vars: string[] = [];
+    const seen = new Set<string>();
+    const tagEls = Array.from(
+      el.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
+    ) as HTMLElement[];
+    for (const t of tagEls) {
+      const k = (
+        t.getAttribute('data-var') ||
+        (t.textContent || '').replace(/[{}]/g, '')
+      ).trim();
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        vars.push(k);
+      }
+    }
+    const textMatches = (el.textContent || '').matchAll(/\{\{\s*([^}]+?)\s*\}\}/g);
+    for (const m of textMatches) {
+      const k = (m[1] || '').trim();
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        vars.push(k);
+      }
+    }
+    return vars;
+  };
+
+  // Walk top-level children of rootEl in document order
+  const children = Array.from(rootEl.children) as HTMLElement[];
+  let currentGeneralTitle = 'ديباجة العقد والفقرات التمهيدية';
+  let currentGeneralId = 'clause_preamble';
+  let currentGeneralVars: string[] = [];
+
+  const flushGeneralGroup = () => {
+    if (currentGeneralVars.length > 0) {
+      groups.push({
+        clauseId: `${currentGeneralId}_${groups.length + 1}`,
+        clauseTitle: `${groups.length + 1}. ${currentGeneralTitle}`,
+        variables: [...currentGeneralVars],
+      });
+      currentGeneralVars = [];
+    }
+  };
+
+  for (const child of children) {
+    if (
+      child.classList.contains('clause-container') ||
+      child.hasAttribute('data-clause-id')
+    ) {
+      flushGeneralGroup();
+      const cId = child.getAttribute('data-clause-id') || `clause_${groups.length + 1}`;
+      const cTitle =
+        child.getAttribute('data-clause-title') ||
+        child.querySelector('strong, b')?.textContent?.trim() ||
+        `بند رقم ${groups.length + 1}`;
+      const cVars = extractVarsFromElement(child);
+      if (cVars.length > 0) {
+        cVars.forEach((v) => assignedVars.add(v));
+        groups.push({
+          clauseId: cId,
+          clauseTitle: `${groups.length + 1}. ${cTitle}`,
+          variables: cVars,
+        });
+      }
+    } else {
+      // Check if this paragraph is a section/clause heading (e.g. starts with # or is short bold line)
+      const plainText = (child.textContent || '').trim();
+      const firstStrong = child.querySelector('strong, b');
+      const isHeadingParagraph =
+        plainText.startsWith('#') ||
+        (plainText.length > 2 &&
+          plainText.length <= 65 &&
+          !plainText.includes('{{') &&
+          (child.style.fontWeight === 'bold' ||
+            (firstStrong && firstStrong.textContent?.trim() === plainText)));
+
+      if (isHeadingParagraph) {
+        flushGeneralGroup();
+        currentGeneralTitle = plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+        currentGeneralId = `heading_${groups.length + 1}`;
+      }
+
+      const pVars = extractVarsFromElement(child);
+      for (const v of pVars) {
+        if (!currentGeneralVars.includes(v)) {
+          currentGeneralVars.push(v);
+          assignedVars.add(v);
+        }
+      }
+    }
+  }
+
+  flushGeneralGroup();
+
+  // Catch any fallback placeholders (e.g. in header/footer) not yet grouped
+  const remaining = fallbackPlaceholders.filter((k) => !assignedVars.has(k));
+  if (remaining.length > 0) {
+    groups.push({
+      clauseId: 'clause_other',
+      clauseTitle: `${groups.length + 1}. متغيرات الترويسة أو متغيرات إضافية`,
+      variables: remaining,
+    });
+  }
+
+  return groups;
+}
+
+/**
+ * 1-Click Selection-to-Smart-Tag Converter (like localnotaire's [ ] button):
+ * Takes the currently highlighted word/phrase inside the A4 editor (or word at caret)
+ * and immediately replaces it in-place with <span class="smart-tag" data-var="...">{{...}}</span>
+ * without opening any dialog or modal.
+ */
+export function convertSelectionToSmartTag(
+  editorEl: HTMLElement,
+  savedRange: Range | null
+): string | null {
+  editorEl.focus();
+  const sel = window.getSelection();
+  if (!sel) return null;
+
+  if (
+    (sel.rangeCount === 0 || sel.getRangeAt(0).collapsed) &&
+    savedRange &&
+    editorEl.contains(savedRange.commonAncestorContainer)
+  ) {
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+
+  if (sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!editorEl.contains(range.commonAncestorContainer)) return null;
+
+  let selectedText = range.toString().trim();
+
+  // If no text is highlighted, try to grab the word around the caret in the text node
+  if (!selectedText && range.collapsed && range.startContainer.nodeType === Node.TEXT_NODE) {
+    const tNode = range.startContainer as Text;
+    const text = tNode.nodeValue || '';
+    const offset = range.startOffset;
+    let start = offset;
+    let end = offset;
+    while (start > 0 && !/\s|[.,،؛:()[\]{}]/.test(text[start - 1])) {
+      start--;
+    }
+    while (end < text.length && !/\s|[.,،؛:()[\]{}]/.test(text[end])) {
+      end++;
+    }
+    if (end > start) {
+      range.setStart(tNode, start);
+      range.setEnd(tNode, end);
+      selectedText = range.toString().trim();
+    }
+  }
+
+  if (!selectedText) return null;
+
+  // Clean variable name: strip braces/brackets and convert spaces to underscores
+  const varName = selectedText
+    .replace(/[{}[\]]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+
+  if (!varName) return null;
+
+  const span = document.createElement('span');
+  span.className = 'smart-tag';
+  span.setAttribute('contenteditable', 'false');
+  span.setAttribute('data-var', varName);
+  span.textContent = `{{${varName}}}`;
+
+  range.deleteContents();
+  range.insertNode(span);
+
+  // Place caret right after the newly created smart tag
+  const afterSpace = document.createTextNode('\u00A0');
+  span.parentNode?.insertBefore(afterSpace, span.nextSibling);
+
+  const newRange = document.createRange();
+  newRange.setStartAfter(afterSpace);
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+
+  normalizeNotaryContainerDOM(editorEl, false);
+  return varName;
+}
+
+/**
+ * # New Clause Toolbar Action:
+ * Converts the current line/selection (or inserts at caret) into a structured
+ * .clause-container with a bold heading so it immediately links with the Clauses Sidebar.
+ */
+export function insertOrWrapNewClauseAtSelection(
+  editorEl: HTMLElement,
+  savedRange: Range | null,
+  clauseIndexHint: number = 1
+): { clauseId: string; title: string; contentHtml: string } {
+  editorEl.focus();
+  const sel = window.getSelection();
+  if (
+    sel &&
+    sel.rangeCount === 0 &&
+    savedRange &&
+    editorEl.contains(savedRange.commonAncestorContainer)
+  ) {
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+
+  let rawTitle = '';
+  if (sel && sel.rangeCount > 0) {
+    const r = sel.getRangeAt(0);
+    if (!r.collapsed && editorEl.contains(r.commonAncestorContainer)) {
+      rawTitle = r.toString().trim();
+      r.deleteContents();
+    } else if (r.collapsed && editorEl.contains(r.commonAncestorContainer)) {
+      // Check if current paragraph starts with # or has a short title
+      let block: Node | null = r.startContainer;
+      while (block && block !== editorEl && (block as HTMLElement).tagName !== 'P') {
+        block = block.parentNode;
+      }
+      if (block && (block as HTMLElement).tagName === 'P') {
+        const pText = (block.textContent || '').trim();
+        if (pText.startsWith('#') || (pText.length > 0 && pText.length <= 60)) {
+          rawTitle = pText.replace(/^#+\s*/, '').trim();
+          (block as HTMLElement).innerHTML = '<br>';
+        }
+      }
+    }
+  }
+
+  const title = rawTitle || `بند رقم ${clauseIndexHint}`;
+  const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
+
+  const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">${escapeHtml(
+    title
+  )}:</span> </p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات {{...}} هنا.</p>`;
+
+  const wrapperHtml = `<div class="clause-container" data-clause-id="${clauseId}" data-clause-title="${escapeHtml(
+    title
+  )}">${innerContentHtml}</div><p dir="rtl" style="${pStyle}"><br></p>`;
+
+  insertHtmlAtSelection(editorEl, wrapperHtml, savedRange);
+  return { clauseId, title, contentHtml: innerContentHtml };
 }
 
 /**

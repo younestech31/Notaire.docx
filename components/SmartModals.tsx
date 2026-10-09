@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  ClauseVariableGroup,
   CustomTemplate,
   DocumentRevision,
   DownloadArchiveItem,
@@ -31,6 +32,7 @@ interface SmartVariablesModalProps {
   onClose: () => void;
   focusedVarKey: string | null;
   extractedPlaceholders: string[];
+  clauseGroups: ClauseVariableGroup[];
   partyFields: PartyField[];
   fieldValues: Record<string, string>;
   estates: SubdivisionEstate[];
@@ -46,6 +48,7 @@ interface SmartVariablesModalProps {
   onSaveCurrentPropertyToDirectory: () => void;
   onDeleteSavedProperty: (id: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
+  onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
   onBakeAllIntoDocument: (explicitValues?: Record<string, string>) => void;
 }
 
@@ -54,6 +57,7 @@ export function SmartVariablesModal({
   onClose,
   focusedVarKey,
   extractedPlaceholders,
+  clauseGroups,
   partyFields,
   fieldValues,
   estates,
@@ -69,11 +73,13 @@ export function SmartVariablesModal({
   onSaveCurrentPropertyToDirectory,
   onDeleteSavedProperty,
   onUpdateFieldValue,
+  onChangeFieldInputType,
   onBakeAllIntoDocument,
 }: SmartVariablesModalProps) {
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [selectedPartyIdForRecall, setSelectedPartyIdForRecall] = useState<string>('');
   const [selectedPropIdForRecall, setSelectedPropIdForRecall] = useState<string>('');
+  const [showStandardUnusedFields, setShowStandardUnusedFields] = useState<boolean>(true);
 
   useEffect(() => {
     if (isOpen && focusedVarKey) {
@@ -89,21 +95,168 @@ export function SmartVariablesModal({
 
   if (!isOpen) return null;
 
-  // Build unified variable list: document-extracted variables first, then standard party/property fields
   const knownMap = new Map(partyFields.map((f) => [f.key, f]));
-  const allKeys = Array.from(
-    new Set([...extractedPlaceholders, ...partyFields.map((f) => f.key)])
-  );
-
   const unfilledInDoc = extractedPlaceholders.filter(
     (k) => !fieldValues[k] || !fieldValues[k].trim()
   );
+
+  // Build Clause-Grouped sections from the live contract + optional standard office fields
+  const activeDocGroups: ClauseVariableGroup[] =
+    clauseGroups.length > 0
+      ? clauseGroups
+      : extractedPlaceholders.length > 0
+      ? [
+          {
+            clauseId: 'doc_vars',
+            clauseTitle: '1. متغيرات العقد الحالي',
+            variables: extractedPlaceholders,
+          },
+        ]
+      : [];
+
+  const inDocSet = new Set(extractedPlaceholders);
+  const unusedStandardKeys = partyFields
+    .map((f) => f.key)
+    .filter((k) => !inDocSet.has(k));
 
   const selectedEstate = estates.find((e) => e.id === selectedEstateId) || estates[0] || null;
   const activePartyToRecall =
     savedParties.find((p) => p.id === selectedPartyIdForRecall) || savedParties[0] || null;
   const activePropToRecall =
     savedProperties.find((p) => p.id === selectedPropIdForRecall) || savedProperties[0] || null;
+
+  const renderVariableCard = (key: string) => {
+    const meta = knownMap.get(key);
+    const label = meta?.label || key.replace(/_/g, ' ');
+    const inCurrentDoc = inDocSet.has(key);
+    const val = fieldValues[key] || '';
+    const isFilled = val.trim() !== '';
+    const isEmptyInDoc = inCurrentDoc && !isFilled;
+    const isFocused = focusedVarKey === key;
+    const currentType: 'text' | 'number' | 'date' =
+      meta?.inputType === 'number'
+        ? 'number'
+        : meta?.inputType === 'date'
+        ? 'date'
+        : 'text';
+
+    return (
+      <div
+        key={key}
+        className={`p-2.5 rounded-md border transition-colors ${
+          isFocused
+            ? 'border-pink-600 bg-pink-50/40 ring-2 ring-pink-500/20'
+            : isEmptyInDoc
+            ? 'border-amber-300 bg-amber-50/30'
+            : isFilled
+            ? 'border-emerald-300 bg-emerald-50/20'
+            : 'border-slate-200 bg-white'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1.5 mb-1.5">
+          <label className="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
+            <span>{label}</span>
+            {isFilled && (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            )}
+          </label>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Field Type Selector: نص / رقم / تاريخ */}
+            <div
+              className="inline-flex items-center bg-slate-100 border border-slate-200 rounded p-0.5 text-[10px]"
+              title="نوع الحقل: نص / رقم / تاريخ"
+            >
+              <button
+                type="button"
+                onClick={() => onChangeFieldInputType(key, 'text')}
+                className={`px-1.5 py-0.5 rounded transition-colors ${
+                  currentType === 'text'
+                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                نص
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeFieldInputType(key, 'number')}
+                className={`px-1.5 py-0.5 rounded transition-colors ${
+                  currentType === 'number'
+                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                رقم
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeFieldInputType(key, 'date')}
+                className={`px-1.5 py-0.5 rounded transition-colors ${
+                  currentType === 'date'
+                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                تاريخ
+              </button>
+            </div>
+
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                isFilled
+                  ? 'text-emerald-800 bg-emerald-100/80'
+                  : 'text-pink-800 bg-pink-50'
+              }`}
+            >
+              {`{{${key}}}`}
+            </span>
+          </div>
+        </div>
+
+        {meta?.inputType === 'select' && meta.options ? (
+          <select
+            ref={(el) => {
+              inputRefs.current[key] = el;
+            }}
+            value={val}
+            onChange={(e) => onUpdateFieldValue(key, e.target.value)}
+            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
+          >
+            <option value="">-- اختر أو اكتب أدناه --</option>
+            {meta.options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            ref={(el) => {
+              inputRefs.current[key] = el;
+            }}
+            type={
+              currentType === 'date'
+                ? 'date'
+                : currentType === 'number'
+                ? 'number'
+                : 'text'
+            }
+            value={val}
+            onChange={(e) => onUpdateFieldValue(key, e.target.value)}
+            placeholder={
+              currentType === 'number'
+                ? `أدخل رقماً (${label})...`
+                : `أدخل ${label}...`
+            }
+            className={`w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none ${
+              currentType === 'number' ? 'tabular-nums font-mono' : ''
+            }`}
+          />
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 select-none">
@@ -113,7 +266,7 @@ export function SmartVariablesModal({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">
-                استمارة المتغيرات الذكية ودفتر الاستدعاء السريع
+                الاستمارة الديناميكية للفقرات والبنود (مرتبة حسب بنود العقد)
               </h2>
               {unfilledInDoc.length > 0 ? (
                 <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded tabular-nums">
@@ -126,7 +279,7 @@ export function SmartVariablesModal({
               )}
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              القيم المعبأة هنا تلون الوسوم باللون الأخضر الخفيف داخل ورقة الـ A4 وتُغذّي العقد الأصلي والوثائق المشتقة تلقائياً.
+              تُبنى هذه الاستمارة تلقائياً من الوسوم الموجودة في النص وتُجمّع تحت عنوان كل بند، مع إمكانية اختيار نوع الحقل (نص / رقم / تاريخ).
             </p>
           </div>
           <button
@@ -139,7 +292,7 @@ export function SmartVariablesModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Quick Directory Bar: Recall / Save Parties & Properties */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* 1. Saved Parties Directory Box */}
@@ -236,7 +389,6 @@ export function SmartVariablesModal({
                 </button>
               </div>
 
-              {/* Saved Properties Dropdown */}
               {savedProperties.length > 0 && (
                 <div className="flex items-center gap-1.5">
                   <select
@@ -272,7 +424,6 @@ export function SmartVariablesModal({
                 </div>
               )}
 
-              {/* Subdivision Lot Selector */}
               {estates.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   <select
@@ -305,80 +456,69 @@ export function SmartVariablesModal({
             </div>
           </div>
 
-          {/* Variables Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {allKeys.map((key) => {
-              const meta = knownMap.get(key);
-              const label = meta?.label || key.replace(/_/g, ' ');
-              const inCurrentDoc = extractedPlaceholders.includes(key);
-              const val = fieldValues[key] || '';
-              const isFilled = val.trim() !== '';
-              const isEmptyInDoc = inCurrentDoc && !isFilled;
-              const isFocused = focusedVarKey === key;
-
-              return (
-                <div
-                  key={key}
-                  className={`p-2.5 rounded-md border transition-colors ${
-                    isFocused
-                      ? 'border-pink-600 bg-pink-50/40 ring-2 ring-pink-500/20'
-                      : isEmptyInDoc
-                      ? 'border-amber-300 bg-amber-50/30'
-                      : isFilled
-                      ? 'border-emerald-300 bg-emerald-50/20'
-                      : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <label className="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
-                      <span>{label}</span>
-                      {isFilled && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      )}
-                    </label>
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
-                        isFilled
-                          ? 'text-emerald-800 bg-emerald-100/80'
-                          : 'text-pink-800 bg-pink-50'
-                      }`}
-                    >
-                      {`{{${key}}}`}
-                    </span>
+          {/* SECTION 1: DYNAMIC VARIABLES GROUPED BY CLAUSE IN THE ACTIVE CONTRACT */}
+          {activeDocGroups.length > 0 ? (
+            <div className="space-y-4">
+              {activeDocGroups.map((group) => {
+                const unfilledInClause = group.variables.filter(
+                  (v) => !fieldValues[v] || !fieldValues[v].trim()
+                ).length;
+                return (
+                  <div
+                    key={group.clauseId}
+                    className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50/40"
+                  >
+                    <div className="px-3.5 py-2 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900">
+                        {group.clauseTitle}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded tabular-nums ${
+                          unfilledInClause > 0
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-emerald-100 text-emerald-900'
+                        }`}
+                      >
+                        {unfilledInClause > 0
+                          ? `متبقي ${unfilledInClause} من ${group.variables.length}`
+                          : `مكتمل (${group.variables.length}) ✓`}
+                      </span>
+                    </div>
+                    <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {group.variables.map((vKey) => renderVariableCard(vKey))}
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-md text-xs text-amber-950">
+              لا توجد وسوم <code className="font-mono">{`{{...}}`}</code> مدرجة في نص العقد الحالي بعد. يمكنك تحديد أي كلمة في المحرر والضغط على زر <strong>«[ ] تحويل المحدد لوسم»</strong> أو تعبئة حقول المكتب القياسية أدناه لتوليد الوثائق المشتقة.
+            </div>
+          )}
 
-                  {meta?.inputType === 'select' && meta.options ? (
-                    <select
-                      ref={(el) => {
-                        inputRefs.current[key] = el;
-                      }}
-                      value={val}
-                      onChange={(e) => onUpdateFieldValue(key, e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
-                    >
-                      <option value="">-- اختر أو اكتب أدناه --</option>
-                      {meta.options.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      ref={(el) => {
-                        inputRefs.current[key] = el;
-                      }}
-                      type={meta?.inputType === 'date' ? 'date' : 'text'}
-                      value={val}
-                      onChange={(e) => onUpdateFieldValue(key, e.target.value)}
-                      placeholder={`أدخل ${label}...`}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
-                    />
-                  )}
+          {/* SECTION 2: STANDARD OFFICE FIELDS FOR DERIVED DOCUMENTS */}
+          {unusedStandardKeys.length > 0 && (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowStandardUnusedFields((v) => !v)}
+                className="w-full px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700"
+              >
+                <span>
+                  حقول المكتب القياسية الإضافية للوثائق المشتقة ({unusedStandardKeys.length})
+                </span>
+                <span className="text-[11px] text-blue-900">
+                  {showStandardUnusedFields ? 'إخفاء ▲' : 'إظهار ▼'}
+                </span>
+              </button>
+              {showStandardUnusedFields && (
+                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
+                  {unusedStandardKeys.map((k) => renderVariableCard(k))}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}

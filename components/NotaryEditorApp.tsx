@@ -24,6 +24,7 @@ import {
   VersionDiffModal,
 } from './SmartModals';
 import {
+  ClauseVariableGroup,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
@@ -78,11 +79,14 @@ import {
 } from '@/lib/storage';
 import {
   computeDocumentMetrics,
+  convertSelectionToSmartTag,
   escapeHtml,
   extractPlaceholdersFromHtml,
+  extractPlaceholdersGroupedByClause,
   findMatchesAcrossNodes,
   getIntersectingBlockElements,
   insertHtmlAtSelection,
+  insertOrWrapNewClauseAtSelection,
   normalizeNotaryContainerDOM,
   replaceMatchesAcrossNodes,
   restoreSerializedSelection,
@@ -143,6 +147,7 @@ export default function NotaryEditorApp() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const fieldValuesRef = useRef<Record<string, string>>({});
   const [extractedPlaceholders, setExtractedPlaceholders] = useState<string[]>([]);
+  const [clauseGroups, setClauseGroups] = useState<ClauseVariableGroup[]>([]);
   const [templates, setTemplates] = useState<CustomTemplate[]>([]);
   const [derivedTemplates, setDerivedTemplates] = useState<DerivedDocTemplate[]>(
     DEFAULT_DERIVED_DOC_TEMPLATES
@@ -231,6 +236,9 @@ export default function NotaryEditorApp() {
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
       const found = extractPlaceholdersFromHtml(headerHtml, bodyHtml, footerHtml);
       setExtractedPlaceholders(found);
+      setClauseGroups(
+        extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
+      );
       setDocMetrics(computeDocumentMetrics(bodyHtml));
       refreshActiveClausesInDOM();
 
@@ -382,6 +390,9 @@ export default function NotaryEditorApp() {
           activeDraft.footerHtml || ''
         );
         setExtractedPlaceholders(found);
+        setClauseGroups(
+          extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
+        );
         setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
         refreshActiveClausesInDOM();
         syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
@@ -837,6 +848,14 @@ export default function NotaryEditorApp() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       setShowFindReplace(true);
+      return;
+    }
+    if (
+      (e.altKey && e.key.toLowerCase() === 'v') ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x')
+    ) {
+      e.preventDefault();
+      handleConvertSelectionToSmartTag();
       return;
     }
 
@@ -1565,6 +1584,88 @@ export default function NotaryEditorApp() {
     showToast('تم حذف العقار من الدفتر');
   };
 
+  const handleChangeFieldInputType = (
+    key: string,
+    inputType: 'text' | 'number' | 'date'
+  ) => {
+    const exists = partyFields.some((f) => f.key === key);
+    let updated: PartyField[];
+    if (exists) {
+      updated = partyFields.map((f) =>
+        f.key === key ? { ...f, inputType } : f
+      );
+    } else {
+      updated = [
+        ...partyFields,
+        {
+          key,
+          label: key.replace(/_/g, ' '),
+          value: '',
+          category: 'custom',
+          inputType,
+        },
+      ];
+    }
+    setPartyFields(updated);
+    savePartyFields(updated);
+  };
+
+  // 1-Click Selection-to-Smart-Tag Converter (تحويل المحدد إلى وسم بضغطة واحدة دون نافذة)
+  const handleConvertSelectionToSmartTag = () => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot();
+    const createdVar = convertSelectionToSmartTag(
+      bodyEditorRef.current,
+      savedRangeRef.current
+    );
+    if (!createdVar) {
+      showToast(
+        'حدد أي كلمة أو جملة داخل ورقة العقد أولاً ثم اضغط «[ ] تحويل المحدد لوسم»'
+      );
+      return;
+    }
+    if (!partyFields.some((f) => f.key === createdVar)) {
+      const updated: PartyField[] = [
+        ...partyFields,
+        {
+          key: createdVar,
+          label: createdVar.replace(/_/g, ' '),
+          value: '',
+          category: 'custom',
+          inputType: 'text',
+        },
+      ];
+      setPartyFields(updated);
+      savePartyFields(updated);
+    }
+    syncPlaceholdersAndDraft();
+    showToast(`تم تحويل النص المحدد إلى وسم ذكي {{${createdVar}}} فوراً`);
+  };
+
+  // # New Clause Toolbar Action (زر # بند جديد)
+  const handleInsertNewClauseHeadingAtCaret = async () => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot();
+    const { clauseId, title, contentHtml } = insertOrWrapNewClauseAtSelection(
+      bodyEditorRef.current,
+      savedRangeRef.current,
+      clauses.length + 1
+    );
+    const newClause: NotaryClause = {
+      id: clauseId,
+      title,
+      category: 'بنود العقد',
+      contentHtml,
+      order: clauses.length + 1,
+      enabled: true,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveNotaryClause(newClause);
+    setClauses(await loadNotaryClauses());
+    syncPlaceholdersAndDraft();
+    showToast(`تم إنشاء وربط البند الجديد "${title}" بالقائمة الجانبية`);
+  };
+
   const handleInsertSmartTagAtCaret = (varKey: string) => {
     if (!bodyEditorRef.current || !varKey.trim()) return;
     const cleanKey = varKey.trim();
@@ -1797,16 +1898,28 @@ export default function NotaryEditorApp() {
 
           <button
             type="button"
-            onClick={() => setPreviewMergedMode((v) => !v)}
+            onClick={() => {
+              const next = !previewMergedMode;
+              setPreviewMergedMode(next);
+              if (next) {
+                setSidebarTab('parties');
+                showToast(
+                  'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
+                );
+              }
+            }}
             className={`px-2.5 py-1.5 border rounded text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
               previewMergedMode
-                ? 'bg-amber-100 border-amber-300 text-amber-950'
+                ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold'
                 : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
             }`}
+            title="معاينة دمج الحقول جنباً إلى جنب مع الاستمارة قبل التصدير"
           >
             <Eye className="w-3.5 h-3.5" />
             <span>
-              {previewMergedMode ? 'العودة لوضع التحرير' : 'معاينة دمج الحقول'}
+              {previewMergedMode
+                ? 'العودة لوضع التحرير'
+                : 'معاينة الدمج (جنباً إلى جنب)'}
             </span>
           </button>
 
@@ -1849,7 +1962,9 @@ export default function NotaryEditorApp() {
           setFocusedVarKey(null);
           setShowSmartVarsModal(true);
         }}
+        onConvertSelectionToSmartTag={handleConvertSelectionToSmartTag}
         onInsertSmartTagAtCaret={handleInsertSmartTagAtCaret}
+        onInsertNewClauseHeadingAtCaret={handleInsertNewClauseHeadingAtCaret}
         onOpenVersionDiffModal={() => setShowVersionDiffModal(true)}
         onGenerateDerivedDoc={handleGenerateDerivedDoc}
         onEditDerivedTemplateInEditor={handleEditDerivedTemplateInEditor}
@@ -1992,6 +2107,7 @@ export default function NotaryEditorApp() {
             }}
             partyFields={partyFields}
             extractedPlaceholders={extractedPlaceholders}
+            clauseGroups={clauseGroups}
             unfilledCount={unfilledCount}
             fieldValues={fieldValues}
             onOpenSmartVariablesModal={(focusKey) => {
@@ -2004,6 +2120,7 @@ export default function NotaryEditorApp() {
               setFieldValues(next);
               syncPlaceholdersAndDraft(next);
             }}
+            onChangeFieldInputType={handleChangeFieldInputType}
             onAddCustomField={(key, label) => {
               if (partyFields.some((f) => f.key === key)) return;
               const updated: PartyField[] = [
@@ -2509,6 +2626,7 @@ export default function NotaryEditorApp() {
         onClose={() => setShowSmartVarsModal(false)}
         focusedVarKey={focusedVarKey}
         extractedPlaceholders={extractedPlaceholders}
+        clauseGroups={clauseGroups}
         partyFields={partyFields}
         fieldValues={fieldValues}
         estates={estates}
@@ -2529,6 +2647,7 @@ export default function NotaryEditorApp() {
           setFieldValues(next);
           syncPlaceholdersAndDraft(next);
         }}
+        onChangeFieldInputType={handleChangeFieldInputType}
         onBakeAllIntoDocument={handleBakeAllPlaceholdersIntoDocument}
       />
 

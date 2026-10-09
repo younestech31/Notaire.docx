@@ -206,6 +206,12 @@ export interface SavedPropertyRecord {
   updatedAt: string;
 }
 
+export interface ClauseVariableGroup {
+  clauseId: string;
+  clauseTitle: string;
+  variables: string[];
+}
+
 export interface BackupBundle {
   version: string;
   exportedAt: string;
@@ -220,3 +226,4 @@ export interface BackupBundle {
   savedProperties?: SavedPropertyRecord[];
   defaultFields: PartyField[];
 }
+
