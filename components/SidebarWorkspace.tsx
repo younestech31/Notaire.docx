@@ -67,7 +67,7 @@ interface SidebarWorkspaceProps {
   onAddCustomField: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
   onInsertValueAtCaret: (value: string) => void;
-  onBakeAllPlaceholdersIntoDocument: () => void;
+  onBakeAllPlaceholdersIntoDocument: (explicitValues?: Record<string, string>) => void;
   estates: SubdivisionEstate[];
   selectedEstateId: string;
   selectedLotNumber: string;
@@ -979,7 +979,7 @@ export default function SidebarWorkspace({
                     </span>
                     <button
                       type="button"
-                      onClick={onBakeAllPlaceholdersIntoDocument}
+                      onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
                       className="text-[11px] text-pink-800 font-semibold hover:underline"
                     >
                       دمج الكل في النص

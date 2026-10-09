@@ -711,7 +711,7 @@ export default function EditorRibbon({
           <span>تحويل المحدد لوسم</span>
         </button>
 
-        {/* QUICK SMART TAG INSERTER DROPDOWN ({{ }} إدراج وسم) */}
+        {/* QUICK SMART TAG INSERTER DROPDOWN ({{ }} إدراج وسم / تحويل المحدد) */}
         <div className="relative">
           <button
             type="button"
@@ -720,21 +720,40 @@ export default function EditorRibbon({
               onSaveSelectionBookmark();
             }}
             onClick={() => {
+              const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+              if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                closeAllMenus();
+                onConvertSelectionToSmartTag();
+                return;
+              }
               const next = !showTagInserterMenu;
               closeAllMenus();
               setShowTagInserterMenu(next);
             }}
             className="inline-flex items-center gap-1 h-8 px-2 rounded text-xs font-semibold bg-pink-50 border border-pink-200 text-pink-900 hover:bg-pink-100 transition-colors whitespace-nowrap shrink-0"
-            title="إدراج وسم ذكي جاهز من القائمة عند موضع المؤشر"
+            title="إذا حددت نصاً يحوله فوراً إلى وسم {{...}}، وإذا لم تحدد نصاً يفتح قائمة الوسوم الجاهزة"
           >
             <span className="font-mono font-bold text-[11px]">{`{{ }}`}</span>
+            <span>إدراج وسم</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
 
           {showTagInserterMenu && (
             <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-md shadow-xl p-2.5 z-50 space-y-2">
-              <div className="text-[11px] font-bold text-slate-900">
-                إدراج وسم ذكي عند موضع المؤشر:
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => {
+                  onConvertSelectionToSmartTag();
+                  setShowTagInserterMenu(false);
+                }}
+                className="w-full py-1.5 px-2.5 bg-pink-800 hover:bg-pink-900 text-white text-xs font-bold rounded flex items-center justify-between"
+              >
+                <span>تحويل الكلمة المحددة/الحالية إلى وسم</span>
+                <span className="font-mono text-[10px] bg-pink-950/40 px-1.5 py-0.5 rounded">[ ]</span>
+              </button>
+              <div className="text-[11px] font-bold text-slate-900 pt-1 border-t border-slate-100">
+                أو أدرج وسماً جاهزاً عند موضع المؤشر:
               </div>
               <div className="flex items-center gap-1.5">
                 <input

@@ -80,6 +80,7 @@ import {
 import {
   computeDocumentMetrics,
   convertSelectionToSmartTag,
+  decorateSmartTagsInDOM,
   escapeHtml,
   extractPlaceholdersFromHtml,
   extractPlaceholdersGroupedByClause,
@@ -106,7 +107,9 @@ import {
 import {
   downloadNotaryDocx,
   importNotaryDocxFile,
+  lookupPlaceholderValue,
   mergePlaceholdersIntoHtml,
+  normalizePlaceholderKey,
 } from '@/lib/docx-engine';
 
 const INITIAL_EMPTY_PARAGRAPH = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
@@ -146,6 +149,9 @@ export default function NotaryEditorApp() {
   const [partyFields, setPartyFields] = useState<PartyField[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const fieldValuesRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    fieldValuesRef.current = fieldValues;
+  }, [fieldValues]);
   const [extractedPlaceholders, setExtractedPlaceholders] = useState<string[]>([]);
   const [clauseGroups, setClauseGroups] = useState<ClauseVariableGroup[]>([]);
   const [templates, setTemplates] = useState<CustomTemplate[]>([]);
@@ -1668,7 +1674,8 @@ export default function NotaryEditorApp() {
 
   const handleInsertSmartTagAtCaret = (varKey: string) => {
     if (!bodyEditorRef.current || !varKey.trim()) return;
-    const cleanKey = varKey.trim();
+    const cleanKey = normalizePlaceholderKey(varKey).replace(/\s+/g, '_');
+    if (!cleanKey) return;
     recordHistorySnapshot();
     if (!partyFields.some((f) => f.key === cleanKey)) {
       const updated: PartyField[] = [
@@ -1683,13 +1690,27 @@ export default function NotaryEditorApp() {
       setPartyFields(updated);
       savePartyFields(updated);
     }
-    const tagHtml = `<span class="smart-tag" contenteditable="false" data-var="${escapeHtml(
+    const tagHtml = `<span class="smart-tag" data-var="${escapeHtml(
       cleanKey
     )}">{{${escapeHtml(cleanKey)}}}</span>&nbsp;`;
     insertHtmlAtSelection(bodyEditorRef.current, tagHtml, savedRangeRef.current);
     syncPlaceholdersAndDraft();
     showToast(`تم إدراج الوسم {{${cleanKey}}} عند موضع المؤشر`);
   };
+
+  const decorateEditorZonesPreservingSelection = useCallback(() => {
+    const zones = {
+      body: bodyEditorRef.current,
+      header: headerEditorRef.current,
+      footer: footerEditorRef.current,
+    };
+    const savedSel = serializeCurrentSelection(zones);
+    if (bodyEditorRef.current) decorateSmartTagsInDOM(bodyEditorRef.current);
+    if (headerEditorRef.current) decorateSmartTagsInDOM(headerEditorRef.current);
+    if (footerEditorRef.current) decorateSmartTagsInDOM(footerEditorRef.current);
+    restoreSerializedSelection(zones, savedSel);
+    syncPlaceholdersAndDraft();
+  }, [syncPlaceholdersAndDraft]);
 
   const handleBakeAllPlaceholdersIntoDocument = (
     explicitValues?: Record<string, string>
@@ -1705,19 +1726,17 @@ export default function NotaryEditorApp() {
     fieldValuesRef.current = activeValues;
     setFieldValues(activeValues);
 
-    // 1. Direct live DOM replacement on any .smart-tag / [data-var] spans inside editor zones
+    // 1. Decorate any raw/manually-typed {{...}} into .smart-tag, then replace in live DOM + HTML
     const replaceLiveZoneTags = (zoneEl: HTMLElement | null) => {
       if (!zoneEl) return;
+      decorateSmartTagsInDOM(zoneEl);
       const liveSpans = Array.from(
         zoneEl.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
       ) as HTMLElement[];
       for (const span of liveSpans) {
         const rawKey =
-          span.getAttribute('data-var') ||
-          (span.textContent || '').replace(/[{}]/g, '').trim();
-        const key = rawKey.trim();
-        if (!key) continue;
-        const val = activeValues[key];
+          span.getAttribute('data-var') || (span.textContent || '');
+        const val = lookupPlaceholderValue(activeValues, rawKey);
         if (val !== undefined && val.trim() !== '') {
           const textNode = document.createTextNode(val.trim());
           span.parentNode?.replaceChild(textNode, span);
@@ -1766,9 +1785,10 @@ export default function NotaryEditorApp() {
   };
 
   // Compute unfilled variables count for the badge
-  const unfilledCount = extractedPlaceholders.filter(
-    (k) => !fieldValues[k] || !fieldValues[k].trim()
-  ).length;
+  const unfilledCount = extractedPlaceholders.filter((k) => {
+    const val = lookupPlaceholderValue(fieldValues, k);
+    return !val || !val.trim();
+  }).length;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100 text-slate-900">
@@ -1959,6 +1979,7 @@ export default function NotaryEditorApp() {
         fieldValues={fieldValues}
         derivedTemplates={derivedTemplates}
         onOpenSmartVariablesModal={() => {
+          decorateEditorZonesPreservingSelection();
           setFocusedVarKey(null);
           setShowSmartVarsModal(true);
         }}
@@ -2111,6 +2132,7 @@ export default function NotaryEditorApp() {
             unfilledCount={unfilledCount}
             fieldValues={fieldValues}
             onOpenSmartVariablesModal={(focusKey) => {
+              decorateEditorZonesPreservingSelection();
               setFocusedVarKey(focusKey || null);
               setShowSmartVarsModal(true);
             }}
@@ -2134,7 +2156,7 @@ export default function NotaryEditorApp() {
             onInsertPlaceholderAtCaret={(key) => {
               if (!bodyEditorRef.current) return;
               recordHistorySnapshot();
-              const tagHtml = `<span class="smart-tag" contenteditable="false" data-var="${escapeHtml(
+              const tagHtml = `<span class="smart-tag" data-var="${escapeHtml(
                 key
               )}">{{${escapeHtml(key)}}}</span>&nbsp;`;
               insertHtmlAtSelection(
@@ -2501,6 +2523,10 @@ export default function NotaryEditorApp() {
                     suppressContentEditableWarning
                     dir="rtl"
                     onInput={() => syncPlaceholdersAndDraft()}
+                    onKeyUp={(e) => {
+                      if (e.key === '}') decorateEditorZonesPreservingSelection();
+                    }}
+                    onBlur={decorateEditorZonesPreservingSelection}
                     onKeyDown={handleEditorKeyDown}
                     onPaste={handleEditorPaste}
                     className="notary-editor-zone outline-none min-h-[18px]"
@@ -2527,6 +2553,10 @@ export default function NotaryEditorApp() {
                   suppressContentEditableWarning
                   dir="rtl"
                   onInput={() => syncPlaceholdersAndDraft()}
+                  onKeyUp={(e) => {
+                    if (e.key === '}') decorateEditorZonesPreservingSelection();
+                  }}
+                  onBlur={decorateEditorZonesPreservingSelection}
                   onKeyDown={handleEditorKeyDown}
                   onPaste={handleEditorPaste}
                   onMouseDown={handleEditorMouseDown}
@@ -2549,6 +2579,10 @@ export default function NotaryEditorApp() {
                         suppressContentEditableWarning
                         dir="rtl"
                         onInput={() => syncPlaceholdersAndDraft()}
+                        onKeyUp={(e) => {
+                          if (e.key === '}') decorateEditorZonesPreservingSelection();
+                        }}
+                        onBlur={decorateEditorZonesPreservingSelection}
                         onKeyDown={handleEditorKeyDown}
                         onPaste={handleEditorPaste}
                         className="notary-editor-zone outline-none min-h-[18px]"

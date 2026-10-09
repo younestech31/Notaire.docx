@@ -84,6 +84,53 @@ function parseColorToHex6(colorStr?: string | null): string | null {
 }
 
 /**
+ * Normalizes a variable key by stripping braces, invisible BiDi/zero-width marks,
+ * non-breaking spaces, and unifying whitespace/underscores.
+ */
+export function normalizePlaceholderKey(raw: string): string {
+  return String(raw || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/[{}\[\]\u200B-\u200F\u061C\uFEFF]/g, '')
+    .replace(/[\u00A0\s]+/g, ' ')
+    .trim();
+}
+
+export function lookupPlaceholderValue(
+  fieldValues: Record<string, string>,
+  rawKey: string
+): string | undefined {
+  if (!fieldValues || !rawKey) return undefined;
+  const cleaned = normalizePlaceholderKey(rawKey);
+  if (!cleaned) return undefined;
+
+  const withUnderscores = cleaned.replace(/\s+/g, '_');
+  const withSpaces = cleaned.replace(/_/g, ' ');
+
+  if (fieldValues[cleaned] !== undefined && fieldValues[cleaned].trim() !== '') {
+    return fieldValues[cleaned];
+  }
+  if (
+    fieldValues[withUnderscores] !== undefined &&
+    fieldValues[withUnderscores].trim() !== ''
+  ) {
+    return fieldValues[withUnderscores];
+  }
+  if (fieldValues[withSpaces] !== undefined && fieldValues[withSpaces].trim() !== '') {
+    return fieldValues[withSpaces];
+  }
+
+  const canonicalTarget = withUnderscores.toLowerCase();
+  for (const [k, v] of Object.entries(fieldValues)) {
+    if (v === undefined || v.trim() === '') continue;
+    const canonicalK = normalizePlaceholderKey(k).replace(/\s+/g, '_').toLowerCase();
+    if (canonicalK === canonicalTarget) {
+      return v;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Replaces {{placeholder}} tokens and <span class="smart-tag" data-var="..."> elements
  * in HTML with their actual values from fieldValues.
  */
@@ -95,29 +142,97 @@ export function mergePlaceholdersIntoHtml(
 
   let workingHtml = html;
 
-  // 1. If DOMParser is available in browser, replace all .smart-tag / [data-var] spans cleanly in the DOM tree
+  // 1. If DOMParser is available in browser, replace all .smart-tag / [data-var] spans,
+  // single-node {{...}}, and cross-node split {{...}} cleanly in the DOM tree
   if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<div>${workingHtml}</div>`, 'text/html');
       const container = doc.body.firstElementChild as HTMLElement | null;
       if (container) {
+        // 1a. Replace all .smart-tag / .smart-placeholder / [data-var] elements
         const tagSpans = Array.from(
           container.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
         ) as HTMLElement[];
 
         for (const span of tagSpans) {
           const rawVar =
-            span.getAttribute('data-var') ||
-            (span.textContent || '').replace(/[{}]/g, '').trim();
-          const key = rawVar.trim();
-          if (!key) continue;
-          const val = fieldValues[key];
+            span.getAttribute('data-var') || (span.textContent || '');
+          const val = lookupPlaceholderValue(fieldValues, rawVar);
           if (val !== undefined && val.trim() !== '') {
-            const textNode = doc.createTextNode(val.trim());
-            span.parentNode?.replaceChild(textNode, span);
+            span.replaceWith(doc.createTextNode(val.trim()));
           }
         }
+
+        // 1b. Replace {{...}} inside individual Text nodes
+        const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        const textNodes: Text[] = [];
+        let curr: Node | null;
+        while ((curr = walker.nextNode())) {
+          textNodes.push(curr as Text);
+        }
+        for (const tNode of textNodes) {
+          const txt = tNode.nodeValue || '';
+          if (txt.includes('{{') && txt.includes('}}')) {
+            const replaced = txt.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, rk) => {
+              const val = lookupPlaceholderValue(fieldValues, rk);
+              return val !== undefined && val.trim() !== '' ? val.trim() : full;
+            });
+            if (replaced !== txt) {
+              tNode.nodeValue = replaced;
+            }
+          }
+        }
+
+        // 1c. Replace cross-node split {{...}} inside block elements (e.g. when browser split {{key}} across spans)
+        const blocks = Array.from(
+          container.querySelectorAll('p, li, td, th, div, h1, h2, h3, h4')
+        ) as HTMLElement[];
+        const leafBlocks = blocks.filter(
+          (b) => !blocks.some((other) => other !== b && b.contains(other))
+        );
+        for (const block of leafBlocks) {
+          const bText = block.textContent || '';
+          if (!bText.includes('{{') || !bText.includes('}}')) continue;
+          const bWalker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+          const segs: { node: Text; start: number; end: number }[] = [];
+          let full = '';
+          let n: Node | null;
+          while ((n = bWalker.nextNode())) {
+            const tn = n as Text;
+            const len = (tn.nodeValue || '').length;
+            if (len > 0) {
+              segs.push({ node: tn, start: full.length, end: full.length + len });
+              full += tn.nodeValue;
+            }
+          }
+          const matches = Array.from(full.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)).reverse();
+          for (const m of matches) {
+            if (m.index === undefined) continue;
+            const val = lookupPlaceholderValue(fieldValues, m[1]);
+            if (val === undefined || val.trim() === '') continue;
+            const mStart = m.index;
+            const mEnd = mStart + m[0].length;
+            const sEntry = segs.find((s) => mStart >= s.start && mStart < s.end);
+            const eEntry = segs.find((s) => mEnd > s.start && mEnd <= s.end);
+            if (sEntry && eEntry) {
+              if (sEntry.node === eEntry.node) {
+                const v = sEntry.node.nodeValue || '';
+                sEntry.node.nodeValue =
+                  v.slice(0, mStart - sEntry.start) +
+                  val.trim() +
+                  v.slice(mEnd - sEntry.start);
+              } else {
+                const r = doc.createRange();
+                r.setStart(sEntry.node, mStart - sEntry.start);
+                r.setEnd(eEntry.node, mEnd - eEntry.start);
+                r.deleteContents();
+                r.insertNode(doc.createTextNode(val.trim()));
+              }
+            }
+          }
+        }
+
         workingHtml = container.innerHTML;
       }
     } catch {
@@ -129,8 +244,7 @@ export function mergePlaceholdersIntoHtml(
   workingHtml = workingHtml.replace(
     /<span[^>]*data-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/gi,
     (fullMatch, rawKey) => {
-      const key = String(rawKey).trim();
-      const val = fieldValues[key];
+      const val = lookupPlaceholderValue(fieldValues, rawKey);
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
@@ -139,18 +253,19 @@ export function mergePlaceholdersIntoHtml(
   workingHtml = workingHtml.replace(
     /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>\{\{\s*([^}<]+?)\s*\}\}<\/span>/gi,
     (fullMatch, rawKey) => {
-      const key = String(rawKey).trim();
-      const val = fieldValues[key];
+      const val = lookupPlaceholderValue(fieldValues, rawKey);
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
 
-  // 4. Replace any remaining raw {{key}} occurrences in text
-  return workingHtml.replace(/\{\{\s*([^}<]+?)\s*\}\}/g, (fullMatch, rawKey) => {
-    const key = String(rawKey).trim();
-    const val = fieldValues[key];
-    return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
-  });
+  // 4. Replace any remaining raw {{key}} occurrences in text (even if surrounded by &nbsp; or inline tags)
+  return workingHtml.replace(
+    /\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
+    (fullMatch, rawKey) => {
+      const val = lookupPlaceholderValue(fieldValues, rawKey);
+      return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
+    }
+  );
 }
 
 /**

@@ -120,8 +120,9 @@
   padding: 0 3px;
   border-radius: 3px;
   cursor: pointer;
-  user-select: all;
   display: inline;
+  direction: rtl;
+  unicode-bidi: isolate;
 }
 
 .notary-editor-zone .smart-tag:hover {
@@ -138,6 +139,8 @@
   border-bottom: 2px solid #10b981 !important;
   padding: 0 3px;
   border-radius: 3px;
+  direction: rtl;
+  unicode-bidi: isolate;
 }
 
 .notary-editor-zone .smart-tag.smart-tag-filled:hover {

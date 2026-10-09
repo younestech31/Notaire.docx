@@ -4,6 +4,7 @@ import {
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
 } from './types';
+import { lookupPlaceholderValue, normalizePlaceholderKey } from './docx-engine';
 
 /**
  * Computes the DOM index path of a node relative to rootEl.
@@ -136,10 +137,21 @@ export function getIntersectingBlockElements(
 }
 
 /**
- * Scans text nodes inside rootEl and wraps any raw {{variable}} tokens into
- * <span class="smart-tag" contenteditable="false" data-var="variable">{{variable}}</span>
+ * Scans text nodes (and cross-node split runs) inside rootEl and wraps any raw {{variable}} tokens into
+ * <span class="smart-tag" data-var="variable">{{variable}}</span>
  */
 export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
+  // 1. Strip any legacy contenteditable="false" on existing smart tags to prevent Chrome RTL BiDi reversal
+  const existingTags = Array.from(
+    rootEl.querySelectorAll('.smart-tag, .smart-placeholder')
+  ) as HTMLElement[];
+  for (const tagEl of existingTags) {
+    if (tagEl.hasAttribute('contenteditable')) {
+      tagEl.removeAttribute('contenteditable');
+    }
+  }
+
+  // 2. Single-text-node {{...}} wrapping
   const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
   const nodesToProcess: Text[] = [];
   let current: Node | null;
@@ -150,7 +162,8 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
     if (
       parentEl &&
       (parentEl.classList.contains('smart-tag') ||
-        parentEl.classList.contains('smart-placeholder'))
+        parentEl.classList.contains('smart-placeholder') ||
+        parentEl.closest('.smart-tag, .smart-placeholder'))
     ) {
       continue;
     }
@@ -170,13 +183,16 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
       if (match.index > lastIndex) {
         frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
       }
-      const varName = match[1].trim();
-      const span = document.createElement('span');
-      span.className = 'smart-tag';
-      span.setAttribute('contenteditable', 'false');
-      span.setAttribute('data-var', varName);
-      span.textContent = `{{${varName}}}`;
-      frag.appendChild(span);
+      const varName = normalizePlaceholderKey(match[1]).replace(/\s+/g, '_');
+      if (varName) {
+        const span = document.createElement('span');
+        span.className = 'smart-tag';
+        span.setAttribute('data-var', varName);
+        span.textContent = `{{${varName}}}`;
+        frag.appendChild(span);
+      } else {
+        frag.appendChild(document.createTextNode(match[0]));
+      }
       lastIndex = regex.lastIndex;
     }
 
@@ -185,6 +201,58 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
     }
 
     tNode.parentNode?.replaceChild(frag, tNode);
+  }
+
+  // 3. Cross-node split {{...}} wrapping inside leaf block elements
+  const blocks = Array.from(
+    rootEl.querySelectorAll('p, li, td, th, h1, h2, h3, h4')
+  ) as HTMLElement[];
+  const leafBlocks = blocks.filter(
+    (b) => !blocks.some((other) => other !== b && b.contains(other))
+  );
+
+  for (const block of leafBlocks) {
+    const bWalker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    const segs: { node: Text; start: number; end: number }[] = [];
+    let full = '';
+    let n: Node | null;
+    while ((n = bWalker.nextNode())) {
+      const tn = n as Text;
+      if (tn.parentElement?.closest('.smart-tag, .smart-placeholder')) {
+        continue;
+      }
+      const len = (tn.nodeValue || '').length;
+      if (len > 0) {
+        segs.push({ node: tn, start: full.length, end: full.length + len });
+        full += tn.nodeValue;
+      }
+    }
+    if (!full.includes('{{') || !full.includes('}}')) continue;
+    const matches = Array.from(full.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)).reverse();
+    for (const m of matches) {
+      if (m.index === undefined) continue;
+      const varName = normalizePlaceholderKey(m[1]).replace(/\s+/g, '_');
+      if (!varName) continue;
+      const mStart = m.index;
+      const mEnd = mStart + m[0].length;
+      const sEntry = segs.find((s) => mStart >= s.start && mStart < s.end);
+      const eEntry = segs.find((s) => mEnd > s.start && mEnd <= s.end);
+      if (sEntry && eEntry && sEntry.node !== eEntry.node) {
+        try {
+          const r = document.createRange();
+          r.setStart(sEntry.node, mStart - sEntry.start);
+          r.setEnd(eEntry.node, mEnd - eEntry.start);
+          r.deleteContents();
+          const span = document.createElement('span');
+          span.className = 'smart-tag';
+          span.setAttribute('data-var', varName);
+          span.textContent = `{{${varName}}}`;
+          r.insertNode(span);
+        } catch {
+          // Ignore range boundary errors
+        }
+      }
+    }
   }
 }
 
@@ -204,12 +272,15 @@ export function syncSmartTagsFilledStateInDOM(
   ) as HTMLElement[];
 
   for (const span of spans) {
-    const key = (
+    if (span.hasAttribute('contenteditable')) {
+      span.removeAttribute('contenteditable');
+    }
+    const rawKey =
       span.getAttribute('data-var') ||
-      (span.textContent || '').replace(/[{}]/g, '')
-    ).trim();
+      (span.textContent || '').replace(/[{}]/g, '');
+    const key = normalizePlaceholderKey(rawKey).replace(/\s+/g, '_');
     if (!key) continue;
-    const val = fieldValues[key];
+    const val = lookupPlaceholderValue(fieldValues, key);
     if (val !== undefined && val.trim() !== '') {
       span.classList.add('smart-tag-filled');
       span.setAttribute(
@@ -249,6 +320,14 @@ export function normalizeNotaryContainerDOM(
   const allElements = Array.from(rootEl.querySelectorAll('*')) as HTMLElement[];
   for (const el of allElements) {
     if (el.classList.contains('page-break')) continue;
+
+    if (
+      (el.classList.contains('smart-tag') ||
+        el.classList.contains('smart-placeholder')) &&
+      el.hasAttribute('contenteditable')
+    ) {
+      el.removeAttribute('contenteditable');
+    }
 
     if (el.style) {
       el.style.fontFamily = STRICT_FONT_FAMILY;
@@ -408,14 +487,15 @@ export function extractPlaceholdersFromHtml(...htmlParts: string[]): string[] {
   const dataVarRegex = /data-var="([^"]+)"/g;
   let dm: RegExpExecArray | null;
   while ((dm = dataVarRegex.exec(combined)) !== null) {
-    if (dm[1]?.trim()) found.add(dm[1].trim());
+    const clean = normalizePlaceholderKey(dm[1]).replace(/\s+/g, '_');
+    if (clean) found.add(clean);
   }
 
-  const textOnly = combined.replace(/<[^>]+>/g, '');
+  const textOnly = combined.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ');
   const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(textOnly)) !== null) {
-    const key = match[1].trim();
+    const key = normalizePlaceholderKey(match[1]).replace(/\s+/g, '_');
     if (key) found.add(key);
   }
   return Array.from(found);
@@ -451,10 +531,10 @@ export function extractPlaceholdersGroupedByClause(
       el.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
     ) as HTMLElement[];
     for (const t of tagEls) {
-      const k = (
+      const rawK =
         t.getAttribute('data-var') ||
-        (t.textContent || '').replace(/[{}]/g, '')
-      ).trim();
+        (t.textContent || '').replace(/[{}]/g, '');
+      const k = normalizePlaceholderKey(rawK).replace(/\s+/g, '_');
       if (k && !seen.has(k)) {
         seen.add(k);
         vars.push(k);
@@ -462,7 +542,7 @@ export function extractPlaceholdersGroupedByClause(
     }
     const textMatches = (el.textContent || '').matchAll(/\{\{\s*([^}]+?)\s*\}\}/g);
     for (const m of textMatches) {
-      const k = (m[1] || '').trim();
+      const k = normalizePlaceholderKey(m[1] || '').replace(/\s+/g, '_');
       if (k && !seen.has(k)) {
         seen.add(k);
         vars.push(k);
@@ -603,16 +683,12 @@ export function convertSelectionToSmartTag(
   if (!selectedText) return null;
 
   // Clean variable name: strip braces/brackets and convert spaces to underscores
-  const varName = selectedText
-    .replace(/[{}[\]]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
+  const varName = normalizePlaceholderKey(selectedText).replace(/\s+/g, '_');
 
   if (!varName) return null;
 
   const span = document.createElement('span');
   span.className = 'smart-tag';
-  span.setAttribute('contenteditable', 'false');
   span.setAttribute('data-var', varName);
   span.textContent = `{{${varName}}}`;
 

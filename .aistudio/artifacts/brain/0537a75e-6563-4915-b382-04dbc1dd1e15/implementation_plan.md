@@ -1,55 +1,70 @@
-# محرر العقود التوثيقية الذكي (الموثق الرقمي) — خطة سهولة التحرير اليومي (الإصدار 2.6)
+# خطة الإصلاح الجذري لاستبدال الوسوم وعرض النص العربي RTL (الإصدار 2.6.1)
 
-يركز هذا التحديث بالكامل على **انسيابية وسرعة التحرير اليومي** المستخلصة من تدقيق بيئة التحرير في `localnotaire`، مع الحفاظ التام على القواعد الهندسية الثابتة للمكتب (`Arial 13pt`، تباعد `1.0`، هوامش `7/2/1/6 سم`، ومحرك `.docx` ثنائي الاتجاه).
-
----
-
-## المزايا الأربع المضافة لسهولة التحرير اليومي
-
-### 1. تحويل النص المحدد إلى وسم ذكي `{{...}}` بضغطة واحدة (دون فتح أي نافذة)
-- **آلية العمل المباشرة**:
-  1. يحدد الكاتب أي كلمة أو عبارة داخل ورقة الـ A4 (مثال: `البائع` أو `مبلغ العربون`).
-  2. يضغط على زر **`[ {{ }} تحويل المحدد لوسم ]`** في شريط الأدوات العلوي (أو اختصار لوحة المفاتيح `Ctrl+Shift+X` / `Alt+V`).
-  3. يتحول النص المحدد فوراً في مكانه إلى وسم ذكي:
-     `<span class="smart-tag" contenteditable="false" data-var="البائع">{{البائع}}</span>`
-     ويُضاف تلقائياً إلى الاستمارة الديناميكية دون فتح أي قائمة منبثقة أو مقاطعة الكتابة.
-  4. إذا لم يكن هناك نص محدد، يلتقط المحرر الكلمة التي يقف عليها المؤشر حالياً ويحولها إلى وسم ذكي بضغطة واحدة.
+تتضمن هذه الخطة التطبيق الحرفي والكامل لإصلاح **Bug #1 (Stale Closure)** وتقوية `mergePlaceholdersIntoHtml` عبر `DOMParser` مع ضمان تغليف الوسوم المكتوبة يدوياً (`decorateSmartTagsInDOM`) قبل الاستبدال وأثناء الكتابة.
 
 ---
 
-### 2. «الاستمارة الديناميكية للفقرات والبنود» (تجميع حسب البند + اختيار نوع الحقل)
-- **التجميع التلقائي حسب البنود الفعلية في العقد**:
-  - تقوم دالة مسح DOM (`extractPlaceholdersGroupedByClause`) بقراءة ورقة الـ A4 بالترتيب من الأعلى للأسفل، وتجميع المتغيرات تحت **عنوان البند** الذي وردت فيه (مثل: *«ديباجة العقد والهوية»*، *«بند التعيين العقاري»*، *«بند الثمن والشروط المالية»*).
-  - تظهر الحقول داخل نافذة الاستمارة مقسمة بوضوح تحت عناوين البنود الموافقة لها، بحيث يعبّئ الكاتب متغيرات كل بند دفعة واحدة.
-- **تحديد نوع الحقل لكل متغير (`نص` / `رقم` / `تاريخ`)**:
-  - بجانب كل متغير في الاستمارة توجد أزرار تبديل سريعة لنوع الحقل: **نص** (`text`) · **رقم** (`number`) · **تاريخ** (`date`)، مما يمنع أخطاء إدخال المبالغ المالية والتواريخ ويحفظ نوع الحقل تلقائياً.
+## 1. تحديث `components/SmartModals.tsx` و `components/SidebarWorkspace.tsx`
+- تغيير تعريف الـ prop إلى تمرير صريح للقيم:
+  ```ts
+  onBakeAllIntoDocument: (values: Record<string, string>) => void;
+  ```
+- عند الضغط على زر **«استبدال الوسوم نهائياً داخل نص العقد»** (أو «دمج الكل في النص» في الشريط الجانبي)، يتم جمع القيم الحالية من `fieldValues` ومن عناصر الإدخال الحية (`inputRefs.current`) وتمريرها صراحةً إلى `onBakeAllIntoDocument(mergedValues)`.
 
 ---
 
-### 3. زر `# بند جديد` في شريط الأدوات والربط المباشر مع قائمة البنود
-- **إدراج أو تحويل السطر الحالي إلى بند بضغطة واحدة**:
-  - زر **`# بند جديد`** في شريط الأدوات العلوي:
-    - إذا حدد الكاتب سطراً أو عنواناً داخل المحرر وضغط **`# بند جديد`**، يتحول السطر فوراً إلى عنوان بند عريض داخل حاوية `.clause-container` مرئية على الهامش الأيمن.
-    - إذا ضغط الزر في سطر فارغ، يُدرج حاوية بند جديدة جاهزة للكتابة مع تسجيلها وربطها مباشرة بقائمة **«البنود الجاهزة»** في الشريط الجانبي لتفعيلها أو تعطيلها أو إعادة ترتيبها.
+## 2. تحديث `components/NotaryEditorApp.tsx`
+- مزامنة `fieldValuesRef` تلقائياً وفورياً:
+  ```ts
+  const fieldValuesRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    fieldValuesRef.current = fieldValues;
+  }, [fieldValues]);
+  ```
+- استدعاء `decorateSmartTagsInDOM(bodyEditorRef.current)` عند كتابة `{{...}}` يدوياً (عند `onBlur` أو فور إغلاق `}}` وعند فتح نافذة الاستمارة وقبل تنفيذ الاستبدال) لضمان تغليف كل وسم بـ `<span class="smart-tag" data-var="...">`.
+- تحديث دالة `handleBakeAllPlaceholdersIntoDocument(values?: Record<string, string>)` لتعتمد على `const activeValues = values ?? fieldValuesRef.current ?? fieldValues;` وتمررها إلى `mergePlaceholdersIntoHtml` لكل من `bodyEditorRef` و`headerEditorRef` و`footerEditorRef`.
 
 ---
 
-### 4. معاينة دمج الحقول (العادية + جنباً إلى جنب Side-by-Side) مع إبراز النواقص
-- **وضعان للمعاينة قبل التصدير**:
-  1. **معاينة الدمج المباشرة**: تعرض ورقة الـ A4 مع تعويض جميع القيم المعبأة في أماكنها، بينما تبقى الوسوم غير المعبأة بارزة بلون تحذيري واضح (`[غير معبأ: {{...}}]`) ليرى الكاتب فوراً ما ينقصه قبل التصدير إلى Word.
-  2. **معاينة جنباً إلى جنب (Side-by-Side)**: تقسم الشاشة بين استمارة المتغيرات الديناميكية (المرتبة حسب البنود) وبين ورقة الـ A4 المدمجة حياً، بحيث يرى الكاتب النص النهائي يتحدث حرفاً بحرف أثناء تعبئة الحقول.
+## 3. تقوية `mergePlaceholdersIntoHtml` في `lib/docx-engine.ts` عبر `DOMParser`
+- استخدام `DOMParser` لاستبدال جميع عناصر `.smart-tag, .smart-placeholder, [data-var]` بدقة تامة حتى بعد تطبيع خصائص `style`، متبوعاً باستبدال أي `{{...}}` نصي متبقٍ:
+  ```ts
+  export function mergePlaceholdersIntoHtml(
+    html: string,
+    fieldValues: Record<string, string> = {}
+  ): string {
+    if (!html) return '';
+    if (typeof DOMParser !== 'undefined') {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+      const root = doc.body.firstElementChild as HTMLElement | null;
+      if (root) {
+        root.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]').forEach((el) => {
+          const key = (
+            el.getAttribute('data-var') ||
+            (el.textContent || '').replace(/[{}]/g, '')
+          ).trim();
+          const val = fieldValues[key] ?? fieldValues[key.replace(/\s+/g, '_')];
+          if (val !== undefined && val.trim() !== '') {
+            el.replaceWith(doc.createTextNode(val.trim()));
+          }
+        });
+        let out = root.innerHTML;
+        out = out.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, rawKey) => {
+          const key = String(rawKey).trim();
+          const val = fieldValues[key] ?? fieldValues[key.replace(/\s+/g, '_')];
+          return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : full;
+        });
+        return out;
+      }
+    }
+    // Fallback regex
+    ...
+  }
+  ```
 
 ---
 
-## الملفات المستهدفة بالتحديث
-1. `lib/editor-utils.ts`:
-   - إضافة دالة `convertSelectionToSmartTag(editorEl, savedRange)` لتحويل التحديد أو الكلمة الحالية إلى وسم `{{...}}` فوراً.
-   - إضافة دالة `extractPlaceholdersGroupedByClause(rootEl)` لاستخراج المتغيرات مرتبة ومجمعة حسب عناوين البنود (`.clause-container` أو الفقرات العريضة).
-   - إضافة دالة `insertOrWrapNewClauseAtSelection(editorEl, savedRange)` لزر `# بند جديد`.
-2. `components/EditorRibbon.tsx`:
-   - إضافة زر **`[ {{ }} تحويل المحدد لوسم ]`** المباشر بضغطة واحدة.
-   - إضافة زر **`# بند جديد`** لتحويل السطر الحالي أو إدراج بند مهيكل عند المؤشر.
-3. `components/SmartModals.tsx`:
-   - تطوير `SmartVariablesModal` لتصبح **«الاستمارة الديناميكية للفقرات والبنود»** مع عرض المتغيرات مجمعة تحت عناوين البنود، ومفتاح تغيير نوع الحقل (**نص / رقم / تاريخ**) لكل متغير.
-4. `components/NotaryEditorApp.tsx`:
-   - ربط أزرار التحويل السريع و`# بند جديد`، ودعم وضع **«معاينة جنباً إلى جنب (Side-by-Side)»** مع تمييز الوسوم غير المعبأة بوضوح في المعاينة.
+## 4. إصلاح عرض النص العربي (RTL Bidi) وتغليف الوسوم اليدوية
+- إزالة `contenteditable="false"` و `user-select: all` من `.smart-tag` وإضافة `unicode-bidi: isolate` لمنع انعكاس ترتيب الكلمات العربية بصرياً في متصفح Chrome.
+- توحيد سلوك زر `{{ }}` وزر `[ ] تحويل المحدد لوسم` ليحوّل أي نص محدد فوراً في مكانه إلى وسم ذكي.

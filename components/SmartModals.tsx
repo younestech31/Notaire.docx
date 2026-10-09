@@ -49,7 +49,7 @@ interface SmartVariablesModalProps {
   onDeleteSavedProperty: (id: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
   onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onBakeAllIntoDocument: (explicitValues?: Record<string, string>) => void;
+  onBakeAllIntoDocument: (values: Record<string, string>) => void;
 }
 
 export function SmartVariablesModal({
@@ -526,7 +526,14 @@ export function SmartVariablesModal({
           <button
             type="button"
             onClick={() => {
-              onBakeAllIntoDocument(fieldValues);
+              const liveValues: Record<string, string> = { ...fieldValues };
+              for (const [k, el] of Object.entries(inputRefs.current)) {
+                if (el && typeof el.value === 'string' && el.value.trim() !== '') {
+                  liveValues[k] = el.value;
+                  onUpdateFieldValue(k, el.value);
+                }
+              }
+              onBakeAllIntoDocument(liveValues);
               onClose();
             }}
             className="px-3.5 py-1.5 bg-pink-800 text-white text-xs font-medium rounded hover:bg-pink-900 transition-colors"
