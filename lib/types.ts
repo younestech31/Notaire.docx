@@ -182,6 +182,30 @@ export interface ToolbarState {
   canSplitCell: boolean;
 }
 
+export interface SavedPartyRecord {
+  id: string;
+  fullName: string; // الاسم واللقب
+  birthDate: string; // تاريخ الميلاد
+  birthPlace: string; // مكان الميلاد
+  parentage: string; // النسب (بن/بنت)
+  idCardRef: string; // رقم ونوع وثيقة الهوية
+  address: string; // عنوان الإقامة
+  updatedAt: string;
+}
+
+export interface SavedPropertyRecord {
+  id: string;
+  label: string; // تسمية مختصرة للعقار/الحصة
+  lotNumber: string; // رقم الحصة
+  nature: string; // طبيعة الحصة
+  floor: string; // الطابق والعمارة
+  area: string; // المساحة
+  commonShares: string; // الأجزاء المشتركة
+  fullDescription: string; // التعيين الكامل
+  deedRef: string; // مراجع الوصف التقسيمي / السند
+  updatedAt: string;
+}
+
 export interface BackupBundle {
   version: string;
   exportedAt: string;
@@ -192,5 +216,7 @@ export interface BackupBundle {
   derivedTemplates: DerivedDocTemplate[];
   revisions: DocumentRevision[];
   downloads: DownloadArchiveItem[];
+  savedParties?: SavedPartyRecord[];
+  savedProperties?: SavedPropertyRecord[];
   defaultFields: PartyField[];
 }

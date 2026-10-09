@@ -129,13 +129,20 @@
   color: #831843;
 }
 
+.notary-editor-zone .smart-tag.smart-tag-filled,
 .notary-editor-zone .smart-placeholder-filled {
-  background-color: #eff6ff;
-  color: #1e3a8a;
+  background-color: #ecfdf5 !important;
+  color: #065f46 !important;
   font-weight: bold !important;
-  border-bottom: 1px dashed #3b82f6;
-  padding: 0 2px;
-  border-radius: 2px;
+  border: 1px solid #a7f3d0 !important;
+  border-bottom: 2px solid #10b981 !important;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+.notary-editor-zone .smart-tag.smart-tag-filled:hover {
+  background-color: #d1fae5 !important;
+  color: #064e3b !important;
 }
 
 /* Visual-only Clause Container inside A4 Sheet during editing */

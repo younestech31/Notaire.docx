@@ -2,16 +2,16 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
+  BookUser,
+  Building2,
   CheckCircle2,
-  Download,
   FilePlus2,
-  FileText,
   FileUp,
   GitCompare,
-  History,
   RotateCcw,
-  Sparkles,
+  Save,
+  Trash2,
+  UserCheck,
   X,
 } from 'lucide-react';
 import {
@@ -20,6 +20,8 @@ import {
   DownloadArchiveItem,
   PartyField,
   SavedDocument,
+  SavedPartyRecord,
+  SavedPropertyRecord,
   SubdivisionEstate,
 } from '@/lib/types';
 import { computeTextDiff } from '@/lib/editor-utils';
@@ -34,9 +36,17 @@ interface SmartVariablesModalProps {
   estates: SubdivisionEstate[];
   selectedEstateId: string;
   selectedLotNumber: string;
+  savedParties: SavedPartyRecord[];
+  savedProperties: SavedPropertyRecord[];
   onSelectEstateAndLot: (estateId: string, lotNumber: string) => void;
+  onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
+  onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
+  onDeleteSavedParty: (id: string) => void;
+  onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
+  onSaveCurrentPropertyToDirectory: () => void;
+  onDeleteSavedProperty: (id: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
-  onBakeAllIntoDocument: () => void;
+  onBakeAllIntoDocument: (explicitValues?: Record<string, string>) => void;
 }
 
 export function SmartVariablesModal({
@@ -49,11 +59,21 @@ export function SmartVariablesModal({
   estates,
   selectedEstateId,
   selectedLotNumber,
+  savedParties,
+  savedProperties,
   onSelectEstateAndLot,
+  onRecallPartyToRole,
+  onSaveCurrentPartyToDirectory,
+  onDeleteSavedParty,
+  onRecallPropertyRecord,
+  onSaveCurrentPropertyToDirectory,
+  onDeleteSavedProperty,
   onUpdateFieldValue,
   onBakeAllIntoDocument,
 }: SmartVariablesModalProps) {
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const [selectedPartyIdForRecall, setSelectedPartyIdForRecall] = useState<string>('');
+  const [selectedPropIdForRecall, setSelectedPropIdForRecall] = useState<string>('');
 
   useEffect(() => {
     if (isOpen && focusedVarKey) {
@@ -80,16 +100,20 @@ export function SmartVariablesModal({
   );
 
   const selectedEstate = estates.find((e) => e.id === selectedEstateId) || estates[0] || null;
+  const activePartyToRecall =
+    savedParties.find((p) => p.id === selectedPartyIdForRecall) || savedParties[0] || null;
+  const activePropToRecall =
+    savedProperties.find((p) => p.id === selectedPropIdForRecall) || savedProperties[0] || null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 select-none">
-      <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">
-                استمارة المتغيرات الذكية (المصدر الموحد للعقد والوثائق المشتقة)
+                استمارة المتغيرات الذكية ودفتر الاستدعاء السريع
               </h2>
               {unfilledInDoc.length > 0 ? (
                 <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded tabular-nums">
@@ -102,7 +126,7 @@ export function SmartVariablesModal({
               )}
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              القيم المدخلة هنا تُعوض تلقائياً في العقد الأصلي وفي جميع الوثائق المشتقة (المستخرج، إجراء الشهر، شهادة البيع، الصيغة التنفيذية).
+              القيم المعبأة هنا تلون الوسوم باللون الأخضر الخفيف داخل ورقة الـ A4 وتُغذّي العقد الأصلي والوثائق المشتقة تلقائياً.
             </p>
           </div>
           <button
@@ -115,40 +139,171 @@ export function SmartVariablesModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Quick Subdivision Lot Selector inside Smart Form */}
-          {estates.length > 0 && (
-            <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-md flex flex-wrap items-center gap-3">
-              <div className="text-xs font-bold text-blue-950 shrink-0">
-                ربط تلقائي من جدول الوصف التقسيمي:
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Quick Directory Bar: Recall / Save Parties & Properties */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* 1. Saved Parties Directory Box */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                  <BookUser className="w-4 h-4 text-blue-900" />
+                  <span>دفتر الأطراف المحفوظين ({savedParties.length})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onSaveCurrentPartyToDirectory('party1')}
+                    className="px-2 py-0.5 bg-white border border-slate-300 hover:bg-slate-100 text-[10px] font-semibold text-slate-800 rounded inline-flex items-center gap-1"
+                    title="حفظ بيانات الطرف الأول الحالية في دفتر الأطراف لاستدعائها لاحقاً"
+                  >
+                    <Save className="w-3 h-3 text-blue-800" />
+                    <span>حفظ الطرف 1</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSaveCurrentPartyToDirectory('party2')}
+                    className="px-2 py-0.5 bg-white border border-slate-300 hover:bg-slate-100 text-[10px] font-semibold text-slate-800 rounded inline-flex items-center gap-1"
+                    title="حفظ بيانات الطرف الثاني الحالية في دفتر الأطراف لاستدعائها لاحقاً"
+                  >
+                    <Save className="w-3 h-3 text-blue-800" />
+                    <span>حفظ الطرف 2</span>
+                  </button>
+                </div>
               </div>
-              <select
-                value={selectedEstate?.id || ''}
-                onChange={(e) => onSelectEstateAndLot(e.target.value, '')}
-                className="px-2.5 py-1 text-xs bg-white border border-slate-300 rounded"
-              >
-                {estates.map((est) => (
-                  <option key={est.id} value={est.id}>
-                    {est.estateName}
-                  </option>
-                ))}
-              </select>
-              {selectedEstate && (
-                <select
-                  value={selectedLotNumber}
-                  onChange={(e) => onSelectEstateAndLot(selectedEstate.id, e.target.value)}
-                  className="px-2.5 py-1 text-xs bg-white border border-blue-400 rounded font-semibold tabular-nums"
-                >
-                  <option value="">-- اختر رقم الحصة لملء التعيين --</option>
-                  {selectedEstate.lots.map((l) => (
-                    <option key={l.id} value={l.lotNumber}>
-                      حصة رقم {l.lotNumber} — {l.nature} ({l.floor}) — {l.area} م²
-                    </option>
-                  ))}
-                </select>
+
+              {savedParties.length === 0 ? (
+                <div className="text-[11px] text-slate-500">
+                  املأ بيانات الطرف الأول أو الثاني بالأسفل ثم اضغط «حفظ الطرف» لإضافته للدفتر.
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <select
+                    value={activePartyToRecall?.id || ''}
+                    onChange={(e) => setSelectedPartyIdForRecall(e.target.value)}
+                    className="flex-1 min-w-[140px] px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  >
+                    {savedParties.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.fullName} {p.birthDate ? `(${p.birthDate})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {activePartyToRecall && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onRecallPartyToRole(activePartyToRecall, 'party1')}
+                        className="px-2 py-1 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800"
+                      >
+                        استدعاء كطرف أول
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onRecallPartyToRole(activePartyToRecall, 'party2')}
+                        className="px-2 py-1 bg-slate-800 text-white text-[11px] font-semibold rounded hover:bg-slate-700"
+                      >
+                        استدعاء كطرف ثانٍ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteSavedParty(activePartyToRecall.id)}
+                        className="p-1 text-slate-400 hover:text-red-600"
+                        title="حذف من دفتر الأطراف"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
-          )}
+
+            {/* 2. Saved Properties & Subdivision Lots Box */}
+            <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-md space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-950">
+                  <Building2 className="w-4 h-4 text-blue-900" />
+                  <span>دفتر العقارات وجدول الوصف التقسيمي</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onSaveCurrentPropertyToDirectory}
+                  className="px-2 py-0.5 bg-white border border-blue-300 hover:bg-blue-50 text-[10px] font-semibold text-blue-950 rounded inline-flex items-center gap-1"
+                  title="حفظ بيانات العقار/الحصة الحالية في دفتر العقارات"
+                >
+                  <Save className="w-3 h-3 text-blue-800" />
+                  <span>حفظ العقار الحالي</span>
+                </button>
+              </div>
+
+              {/* Saved Properties Dropdown */}
+              {savedProperties.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={activePropToRecall?.id || ''}
+                    onChange={(e) => setSelectedPropIdForRecall(e.target.value)}
+                    className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  >
+                    {savedProperties.map((pr) => (
+                      <option key={pr.id} value={pr.id}>
+                        {pr.label} {pr.lotNumber ? `(حصة ${pr.lotNumber})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {activePropToRecall && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onRecallPropertyRecord(activePropToRecall)}
+                        className="px-2.5 py-1 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800"
+                      >
+                        استدعاء العقار
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteSavedProperty(activePropToRecall.id)}
+                        className="p-1 text-slate-400 hover:text-red-600"
+                        title="حذف من دفتر العقارات"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Subdivision Lot Selector */}
+              {estates.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <select
+                    value={selectedEstate?.id || ''}
+                    onChange={(e) => onSelectEstateAndLot(e.target.value, '')}
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  >
+                    {estates.map((est) => (
+                      <option key={est.id} value={est.id}>
+                        {est.estateName}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedEstate && (
+                    <select
+                      value={selectedLotNumber}
+                      onChange={(e) => onSelectEstateAndLot(selectedEstate.id, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs bg-white border border-blue-400 rounded font-semibold tabular-nums"
+                    >
+                      <option value="">-- اختر حصة من جدول الوصف التقسيمي --</option>
+                      {selectedEstate.lots.map((l) => (
+                        <option key={l.id} value={l.lotNumber}>
+                          حصة {l.lotNumber} — {l.nature} ({l.floor}) — {l.area} م²
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Variables Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -157,7 +312,8 @@ export function SmartVariablesModal({
               const label = meta?.label || key.replace(/_/g, ' ');
               const inCurrentDoc = extractedPlaceholders.includes(key);
               const val = fieldValues[key] || '';
-              const isEmptyInDoc = inCurrentDoc && !val.trim();
+              const isFilled = val.trim() !== '';
+              const isEmptyInDoc = inCurrentDoc && !isFilled;
               const isFocused = focusedVarKey === key;
 
               return (
@@ -168,14 +324,25 @@ export function SmartVariablesModal({
                       ? 'border-pink-600 bg-pink-50/40 ring-2 ring-pink-500/20'
                       : isEmptyInDoc
                       ? 'border-amber-300 bg-amber-50/30'
+                      : isFilled
+                      ? 'border-emerald-300 bg-emerald-50/20'
                       : 'border-slate-200 bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <label className="text-xs font-bold text-slate-800 truncate">
-                      {label}
+                    <label className="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
+                      <span>{label}</span>
+                      {isFilled && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      )}
                     </label>
-                    <span className="text-[10px] font-mono text-pink-800 bg-pink-50 px-1.5 py-0.5 rounded shrink-0">
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                        isFilled
+                          ? 'text-emerald-800 bg-emerald-100/80'
+                          : 'text-pink-800 bg-pink-50'
+                      }`}
+                    >
                       {`{{${key}}}`}
                     </span>
                   </div>
@@ -219,7 +386,7 @@ export function SmartVariablesModal({
           <button
             type="button"
             onClick={() => {
-              onBakeAllIntoDocument();
+              onBakeAllIntoDocument(fieldValues);
               onClose();
             }}
             className="px-3.5 py-1.5 bg-pink-800 text-white text-xs font-medium rounded hover:bg-pink-900 transition-colors"
@@ -234,7 +401,7 @@ export function SmartVariablesModal({
               onClick={onClose}
               className="px-4 py-1.5 bg-blue-900 text-white text-xs font-semibold rounded hover:bg-blue-800 transition-colors"
             >
-              حفظ واعتماد القيم
+              حفظ واعتماد القيم (مع التلوين الأخضر للوسوم المعبأة)
             </button>
           </div>
         </div>
@@ -421,8 +588,12 @@ interface MultiSourceStartModalProps {
   templates: CustomTemplate[];
   documents: SavedDocument[];
   downloads: DownloadArchiveItem[];
-  onStartBlank: () => void;
-  onSelectTemplate: (tpl: CustomTemplate) => void;
+  onStartBlank: (clearPreviousClauses?: boolean) => void;
+  onSelectTemplate: (
+    tpl: CustomTemplate,
+    mode: 'replace' | 'insert',
+    clearPreviousClauses: boolean
+  ) => void;
   onSelectSavedDoc: (doc: SavedDocument) => void;
   onImportDocxFile: (file: File) => void;
   onSelectDownloadArchiveItem: (item: DownloadArchiveItem) => void;
@@ -441,6 +612,8 @@ export function MultiSourceStartModal({
   onSelectDownloadArchiveItem,
 }: MultiSourceStartModalProps) {
   const [sourceTab, setSourceTab] = useState<'blank' | 'templates' | 'docs' | 'archive'>('blank');
+  const [templateLoadMode, setTemplateLoadMode] = useState<'replace' | 'insert'>('replace');
+  const [clearPreviousClauses, setClearPreviousClauses] = useState<boolean>(true);
 
   if (!isOpen) return null;
 
@@ -449,7 +622,7 @@ export function MultiSourceStartModal({
       <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900">
-            بدء تحرير عقد جديد (مصادر البدء المتعددة)
+            بدء تحرير عقد جديد / فتح قالب (مع خيارات الإدراج والبنود)
           </h2>
           <button
             type="button"
@@ -502,50 +675,105 @@ export function MultiSourceStartModal({
 
         <div className="flex-1 overflow-y-auto p-5">
           {sourceTab === 'blank' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => {
-                  onStartBlank();
-                  onClose();
-                }}
-                className="p-5 border border-slate-200 rounded-lg hover:border-blue-800 hover:bg-blue-50/30 text-right transition-colors space-y-2"
-              >
-                <FilePlus2 className="w-6 h-6 text-blue-900" />
-                <div className="text-xs font-bold text-slate-900">
-                  ورقة عقد توثيقي فارغة (A4)
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  بدء عقد جديد بخط Arial 13pt وتباعد 1.0 والهوامش التوثيقية الثابتة (7/2/1/6 سم).
-                </p>
-              </button>
-
-              <label className="p-5 border border-slate-200 rounded-lg hover:border-blue-800 hover:bg-blue-50/30 text-right transition-colors space-y-2 cursor-pointer block">
-                <FileUp className="w-6 h-6 text-blue-900" />
-                <div className="text-xs font-bold text-slate-900">
-                  استيراد ملف Word (.docx) من الجهاز
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  فتح أي عقد وورد موجود على جهازك وتحويله فوراً لمعيار المكتب مع استخراج الوسوم.
-                </p>
+            <div className="space-y-4">
+              <label className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-200 cursor-pointer">
                 <input
-                  type="file"
-                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      onImportDocxFile(f);
-                      onClose();
-                    }
-                  }}
+                  type="checkbox"
+                  checked={clearPreviousClauses}
+                  onChange={(e) => setClearPreviousClauses(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-900"
                 />
+                <span className="font-medium">
+                  حذف البنود السابقة المفعّلة عند بدء ورقة عقد جديدة
+                </span>
               </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onStartBlank(clearPreviousClauses);
+                    onClose();
+                  }}
+                  className="p-5 border border-slate-200 rounded-lg hover:border-blue-800 hover:bg-blue-50/30 text-right transition-colors space-y-2"
+                >
+                  <FilePlus2 className="w-6 h-6 text-blue-900" />
+                  <div className="text-xs font-bold text-slate-900">
+                    ورقة عقد توثيقي فارغة (A4)
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    بدء عقد جديد بخط Arial 13pt وتباعد 1.0 والهوامش التوثيقية الثابتة (7/2/1/6 سم).
+                  </p>
+                </button>
+
+                <label className="p-5 border border-slate-200 rounded-lg hover:border-blue-800 hover:bg-blue-50/30 text-right transition-colors space-y-2 cursor-pointer block">
+                  <FileUp className="w-6 h-6 text-blue-900" />
+                  <div className="text-xs font-bold text-slate-900">
+                    استيراد ملف Word (.docx) من الجهاز
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    فتح أي عقد وورد موجود على جهازك وتحويله فوراً لمعيار المكتب مع استخراج الوسوم.
+                  </p>
+                  <input
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        onImportDocxFile(f);
+                        onClose();
+                      }
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           )}
 
           {sourceTab === 'templates' && (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              {/* Template Load Options Bar */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-md space-y-2">
+                <div className="text-xs font-bold text-blue-950">
+                  خيار فتح القالب / النموذج:
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium text-slate-800">
+                    <input
+                      type="radio"
+                      name="tplLoadMode"
+                      checked={templateLoadMode === 'replace'}
+                      onChange={() => setTemplateLoadMode('replace')}
+                    />
+                    <span>استبدال المحتوى الحالي (يمسح ورقة الـ A4 ويضع القالب كاملاً)</span>
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer font-medium text-slate-800">
+                    <input
+                      type="radio"
+                      name="tplLoadMode"
+                      checked={templateLoadMode === 'insert'}
+                      onChange={() => setTemplateLoadMode('insert')}
+                    />
+                    <span>إدراج عند موضع المؤشر (يُبقي النص الحالي)</span>
+                  </label>
+                </div>
+
+                {templateLoadMode === 'replace' && (
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-700 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={clearPreviousClauses}
+                      onChange={(e) => setClearPreviousClauses(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-900"
+                    />
+                    <span className="font-semibold text-blue-950">
+                      حذف البنود السابقة (تفريغ قائمة البنود المفعّلة عند الاستبدال الكامل)
+                    </span>
+                  </label>
+                )}
+              </div>
+
               {templates.length === 0 ? (
                 <div className="text-center py-8 text-xs text-slate-500">
                   لا توجد قوالب محفوظة في مكتبة المكتب بعد.
@@ -565,12 +793,14 @@ export function MultiSourceStartModal({
                     <button
                       type="button"
                       onClick={() => {
-                        onSelectTemplate(tpl);
+                        onSelectTemplate(tpl, templateLoadMode, clearPreviousClauses);
                         onClose();
                       }}
-                      className="px-3 py-1 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800"
+                      className="px-3 py-1.5 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800"
                     >
-                      البدء بهذا القالب
+                      {templateLoadMode === 'replace'
+                        ? 'استبدال وفتح القالب'
+                        : 'إدراج القالب عند المؤشر'}
                     </button>
                   </div>
                 ))

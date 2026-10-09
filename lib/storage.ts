@@ -7,13 +7,15 @@ import {
   NotaryClause,
   PartyField,
   SavedDocument,
+  SavedPartyRecord,
+  SavedPropertyRecord,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
   SubdivisionEstate,
 } from './types';
 
 const DB_NAME = 'NotarySmartEditorDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_TEMPLATES = 'templates';
 const STORE_DOCUMENTS = 'documents';
 const STORE_ESTATES = 'estates';
@@ -21,6 +23,8 @@ const STORE_CLAUSES = 'clauses';
 const STORE_DERIVED_TEMPLATES = 'derived_templates';
 const STORE_REVISIONS = 'revisions';
 const STORE_DOWNLOADS = 'downloads';
+const STORE_SAVED_PARTIES = 'saved_parties';
+const STORE_SAVED_PROPERTIES = 'saved_properties';
 
 const LS_FIELDS_KEY = 'notary_default_party_fields_v2';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
@@ -196,6 +200,8 @@ function openDatabase(): Promise<IDBDatabase | null> {
           STORE_DERIVED_TEMPLATES,
           STORE_REVISIONS,
           STORE_DOWNLOADS,
+          STORE_SAVED_PARTIES,
+          STORE_SAVED_PROPERTIES,
         ];
         for (const s of stores) {
           if (!db.objectStoreNames.contains(s)) {
@@ -203,8 +209,15 @@ function openDatabase(): Promise<IDBDatabase | null> {
           }
         }
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+        };
+        resolve(db);
+      };
       request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
     } catch {
       resolve(null);
     }
@@ -213,18 +226,21 @@ function openDatabase(): Promise<IDBDatabase | null> {
 
 async function getAllFromStore<T>(storeName: string, lsFallbackKey: string): Promise<T[]> {
   const db = await openDatabase();
-  if (db) {
-    return new Promise((resolve) => {
+  if (db && db.objectStoreNames.contains(storeName)) {
+    const dbResult = await new Promise<T[] | null>((resolve) => {
       try {
         const tx = db.transaction(storeName, 'readonly');
         const store = tx.objectStore(storeName);
         const req = store.getAll();
         req.onsuccess = () => resolve((req.result as T[]) || []);
-        req.onerror = () => resolve([]);
+        req.onerror = () => resolve(null);
       } catch {
-        resolve([]);
+        resolve(null);
       }
     });
+    if (dbResult && dbResult.length > 0) {
+      return dbResult;
+    }
   }
   if (typeof window !== 'undefined') {
     try {
@@ -411,6 +427,39 @@ export async function deleteSubdivisionEstate(id: string): Promise<void> {
   await deleteFromStore(STORE_ESTATES, 'notary_estates_v1', id);
 }
 
+// 7b. Saved Parties & Saved Properties Directory (دفتر الأطراف والعقارات القابل للاستدعاء)
+export async function loadSavedParties(): Promise<SavedPartyRecord[]> {
+  const items = await getAllFromStore<SavedPartyRecord>(
+    STORE_SAVED_PARTIES,
+    'notary_saved_parties_v25'
+  );
+  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function savePartyRecord(party: SavedPartyRecord): Promise<void> {
+  await putInStore(STORE_SAVED_PARTIES, 'notary_saved_parties_v25', party);
+}
+
+export async function deletePartyRecord(id: string): Promise<void> {
+  await deleteFromStore(STORE_SAVED_PARTIES, 'notary_saved_parties_v25', id);
+}
+
+export async function loadSavedProperties(): Promise<SavedPropertyRecord[]> {
+  const items = await getAllFromStore<SavedPropertyRecord>(
+    STORE_SAVED_PROPERTIES,
+    'notary_saved_properties_v25'
+  );
+  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function savePropertyRecord(prop: SavedPropertyRecord): Promise<void> {
+  await putInStore(STORE_SAVED_PROPERTIES, 'notary_saved_properties_v25', prop);
+}
+
+export async function deletePropertyRecord(id: string): Promise<void> {
+  await deleteFromStore(STORE_SAVED_PROPERTIES, 'notary_saved_properties_v25', id);
+}
+
 // 8. Default / Custom Party Fields
 export function loadPartyFields(): PartyField[] {
   if (typeof window === 'undefined') return DEFAULT_PARTY_FIELDS;
@@ -455,19 +504,30 @@ export function saveActiveDraftSession(doc: SavedDocument): void {
 
 // 10. Full Backup Export & Import
 export async function exportFullBackupBundle(): Promise<BackupBundle> {
-  const [templates, documents, estates, clauses, derivedTemplates, revisions, downloads] =
-    await Promise.all([
-      loadCustomTemplates(),
-      loadSavedDocuments(),
-      loadSubdivisionEstates(),
-      loadNotaryClauses(),
-      loadDerivedDocTemplates(),
-      loadDocumentRevisions(),
-      loadDownloadArchive(),
-    ]);
+  const [
+    templates,
+    documents,
+    estates,
+    clauses,
+    derivedTemplates,
+    revisions,
+    downloads,
+    savedParties,
+    savedProperties,
+  ] = await Promise.all([
+    loadCustomTemplates(),
+    loadSavedDocuments(),
+    loadSubdivisionEstates(),
+    loadNotaryClauses(),
+    loadDerivedDocTemplates(),
+    loadDocumentRevisions(),
+    loadDownloadArchive(),
+    loadSavedParties(),
+    loadSavedProperties(),
+  ]);
   const defaultFields = loadPartyFields();
   return {
-    version: '2.4.0',
+    version: '2.5.0',
     exportedAt: new Date().toISOString(),
     templates,
     documents,
@@ -476,6 +536,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     derivedTemplates,
     revisions,
     downloads,
+    savedParties,
+    savedProperties,
     defaultFields,
   };
 }

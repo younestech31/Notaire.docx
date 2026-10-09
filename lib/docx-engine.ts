@@ -84,24 +84,69 @@ function parseColorToHex6(colorStr?: string | null): string | null {
 }
 
 /**
- * Replaces {{placeholder}} tokens in HTML with their actual values from fieldValues
- * before exporting to Word.
+ * Replaces {{placeholder}} tokens and <span class="smart-tag" data-var="..."> elements
+ * in HTML with their actual values from fieldValues.
  */
 export function mergePlaceholdersIntoHtml(
   html: string,
   fieldValues: Record<string, string> = {}
 ): string {
   if (!html) return '';
-  // First replace <span class="smart-tag" ...>{{key}}</span> with the merged value
-  const tagReplaced = html.replace(
-    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>\{\{\s*([^}]+?)\s*\}\}<\/span>/gi,
+
+  let workingHtml = html;
+
+  // 1. If DOMParser is available in browser, replace all .smart-tag / [data-var] spans cleanly in the DOM tree
+  if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${workingHtml}</div>`, 'text/html');
+      const container = doc.body.firstElementChild as HTMLElement | null;
+      if (container) {
+        const tagSpans = Array.from(
+          container.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
+        ) as HTMLElement[];
+
+        for (const span of tagSpans) {
+          const rawVar =
+            span.getAttribute('data-var') ||
+            (span.textContent || '').replace(/[{}]/g, '').trim();
+          const key = rawVar.trim();
+          if (!key) continue;
+          const val = fieldValues[key];
+          if (val !== undefined && val.trim() !== '') {
+            const textNode = doc.createTextNode(val.trim());
+            span.parentNode?.replaceChild(textNode, span);
+          }
+        }
+        workingHtml = container.innerHTML;
+      }
+    } catch {
+      // Fallback to regex below
+    }
+  }
+
+  // 2. Regex replacement for any <span ... data-var="KEY" ...>...</span> regardless of attribute order
+  workingHtml = workingHtml.replace(
+    /<span[^>]*data-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/gi,
     (fullMatch, rawKey) => {
       const key = String(rawKey).trim();
       const val = fieldValues[key];
-      return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : `{{${key}}}`;
+      return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
-  return tagReplaced.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (fullMatch, rawKey) => {
+
+  // 3. Regex replacement for <span class="...smart-tag...">...</span>
+  workingHtml = workingHtml.replace(
+    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>\{\{\s*([^}<]+?)\s*\}\}<\/span>/gi,
+    (fullMatch, rawKey) => {
+      const key = String(rawKey).trim();
+      const val = fieldValues[key];
+      return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
+    }
+  );
+
+  // 4. Replace any remaining raw {{key}} occurrences in text
+  return workingHtml.replace(/\{\{\s*([^}<]+?)\s*\}\}/g, (fullMatch, rawKey) => {
     const key = String(rawKey).trim();
     const val = fieldValues[key];
     return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;

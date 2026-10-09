@@ -188,6 +188,44 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
 }
 
 /**
+ * Updates the visual state of all .smart-tag elements inside rootEl based on whether
+ * their variable has a non-empty value in fieldValues:
+ * - Unfilled: pink (.smart-tag)
+ * - Filled (before final replacement): soft green (.smart-tag.smart-tag-filled) with tooltip showing the value
+ */
+export function syncSmartTagsFilledStateInDOM(
+  rootEl: HTMLElement | null,
+  fieldValues: Record<string, string>
+): void {
+  if (!rootEl) return;
+  const spans = Array.from(
+    rootEl.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
+  ) as HTMLElement[];
+
+  for (const span of spans) {
+    const key = (
+      span.getAttribute('data-var') ||
+      (span.textContent || '').replace(/[{}]/g, '')
+    ).trim();
+    if (!key) continue;
+    const val = fieldValues[key];
+    if (val !== undefined && val.trim() !== '') {
+      span.classList.add('smart-tag-filled');
+      span.setAttribute(
+        'title',
+        `معبأ: "${val.trim()}" — (نقر مزدوج للتعديل)`
+      );
+    } else {
+      span.classList.remove('smart-tag-filled');
+      span.setAttribute(
+        'title',
+        `غير معبأ ({{${key}}}) — (نقر مزدوج للتعبئة)`
+      );
+    }
+  }
+}
+
+/**
  * Enforces the strict Notary Office rule on a container:
  * - Font is always Arial 13pt
  * - Line height is always 1.0

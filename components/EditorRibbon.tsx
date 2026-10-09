@@ -40,6 +40,7 @@ import {
 import {
   DerivedDocTemplate,
   ListNumberingStyle,
+  PartyField,
   ToolbarState,
 } from '@/lib/types';
 
@@ -53,8 +54,12 @@ interface EditorRibbonProps {
   showFindReplace: boolean;
   unfilledCount: number;
   totalVariablesCount: number;
+  partyFields: PartyField[];
+  extractedPlaceholders: string[];
+  fieldValues: Record<string, string>;
   derivedTemplates: DerivedDocTemplate[];
   onOpenSmartVariablesModal: () => void;
+  onInsertSmartTagAtCaret: (varKey: string) => void;
   onOpenVersionDiffModal: () => void;
   onGenerateDerivedDoc: (tpl: DerivedDocTemplate) => void;
   onEditDerivedTemplateInEditor: (tpl: DerivedDocTemplate) => void;
@@ -118,8 +123,12 @@ export default function EditorRibbon({
   showFindReplace,
   unfilledCount,
   totalVariablesCount,
+  partyFields,
+  extractedPlaceholders,
+  fieldValues,
   derivedTemplates,
   onOpenSmartVariablesModal,
+  onInsertSmartTagAtCaret,
   onOpenVersionDiffModal,
   onGenerateDerivedDoc,
   onEditDerivedTemplateInEditor,
@@ -151,6 +160,8 @@ export default function EditorRibbon({
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [showListMenu, setShowListMenu] = useState(false);
   const [showDerivedMenu, setShowDerivedMenu] = useState(false);
+  const [showTagInserterMenu, setShowTagInserterMenu] = useState(false);
+  const [tagFilterQuery, setTagFilterQuery] = useState('');
 
   const preventFocusLoss = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -162,6 +173,7 @@ export default function EditorRibbon({
     setShowHighlightMenu(false);
     setShowListMenu(false);
     setShowDerivedMenu(false);
+    setShowTagInserterMenu(false);
   };
 
   const btnClass = (active: boolean = false, disabled: boolean = false) =>
@@ -256,6 +268,8 @@ export default function EditorRibbon({
             onMouseDown={(e) => {
               e.preventDefault();
               onSaveSelectionBookmark();
+            }}
+            onClick={() => {
               const next = !showColorMenu;
               closeAllMenus();
               setShowColorMenu(next);
@@ -300,6 +314,8 @@ export default function EditorRibbon({
             onMouseDown={(e) => {
               e.preventDefault();
               onSaveSelectionBookmark();
+            }}
+            onClick={() => {
               const next = !showHighlightMenu;
               closeAllMenus();
               setShowHighlightMenu(next);
@@ -424,6 +440,8 @@ export default function EditorRibbon({
             onMouseDown={(e) => {
               e.preventDefault();
               onSaveSelectionBookmark();
+            }}
+            onClick={() => {
               const next = !showListMenu;
               closeAllMenus();
               setShowListMenu(next);
@@ -507,6 +525,8 @@ export default function EditorRibbon({
             onMouseDown={(e) => {
               e.preventDefault();
               onSaveSelectionBookmark();
+            }}
+            onClick={() => {
               const next = !showTablePicker;
               closeAllMenus();
               setShowTablePicker(next);
@@ -672,12 +692,125 @@ export default function EditorRibbon({
           ) : null}
         </button>
 
-        {/* DERIVED DOCUMENTS GENERATOR DROPDOWN */}
+        {/* QUICK SMART TAG INSERTER BUTTON ({{ }} إدراج وسم) */}
         <div className="relative">
           <button
             type="button"
             onMouseDown={(e) => {
               e.preventDefault();
+              onSaveSelectionBookmark();
+            }}
+            onClick={() => {
+              const next = !showTagInserterMenu;
+              closeAllMenus();
+              setShowTagInserterMenu(next);
+            }}
+            className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-semibold bg-pink-50 border border-pink-200 text-pink-900 hover:bg-pink-100 transition-colors whitespace-nowrap shrink-0"
+            title="إدراج وسم ذكي {{...}} مباشرة عند موضع المؤشر في العقد"
+          >
+            <span className="font-mono font-bold text-[11px]">{`{{ }}`}</span>
+            <span>إدراج وسم</span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {showTagInserterMenu && (
+            <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-md shadow-xl p-2.5 z-50 space-y-2">
+              <div className="text-[11px] font-bold text-slate-900">
+                إدراج وسم ذكي عند موضع المؤشر:
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={tagFilterQuery}
+                  onChange={(e) => setTagFilterQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && tagFilterQuery.trim()) {
+                      e.preventDefault();
+                      const cleanKey = tagFilterQuery.trim().replace(/\s+/g, '_');
+                      onInsertSmartTagAtCaret(cleanKey);
+                      setTagFilterQuery('');
+                      setShowTagInserterMenu(false);
+                    }
+                  }}
+                  placeholder="ابحث أو اكتب اسم وسم جديد..."
+                  className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-pink-700 focus:outline-none"
+                />
+                {tagFilterQuery.trim() && (
+                  <button
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => {
+                      const cleanKey = tagFilterQuery.trim().replace(/\s+/g, '_');
+                      onInsertSmartTagAtCaret(cleanKey);
+                      setTagFilterQuery('');
+                      setShowTagInserterMenu(false);
+                    }}
+                    className="px-2 py-1 bg-pink-800 text-white text-[11px] font-semibold rounded hover:bg-pink-900 shrink-0"
+                  >
+                    + إدراج
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded">
+                {Array.from(
+                  new Set([
+                    ...extractedPlaceholders,
+                    ...partyFields.map((f) => f.key),
+                  ])
+                )
+                  .filter((k) => {
+                    if (!tagFilterQuery.trim()) return true;
+                    const q = tagFilterQuery.trim();
+                    const meta = partyFields.find((f) => f.key === k);
+                    return (
+                      k.includes(q) ||
+                      (meta?.label && meta.label.includes(q))
+                    );
+                  })
+                  .map((key) => {
+                    const meta = partyFields.find((f) => f.key === key);
+                    const label = meta?.label || key.replace(/_/g, ' ');
+                    const isFilled = Boolean(
+                      fieldValues[key] && fieldValues[key].trim()
+                    );
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => {
+                          onInsertSmartTagAtCaret(key);
+                          setShowTagInserterMenu(false);
+                        }}
+                        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-right hover:bg-slate-50 transition-colors"
+                      >
+                        <span className="text-xs font-medium text-slate-800 truncate">
+                          {label}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                            isFilled
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : 'bg-pink-50 text-pink-800 border border-pink-200'
+                          }`}
+                        >
+                          {`{{${key}}}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* DERIVED DOCUMENTS GENERATOR DROPDOWN */}
+        <div className="relative">
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => {
               const next = !showDerivedMenu;
               closeAllMenus();
               setShowDerivedMenu(next);
@@ -686,7 +819,7 @@ export default function EditorRibbon({
             title="توليد الوثائق المشتقة من بيانات استمارة المتغيرات والأطراف والتعيينات"
           >
             <FileOutput className="w-3.5 h-3.5" />
-            <span>توليد وثائق مشتقة</span>
+            <span>توليد وثائق مشتقة ({derivedTemplates.length})</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
 

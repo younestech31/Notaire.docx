@@ -33,6 +33,8 @@ import {
   NotaryClause,
   PartyField,
   SavedDocument,
+  SavedPartyRecord,
+  SavedPropertyRecord,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
   SubdivisionEstate,
@@ -40,11 +42,14 @@ import {
   ToolbarState,
 } from '@/lib/types';
 import {
+  DEFAULT_DERIVED_DOC_TEMPLATES,
   deleteCustomTemplate,
   deleteDerivedDocTemplate,
   deleteDocumentRecord,
   deleteDownloadArchiveItem,
   deleteNotaryClause,
+  deletePartyRecord,
+  deletePropertyRecord,
   deleteSubdivisionEstate,
   exportFullBackupBundle,
   importFullBackupBundle,
@@ -56,6 +61,8 @@ import {
   loadNotaryClauses,
   loadPartyFields,
   loadSavedDocuments,
+  loadSavedParties,
+  loadSavedProperties,
   loadSubdivisionEstates,
   saveActiveDraftSession,
   saveCustomTemplate,
@@ -65,6 +72,8 @@ import {
   saveDownloadArchiveItem,
   saveNotaryClause,
   savePartyFields,
+  savePartyRecord,
+  savePropertyRecord,
   saveSubdivisionEstate,
 } from '@/lib/storage';
 import {
@@ -79,6 +88,7 @@ import {
   restoreSerializedSelection,
   sanitizePastedWordHTML,
   serializeCurrentSelection,
+  syncSmartTagsFilledStateInDOM,
 } from '@/lib/editor-utils';
 import {
   createNotaryTableHTML,
@@ -131,15 +141,20 @@ export default function NotaryEditorApp() {
   const [activeClauseIdsInDoc, setActiveClauseIdsInDoc] = useState<string[]>([]);
   const [partyFields, setPartyFields] = useState<PartyField[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const fieldValuesRef = useRef<Record<string, string>>({});
   const [extractedPlaceholders, setExtractedPlaceholders] = useState<string[]>([]);
   const [templates, setTemplates] = useState<CustomTemplate[]>([]);
-  const [derivedTemplates, setDerivedTemplates] = useState<DerivedDocTemplate[]>([]);
+  const [derivedTemplates, setDerivedTemplates] = useState<DerivedDocTemplate[]>(
+    DEFAULT_DERIVED_DOC_TEMPLATES
+  );
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [downloads, setDownloads] = useState<DownloadArchiveItem[]>([]);
   const [estates, setEstates] = useState<SubdivisionEstate[]>([]);
   const [selectedEstateId, setSelectedEstateId] = useState<string>('');
   const [selectedLotNumber, setSelectedLotNumber] = useState<string>('');
+  const [savedParties, setSavedParties] = useState<SavedPartyRecord[]>([]);
+  const [savedProperties, setSavedProperties] = useState<SavedPropertyRecord[]>([]);
 
   // Modals state
   const [showSmartVarsModal, setShowSmartVarsModal] = useState<boolean>(false);
@@ -219,11 +234,15 @@ export default function NotaryEditorApp() {
       setDocMetrics(computeDocumentMetrics(bodyHtml));
       refreshActiveClausesInDOM();
 
+      const activeValues = customFieldValues ?? fieldValuesRef.current ?? fieldValues;
+      syncSmartTagsFilledStateInDOM(bodyEditorRef.current, activeValues);
+      syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
+      syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
+
       if (editingDerivedTpl || editingClauseObj) {
         return;
       }
 
-      const activeValues = customFieldValues ?? fieldValues;
       const draft: SavedDocument = {
         id: docId,
         title: docTitle,
@@ -302,6 +321,8 @@ export default function NotaryEditorApp() {
         loadedDerived,
         loadedRevs,
         loadedDownloads,
+        loadedSavedParties,
+        loadedSavedProps,
       ] = await Promise.all([
         loadCustomTemplates(),
         loadSavedDocuments(),
@@ -310,6 +331,8 @@ export default function NotaryEditorApp() {
         loadDerivedDocTemplates(),
         loadDocumentRevisions(),
         loadDownloadArchive(),
+        loadSavedParties(),
+        loadSavedProperties(),
       ]);
       if (!mounted) return;
 
@@ -322,6 +345,8 @@ export default function NotaryEditorApp() {
       setDerivedTemplates(loadedDerived);
       setRevisions(loadedRevs);
       setDownloads(loadedDownloads);
+      setSavedParties(loadedSavedParties);
+      setSavedProperties(loadedSavedProps);
 
       if (loadedEstates.length > 0) {
         setSelectedEstateId(loadedEstates[0].id);
@@ -337,7 +362,9 @@ export default function NotaryEditorApp() {
             ? activeDraft.pageNumberingEnabled
             : true
         );
-        setFieldValues(activeDraft.fieldValues || {});
+        const initialVals = activeDraft.fieldValues || {};
+        fieldValuesRef.current = initialVals;
+        setFieldValues(initialVals);
         if (activeDraft.selectedEstateId) setSelectedEstateId(activeDraft.selectedEstateId);
         if (activeDraft.selectedLotNumber) setSelectedLotNumber(activeDraft.selectedLotNumber);
 
@@ -357,6 +384,7 @@ export default function NotaryEditorApp() {
         setExtractedPlaceholders(found);
         setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
         refreshActiveClausesInDOM();
+        syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
       } else if (bodyEditorRef.current) {
         bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
       }
@@ -1070,6 +1098,7 @@ export default function NotaryEditorApp() {
   // =========================================================
   const handleGenerateDerivedDoc = async (tpl: DerivedDocTemplate) => {
     try {
+      const activeValues = fieldValuesRef.current || fieldValues;
       // Strictly rely on current Smart Variables Form + Parties & Property Designations
       const requiredVars = extractPlaceholdersFromHtml(
         tpl.headerHtml,
@@ -1077,7 +1106,7 @@ export default function NotaryEditorApp() {
         tpl.footerHtml
       );
       const missingVars = requiredVars.filter(
-        (k) => !fieldValues[k] || !fieldValues[k].trim()
+        (k) => !activeValues[k] || !activeValues[k].trim()
       );
 
       if (missingVars.length > 0) {
@@ -1093,7 +1122,7 @@ export default function NotaryEditorApp() {
         headerHtml: tpl.headerHtml,
         footerHtml: tpl.footerHtml,
         pageNumberingEnabled: true,
-        fieldValues,
+        fieldValues: activeValues,
       });
 
       // Log into Download Archive
@@ -1104,10 +1133,10 @@ export default function NotaryEditorApp() {
         docTypeCode: tpl.code,
         docTypeLabel: tpl.name,
         fileName: `${fileTitle}.docx`,
-        bodyHtml: mergePlaceholdersIntoHtml(tpl.bodyHtml, fieldValues),
-        headerHtml: mergePlaceholdersIntoHtml(tpl.headerHtml, fieldValues),
-        footerHtml: mergePlaceholdersIntoHtml(tpl.footerHtml, fieldValues),
-        fieldValues: { ...fieldValues },
+        bodyHtml: mergePlaceholdersIntoHtml(tpl.bodyHtml, activeValues),
+        headerHtml: mergePlaceholdersIntoHtml(tpl.headerHtml, activeValues),
+        footerHtml: mergePlaceholdersIntoHtml(tpl.footerHtml, activeValues),
+        fieldValues: { ...activeValues },
         createdAt: new Date().toISOString(),
       };
       await saveDownloadArchiveItem(archiveItem);
@@ -1198,7 +1227,7 @@ export default function NotaryEditorApp() {
 
     if (estate && lot) {
       const nextValues: Record<string, string> = {
-        ...fieldValues,
+        ...fieldValuesRef.current,
         رقم_الحصة: lot.lotNumber,
         طبيعة_الحصة: lot.nature,
         الطابق: `${lot.floor}${lot.building ? ` (${lot.building})` : ''}`,
@@ -1207,6 +1236,7 @@ export default function NotaryEditorApp() {
         تعيين_الحصة_الكامل: lot.fullDescription,
         مراجع_الوصف_التقسيمي: estate.subdivisionDeedRef,
       };
+      fieldValuesRef.current = nextValues;
       setFieldValues(nextValues);
       syncPlaceholdersAndDraft(nextValues);
       showToast(`تم ربط بيانات الحصة رقم (${lot.lotNumber}) بالتعيين العقاري تلقائياً`);
@@ -1278,6 +1308,7 @@ export default function NotaryEditorApp() {
   // =========================================================
   const handleExportCurrentToWord = async () => {
     try {
+      const activeValues = fieldValuesRef.current || fieldValues;
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
       const titleToUse = docTitle || 'عقد_توثيقي';
       await downloadNotaryDocx({
@@ -1286,7 +1317,7 @@ export default function NotaryEditorApp() {
         headerHtml: showHeaderFooter ? headerHtml : '',
         footerHtml: showHeaderFooter ? footerHtml : '',
         pageNumberingEnabled,
-        fieldValues,
+        fieldValues: activeValues,
       });
 
       const archiveItem: DownloadArchiveItem = {
@@ -1299,7 +1330,7 @@ export default function NotaryEditorApp() {
         bodyHtml,
         headerHtml: showHeaderFooter ? headerHtml : '',
         footerHtml: showHeaderFooter ? footerHtml : '',
-        fieldValues: { ...fieldValues },
+        fieldValues: { ...activeValues },
         createdAt: new Date().toISOString(),
       };
       await saveDownloadArchiveItem(archiveItem);
@@ -1428,28 +1459,184 @@ export default function NotaryEditorApp() {
     showToast('تم حفظ العقد وتسجيل نسخة مرجعية في سجل التعديلات (Diff)');
   };
 
-  const handleBakeAllPlaceholdersIntoDocument = () => {
+  // Saved Parties & Saved Properties Directory Handlers (v2.5)
+  const handleRecallPartyToRole = (party: SavedPartyRecord, role: 'party1' | 'party2') => {
+    const prefix = role === 'party1' ? 'الطرف_الأول' : 'الطرف_الثاني';
+    const next: Record<string, string> = {
+      ...fieldValuesRef.current,
+      [`${prefix}_الاسم`]: party.fullName || '',
+      [`${prefix}_تاريخ_الميلاد`]: party.birthDate || '',
+      [`${prefix}_مكان_الميلاد`]: party.birthPlace || '',
+      [`${prefix}_النسب`]: party.parentage || '',
+      [`${prefix}_الهوية`]: party.idCardRef || '',
+      [`${prefix}_الإقامة`]: party.address || '',
+    };
+    fieldValuesRef.current = next;
+    setFieldValues(next);
+    syncPlaceholdersAndDraft(next);
+    showToast(
+      `تم استدعاء بيانات "${party.fullName}" في حقول ${
+        role === 'party1' ? 'الطرف الأول' : 'الطرف الثاني'
+      }`
+    );
+  };
+
+  const handleSaveCurrentPartyToDirectory = async (role: 'party1' | 'party2') => {
+    const prefix = role === 'party1' ? 'الطرف_الأول' : 'الطرف_الثاني';
+    const vals = fieldValuesRef.current;
+    const fullName = (vals[`${prefix}_الاسم`] || '').trim();
+    if (!fullName) {
+      showToast(
+        `يرجى إدخال اسم ${
+          role === 'party1' ? 'الطرف الأول' : 'الطرف الثاني'
+        } أولاً قبل الحفظ في الدفتر`
+      );
+      return;
+    }
+    const existing = savedParties.find((p) => p.fullName === fullName);
+    const record: SavedPartyRecord = {
+      id: existing ? existing.id : `party_${Date.now()}`,
+      fullName,
+      birthDate: vals[`${prefix}_تاريخ_الميلاد`] || '',
+      birthPlace: vals[`${prefix}_مكان_الميلاد`] || '',
+      parentage: vals[`${prefix}_النسب`] || '',
+      idCardRef: vals[`${prefix}_الهوية`] || '',
+      address: vals[`${prefix}_الإقامة`] || '',
+      updatedAt: new Date().toISOString(),
+    };
+    await savePartyRecord(record);
+    setSavedParties(await loadSavedParties());
+    showToast(`تم حفظ الطرف "${fullName}" في دفتر الأطراف المحفوظين`);
+  };
+
+  const handleDeleteSavedParty = async (id: string) => {
+    await deletePartyRecord(id);
+    setSavedParties(await loadSavedParties());
+    showToast('تم حذف الطرف من الدفتر');
+  };
+
+  const handleRecallPropertyRecord = (prop: SavedPropertyRecord) => {
+    const next: Record<string, string> = {
+      ...fieldValuesRef.current,
+      رقم_الحصة: prop.lotNumber || '',
+      طبيعة_الحصة: prop.nature || '',
+      الطابق: prop.floor || '',
+      المساحة: prop.area || '',
+      الأجزاء_المشتركة: prop.commonShares || '',
+      تعيين_الحصة_الكامل: prop.fullDescription || '',
+      مراجع_الوصف_التقسيمي: prop.deedRef || '',
+    };
+    fieldValuesRef.current = next;
+    setFieldValues(next);
+    syncPlaceholdersAndDraft(next);
+    showToast(`تم استدعاء بيانات العقار "${prop.label}" في حقول التعيين`);
+  };
+
+  const handleSaveCurrentPropertyToDirectory = async () => {
+    const vals = fieldValuesRef.current;
+    const lotNumber = (vals['رقم_الحصة'] || '').trim();
+    const nature = (vals['طبيعة_الحصة'] || '').trim();
+    const fullDesc = (vals['تعيين_الحصة_الكامل'] || '').trim();
+    if (!lotNumber && !fullDesc) {
+      showToast('يرجى إدخال رقم الحصة أو التعيين الكامل أولاً قبل حفظ العقار في الدفتر');
+      return;
+    }
+    const label = `${nature || 'عقار'} ${lotNumber ? `حصة رقم ${lotNumber}` : ''}`.trim();
+    const record: SavedPropertyRecord = {
+      id: `prop_${Date.now()}`,
+      label,
+      lotNumber,
+      nature,
+      floor: vals['الطابق'] || '',
+      area: vals['المساحة'] || '',
+      commonShares: vals['الأجزاء_المشتركة'] || '',
+      fullDescription: fullDesc,
+      deedRef: vals['مراجع_الوصف_التقسيمي'] || '',
+      updatedAt: new Date().toISOString(),
+    };
+    await savePropertyRecord(record);
+    setSavedProperties(await loadSavedProperties());
+    showToast(`تم حفظ "${label}" في دفتر العقارات`);
+  };
+
+  const handleDeleteSavedProperty = async (id: string) => {
+    await deletePropertyRecord(id);
+    setSavedProperties(await loadSavedProperties());
+    showToast('تم حذف العقار من الدفتر');
+  };
+
+  const handleInsertSmartTagAtCaret = (varKey: string) => {
+    if (!bodyEditorRef.current || !varKey.trim()) return;
+    const cleanKey = varKey.trim();
+    recordHistorySnapshot();
+    if (!partyFields.some((f) => f.key === cleanKey)) {
+      const updated: PartyField[] = [
+        ...partyFields,
+        {
+          key: cleanKey,
+          label: cleanKey.replace(/_/g, ' '),
+          value: '',
+          category: 'custom',
+        },
+      ];
+      setPartyFields(updated);
+      savePartyFields(updated);
+    }
+    const tagHtml = `<span class="smart-tag" contenteditable="false" data-var="${escapeHtml(
+      cleanKey
+    )}">{{${escapeHtml(cleanKey)}}}</span>&nbsp;`;
+    insertHtmlAtSelection(bodyEditorRef.current, tagHtml, savedRangeRef.current);
+    syncPlaceholdersAndDraft();
+    showToast(`تم إدراج الوسم {{${cleanKey}}} عند موضع المؤشر`);
+  };
+
+  const handleBakeAllPlaceholdersIntoDocument = (
+    explicitValues?: Record<string, string>
+  ) => {
     if (!bodyEditorRef.current) return;
     recordHistorySnapshot();
-    bodyEditorRef.current.innerHTML = mergePlaceholdersIntoHtml(
-      bodyEditorRef.current.innerHTML,
-      fieldValues
-    );
+
+    const activeValues: Record<string, string> = {
+      ...fieldValues,
+      ...fieldValuesRef.current,
+      ...(explicitValues || {}),
+    };
+    fieldValuesRef.current = activeValues;
+    setFieldValues(activeValues);
+
+    // 1. Direct live DOM replacement on any .smart-tag / [data-var] spans inside editor zones
+    const replaceLiveZoneTags = (zoneEl: HTMLElement | null) => {
+      if (!zoneEl) return;
+      const liveSpans = Array.from(
+        zoneEl.querySelectorAll('.smart-tag, .smart-placeholder, [data-var]')
+      ) as HTMLElement[];
+      for (const span of liveSpans) {
+        const rawKey =
+          span.getAttribute('data-var') ||
+          (span.textContent || '').replace(/[{}]/g, '').trim();
+        const key = rawKey.trim();
+        if (!key) continue;
+        const val = activeValues[key];
+        if (val !== undefined && val.trim() !== '') {
+          const textNode = document.createTextNode(val.trim());
+          span.parentNode?.replaceChild(textNode, span);
+        }
+      }
+      zoneEl.innerHTML = mergePlaceholdersIntoHtml(zoneEl.innerHTML, activeValues);
+    };
+
+    replaceLiveZoneTags(bodyEditorRef.current);
     normalizeNotaryContainerDOM(bodyEditorRef.current);
+
     if (headerEditorRef.current && headerEditorRef.current.innerHTML) {
-      headerEditorRef.current.innerHTML = mergePlaceholdersIntoHtml(
-        headerEditorRef.current.innerHTML,
-        fieldValues
-      );
+      replaceLiveZoneTags(headerEditorRef.current);
     }
     if (footerEditorRef.current && footerEditorRef.current.innerHTML) {
-      footerEditorRef.current.innerHTML = mergePlaceholdersIntoHtml(
-        footerEditorRef.current.innerHTML,
-        fieldValues
-      );
+      replaceLiveZoneTags(footerEditorRef.current);
     }
-    syncPlaceholdersAndDraft();
-    showToast('تم دمج واستبدال قيم الحقول داخل نص العقد');
+
+    syncPlaceholdersAndDraft(activeValues);
+    showToast('تم دمج واستبدال قيم الحقول داخل نص العقد بنجاح');
   };
 
   // Find & Replace Handlers
@@ -1654,11 +1841,15 @@ export default function NotaryEditorApp() {
         showFindReplace={showFindReplace}
         unfilledCount={unfilledCount}
         totalVariablesCount={extractedPlaceholders.length}
+        partyFields={partyFields}
+        extractedPlaceholders={extractedPlaceholders}
+        fieldValues={fieldValues}
         derivedTemplates={derivedTemplates}
         onOpenSmartVariablesModal={() => {
           setFocusedVarKey(null);
           setShowSmartVarsModal(true);
         }}
+        onInsertSmartTagAtCaret={handleInsertSmartTagAtCaret}
         onOpenVersionDiffModal={() => setShowVersionDiffModal(true)}
         onGenerateDerivedDoc={handleGenerateDerivedDoc}
         onEditDerivedTemplateInEditor={handleEditDerivedTemplateInEditor}
@@ -1808,7 +1999,8 @@ export default function NotaryEditorApp() {
               setShowSmartVarsModal(true);
             }}
             onUpdateFieldValue={(key, value) => {
-              const next = { ...fieldValues, [key]: value };
+              const next = { ...fieldValuesRef.current, [key]: value };
+              fieldValuesRef.current = next;
               setFieldValues(next);
               syncPlaceholdersAndDraft(next);
             }}
@@ -1867,14 +2059,35 @@ export default function NotaryEditorApp() {
             onInsertFullSubdivisionTableAtCaret={
               handleInsertFullSubdivisionTableAtCaret
             }
+            savedParties={savedParties}
+            savedProperties={savedProperties}
+            onRecallPartyToRole={handleRecallPartyToRole}
+            onSaveCurrentPartyToDirectory={handleSaveCurrentPartyToDirectory}
+            onDeleteSavedParty={handleDeleteSavedParty}
+            onRecallPropertyRecord={handleRecallPropertyRecord}
+            onSaveCurrentPropertyToDirectory={handleSaveCurrentPropertyToDirectory}
+            onDeleteSavedProperty={handleDeleteSavedProperty}
             templates={templates}
             onImportDocxAsTemplate={handleImportDocxAsTemplate}
             onSaveCurrentAsTemplate={handleSaveCurrentAsTemplate}
-            onLoadTemplateFull={(tpl) => {
+            onLoadTemplateFull={(tpl, clearPreviousClauses = true) => {
               if (!bodyEditorRef.current) return;
               recordHistorySnapshot();
               setDocTitle(tpl.name);
-              bodyEditorRef.current.innerHTML = tpl.bodyHtml;
+              let nextHtml = tpl.bodyHtml;
+              if (clearPreviousClauses) {
+                const temp = document.createElement('div');
+                temp.innerHTML = nextHtml;
+                const clauseContainers = Array.from(
+                  temp.querySelectorAll('.clause-container, [data-clause-id]')
+                );
+                for (const c of clauseContainers) {
+                  c.remove();
+                }
+                nextHtml = temp.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+                setActiveClauseIdsInDoc([]);
+              }
+              bodyEditorRef.current.innerHTML = nextHtml;
               normalizeNotaryContainerDOM(bodyEditorRef.current);
               if (tpl.headerHtml || tpl.footerHtml) {
                 setShowHeaderFooter(true);
@@ -1884,7 +2097,11 @@ export default function NotaryEditorApp() {
                   footerEditorRef.current.innerHTML = tpl.footerHtml;
               }
               syncPlaceholdersAndDraft();
-              showToast(`تم فتح القالب "${tpl.name}" كعقد جديد`);
+              showToast(
+                `تم استبدال المحتوى بالقالب "${tpl.name}"${
+                  clearPreviousClauses ? ' وتفريغ البنود السابقة' : ''
+                }`
+              );
             }}
             onInsertTemplateAtCaret={(tpl) => {
               if (!bodyEditorRef.current) return;
@@ -2297,9 +2514,18 @@ export default function NotaryEditorApp() {
         estates={estates}
         selectedEstateId={selectedEstateId}
         selectedLotNumber={selectedLotNumber}
+        savedParties={savedParties}
+        savedProperties={savedProperties}
         onSelectEstateAndLot={handleSelectEstateAndLot}
+        onRecallPartyToRole={handleRecallPartyToRole}
+        onSaveCurrentPartyToDirectory={handleSaveCurrentPartyToDirectory}
+        onDeleteSavedParty={handleDeleteSavedParty}
+        onRecallPropertyRecord={handleRecallPropertyRecord}
+        onSaveCurrentPropertyToDirectory={handleSaveCurrentPropertyToDirectory}
+        onDeleteSavedProperty={handleDeleteSavedProperty}
         onUpdateFieldValue={(key, value) => {
-          const next = { ...fieldValues, [key]: value };
+          const next = { ...fieldValuesRef.current, [key]: value };
+          fieldValuesRef.current = next;
           setFieldValues(next);
           syncPlaceholdersAndDraft(next);
         }}
@@ -2319,8 +2545,10 @@ export default function NotaryEditorApp() {
           recordHistorySnapshot();
           bodyEditorRef.current.innerHTML = rev.bodyHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          setFieldValues(rev.fieldValues || {});
-          syncPlaceholdersAndDraft(rev.fieldValues || {});
+          const nextVals = rev.fieldValues || {};
+          fieldValuesRef.current = nextVals;
+          setFieldValues(nextVals);
+          syncPlaceholdersAndDraft(nextVals);
           showToast('تم استعادة النسخة المرجعية المختارة');
         }}
       />
@@ -2331,7 +2559,7 @@ export default function NotaryEditorApp() {
         templates={templates}
         documents={documents}
         downloads={downloads}
-        onStartBlank={() => {
+        onStartBlank={(clearPreviousClauses = true) => {
           if (!bodyEditorRef.current) return;
           recordHistorySnapshot();
           setDocId(`doc_${Date.now()}`);
@@ -2339,18 +2567,48 @@ export default function NotaryEditorApp() {
           bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
           if (headerEditorRef.current) headerEditorRef.current.innerHTML = '';
           if (footerEditorRef.current) footerEditorRef.current.innerHTML = '';
+          if (clearPreviousClauses) {
+            setActiveClauseIdsInDoc([]);
+          }
           syncPlaceholdersAndDraft();
           showToast('تم فتح ورقة عقد توثيقي جديد بمعايير المكتب');
         }}
-        onSelectTemplate={(tpl) => {
+        onSelectTemplate={(tpl, mode, clearPreviousClauses) => {
           if (!bodyEditorRef.current) return;
           recordHistorySnapshot();
+          if (mode === 'insert') {
+            insertHtmlAtSelection(
+              bodyEditorRef.current,
+              tpl.bodyHtml,
+              savedRangeRef.current
+            );
+            syncPlaceholdersAndDraft();
+            showToast(`تم إدراج القالب "${tpl.name}" عند موضع المؤشر`);
+            return;
+          }
           setDocId(`doc_${Date.now()}`);
           setDocTitle(tpl.name);
-          bodyEditorRef.current.innerHTML = tpl.bodyHtml;
+          let nextHtml = tpl.bodyHtml;
+          if (clearPreviousClauses) {
+            const temp = document.createElement('div');
+            temp.innerHTML = nextHtml;
+            const clauseContainers = Array.from(
+              temp.querySelectorAll('.clause-container, [data-clause-id]')
+            );
+            for (const c of clauseContainers) {
+              c.remove();
+            }
+            nextHtml = temp.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+            setActiveClauseIdsInDoc([]);
+          }
+          bodyEditorRef.current.innerHTML = nextHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
           syncPlaceholdersAndDraft();
-          showToast(`تم البدء من القالب "${tpl.name}"`);
+          showToast(
+            `تم استبدال المحتوى بالقالب "${tpl.name}"${
+              clearPreviousClauses ? ' مع حذف البنود السابقة' : ''
+            }`
+          );
         }}
         onSelectSavedDoc={(doc) => {
           if (!bodyEditorRef.current) return;
@@ -2359,8 +2617,10 @@ export default function NotaryEditorApp() {
           setDocTitle(doc.title);
           bodyEditorRef.current.innerHTML = doc.bodyHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          setFieldValues(doc.fieldValues || {});
-          syncPlaceholdersAndDraft(doc.fieldValues || {});
+          const nextVals = doc.fieldValues || {};
+          fieldValuesRef.current = nextVals;
+          setFieldValues(nextVals);
+          syncPlaceholdersAndDraft(nextVals);
           showToast(`تم فتح العقد "${doc.title}"`);
         }}
         onImportDocxFile={handleImportDocxDirectlyToEditor}
@@ -2371,8 +2631,10 @@ export default function NotaryEditorApp() {
           setDocTitle(`${item.documentTitle} (${item.docTypeLabel})`);
           bodyEditorRef.current.innerHTML = item.bodyHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          setFieldValues(item.fieldValues || {});
-          syncPlaceholdersAndDraft(item.fieldValues || {});
+          const nextVals = item.fieldValues || {};
+          fieldValuesRef.current = nextVals;
+          setFieldValues(nextVals);
+          syncPlaceholdersAndDraft(nextVals);
           showToast(`تم استيراد "${item.docTypeLabel}" من أرشيف التحميلات للمحرر`);
         }}
       />

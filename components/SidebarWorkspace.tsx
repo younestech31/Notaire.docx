@@ -33,6 +33,8 @@ import {
   NotaryClause,
   PartyField,
   SavedDocument,
+  SavedPartyRecord,
+  SavedPropertyRecord,
   SubdivisionEstate,
   SubdivisionLot,
 } from '@/lib/types';
@@ -71,11 +73,20 @@ interface SidebarWorkspaceProps {
   onDeleteEstate: (id: string) => Promise<void>;
   onInsertLotClauseAtCaret: (estate: SubdivisionEstate, lot: SubdivisionLot) => void;
   onInsertFullSubdivisionTableAtCaret: (estate: SubdivisionEstate) => void;
+  // Saved Parties & Saved Properties Directory (v2.5)
+  savedParties: SavedPartyRecord[];
+  savedProperties: SavedPropertyRecord[];
+  onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
+  onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
+  onDeleteSavedParty: (id: string) => void;
+  onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
+  onSaveCurrentPropertyToDirectory: () => void;
+  onDeleteSavedProperty: (id: string) => void;
   // 3. Office Templates & Editable Derived Document Templates
   templates: CustomTemplate[];
   onImportDocxAsTemplate: (files: FileList) => Promise<void>;
   onSaveCurrentAsTemplate: (name: string, category: string) => Promise<void>;
-  onLoadTemplateFull: (tpl: CustomTemplate) => void;
+  onLoadTemplateFull: (tpl: CustomTemplate, clearPreviousClauses?: boolean) => void;
   onInsertTemplateAtCaret: (tpl: CustomTemplate) => void;
   onExportTemplateDocx: (tpl: CustomTemplate) => Promise<void>;
   onDeleteTemplate: (id: string) => Promise<void>;
@@ -136,6 +147,14 @@ export default function SidebarWorkspace({
   onDeleteEstate,
   onInsertLotClauseAtCaret,
   onInsertFullSubdivisionTableAtCaret,
+  savedParties,
+  savedProperties,
+  onRecallPartyToRole,
+  onSaveCurrentPartyToDirectory,
+  onDeleteSavedParty,
+  onRecallPropertyRecord,
+  onSaveCurrentPropertyToDirectory,
+  onDeleteSavedProperty,
   templates,
   onImportDocxAsTemplate,
   onSaveCurrentAsTemplate,
@@ -192,9 +211,12 @@ export default function SidebarWorkspace({
   const [templatesSubTab, setTemplatesSubTab] = useState<'office' | 'derived'>('derived');
   const [newTplName, setNewTplName] = useState('');
   const [newTplCategory, setNewTplCategory] = useState('عقود المكتب');
+  const [clearClausesOnReplace, setClearClausesOnReplace] = useState<boolean>(true);
   const [newDerivedName, setNewDerivedName] = useState('');
   const [newDerivedCode, setNewDerivedCode] = useState('');
   const [newDerivedDesc, setNewDerivedDesc] = useState('');
+  const [selectedPartyIdSidebar, setSelectedPartyIdSidebar] = useState<string>('');
+  const [selectedPropIdSidebar, setSelectedPropIdSidebar] = useState<string>('');
 
   // Documents sub-view: 'saved' | 'revisions' | 'downloads'
   const [docsSubTab, setDocsSubTab] = useState<'saved' | 'revisions' | 'downloads'>('saved');
@@ -605,6 +627,131 @@ export default function SidebarWorkspace({
                     <FormInput className="w-3.5 h-3.5" />
                     <span>فتح استمارة المتغيرات الكاملة</span>
                   </button>
+                </div>
+
+                {/* Saved Parties & Properties Directory (دفتر الأطراف والعقارات القابل للاستدعاء) */}
+                <div className="border border-slate-200 rounded-md p-3 bg-white space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900">
+                      دفتر الأطراف والعقارات (استدعاء وحفظ سريع)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onSaveCurrentPartyToDirectory('party1')}
+                        className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-800 rounded"
+                        title="حفظ بيانات الطرف الأول الحالية في الدفتر"
+                      >
+                        + حفظ طرف 1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSaveCurrentPartyToDirectory('party2')}
+                        className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-800 rounded"
+                        title="حفظ بيانات الطرف الثاني الحالية في الدفتر"
+                      >
+                        + حفظ طرف 2
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Recall Saved Party */}
+                  {savedParties.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <select
+                        value={
+                          savedParties.find((p) => p.id === selectedPartyIdSidebar)?.id ||
+                          savedParties[0]?.id ||
+                          ''
+                        }
+                        onChange={(e) => setSelectedPartyIdSidebar(e.target.value)}
+                        className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                      >
+                        {savedParties.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.fullName} {p.birthDate ? `(${p.birthDate})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target =
+                              savedParties.find((p) => p.id === selectedPartyIdSidebar) ||
+                              savedParties[0];
+                            if (target) onRecallPartyToRole(target, 'party1');
+                          }}
+                          className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
+                        >
+                          استدعاء كطرف أول
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target =
+                              savedParties.find((p) => p.id === selectedPartyIdSidebar) ||
+                              savedParties[0];
+                            if (target) onRecallPartyToRole(target, 'party2');
+                          }}
+                          className="flex-1 py-1 px-2 bg-slate-800 text-white text-[11px] font-medium rounded hover:bg-slate-700"
+                        >
+                          استدعاء كطرف ثانٍ
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500">
+                      لا يوجد أطراف محفوظون بعد. املأ بيانات طرف ثم اضغط «+ حفظ طرف 1/2».
+                    </div>
+                  )}
+
+                  {/* Recall / Save Property */}
+                  <div className="border-t border-slate-100 pt-2 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        العقارات المحفوظة ({savedProperties.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={onSaveCurrentPropertyToDirectory}
+                        className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-[10px] font-semibold text-blue-900 rounded"
+                      >
+                        + حفظ العقار الحالي
+                      </button>
+                    </div>
+                    {savedProperties.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={
+                            savedProperties.find((p) => p.id === selectedPropIdSidebar)?.id ||
+                            savedProperties[0]?.id ||
+                            ''
+                          }
+                          onChange={(e) => setSelectedPropIdSidebar(e.target.value)}
+                          className="flex-1 px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                        >
+                          {savedProperties.map((pr) => (
+                            <option key={pr.id} value={pr.id}>
+                              {pr.label} {pr.lotNumber ? `(حصة ${pr.lotNumber})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target =
+                              savedProperties.find((p) => p.id === selectedPropIdSidebar) ||
+                              savedProperties[0];
+                            if (target) onRecallPropertyRecord(target);
+                          }}
+                          className="px-2.5 py-1 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800 shrink-0"
+                        >
+                          استدعاء
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Quick Lot Selector from Subdivision Table */}
@@ -1291,9 +1438,25 @@ export default function SidebarWorkspace({
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs font-bold text-slate-900 border-b border-slate-200 pb-1.5">
-                    مكتبة قوالب العقود المحفوظة ({templates.length})
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                    <span className="text-xs font-bold text-slate-900">
+                      مكتبة قوالب العقود المحفوظة ({templates.length})
+                    </span>
                   </div>
+
+                  {/* Checkbox: Clear Previous Clauses when Replacing Full Content */}
+                  <label className="flex items-center gap-2 p-2 bg-blue-50/60 border border-blue-200 rounded text-[11px] text-blue-950 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={clearClausesOnReplace}
+                      onChange={(e) => setClearClausesOnReplace(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-900"
+                    />
+                    <span className="font-semibold">
+                      حذف البنود السابقة المفعّلة عند استبدال المحتوى بالقالب
+                    </span>
+                  </label>
+
                   {templates.length === 0 ? (
                     <div className="border border-dashed border-slate-300 rounded-md p-5 text-center space-y-2 bg-slate-50/50">
                       <FileText className="w-7 h-7 text-slate-400 mx-auto" />
@@ -1328,10 +1491,11 @@ export default function SidebarWorkspace({
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => onLoadTemplateFull(tpl)}
+                            onClick={() => onLoadTemplateFull(tpl, clearClausesOnReplace)}
                             className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
+                            title="يمسح ورقة الـ A4 ويضع القالب كاملاً"
                           >
-                            فتح كعقد جديد
+                            استبدال المحتوى الحالي
                           </button>
                           <button
                             type="button"
@@ -1341,6 +1505,7 @@ export default function SidebarWorkspace({
                             }}
                             onClick={() => onInsertTemplateAtCaret(tpl)}
                             className="flex-1 py-1 px-2 bg-slate-100 text-slate-800 border border-slate-200 text-[11px] font-medium rounded hover:bg-slate-200"
+                            title="يُبقي النص الحالي ويدرج القالب عند موضع المؤشر"
                           >
                             إدراج عند المؤشر
                           </button>
