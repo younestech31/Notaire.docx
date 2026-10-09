@@ -1,0 +1,665 @@
+import {
+  SerializedSelectionPath,
+  STRICT_FONT_FAMILY,
+  STRICT_FONT_SIZE_PT,
+} from './types';
+
+/**
+ * Computes the DOM index path of a node relative to rootEl.
+ */
+export function getNodePath(rootEl: HTMLElement, targetNode: Node): number[] {
+  const path: number[] = [];
+  let current: Node | null = targetNode;
+  while (current && current !== rootEl) {
+    const parent: Node | null = current.parentNode;
+    if (!parent) break;
+    const index = Array.prototype.indexOf.call(parent.childNodes, current);
+    path.unshift(index);
+    current = parent;
+  }
+  return path;
+}
+
+export function resolveNodeFromPath(rootEl: HTMLElement, path: number[]): Node | null {
+  let current: Node = rootEl;
+  for (const idx of path) {
+    if (!current.childNodes || idx < 0 || idx >= current.childNodes.length) {
+      return current;
+    }
+    current = current.childNodes[idx];
+  }
+  return current;
+}
+
+export function serializeCurrentSelection(
+  zones: {
+    body: HTMLElement | null;
+    header: HTMLElement | null;
+    footer: HTMLElement | null;
+  }
+): SerializedSelectionPath | null {
+  if (typeof window === 'undefined') return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+
+  for (const [zoneName, el] of Object.entries(zones) as [
+    'body' | 'header' | 'footer',
+    HTMLElement | null
+  ][]) {
+    if (el && el.contains(range.commonAncestorContainer)) {
+      return {
+        zone: zoneName,
+        startPath: getNodePath(el, range.startContainer),
+        startOffset: range.startOffset,
+        endPath: getNodePath(el, range.endContainer),
+        endOffset: range.endOffset,
+      };
+    }
+  }
+  return null;
+}
+
+export function restoreSerializedSelection(
+  zones: {
+    body: HTMLElement | null;
+    header: HTMLElement | null;
+    footer: HTMLElement | null;
+  },
+  saved: SerializedSelectionPath | null
+): void {
+  if (!saved || typeof window === 'undefined') return;
+  const rootEl = zones[saved.zone];
+  if (!rootEl) return;
+
+  try {
+    const startNode = resolveNodeFromPath(rootEl, saved.startPath);
+    const endNode = resolveNodeFromPath(rootEl, saved.endPath);
+    if (!startNode || !endNode) return;
+
+    const range = document.createRange();
+    const maxStart =
+      startNode.nodeType === Node.TEXT_NODE
+        ? (startNode.textContent || '').length
+        : startNode.childNodes.length;
+    const maxEnd =
+      endNode.nodeType === Node.TEXT_NODE
+        ? (endNode.textContent || '').length
+        : endNode.childNodes.length;
+
+    range.setStart(startNode, Math.min(saved.startOffset, maxStart));
+    range.setEnd(endNode, Math.min(saved.endOffset, maxEnd));
+
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  } catch {
+    // Ignore invalid DOM offsets
+  }
+}
+
+/**
+ * Returns all block elements (p, li, div, h1..h6) inside rootEl that intersect with the given Range.
+ */
+export function getIntersectingBlockElements(
+  rootEl: HTMLElement,
+  range: Range
+): HTMLElement[] {
+  const candidates = Array.from(
+    rootEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6')
+  ) as HTMLElement[];
+
+  const matched = candidates.filter((block) => {
+    try {
+      return range.intersectsNode(block);
+    } catch {
+      return false;
+    }
+  });
+
+  if (matched.length > 0) return matched;
+
+  let curr: Node | null = range.startContainer;
+  while (curr && curr !== rootEl) {
+    if (
+      curr.nodeType === Node.ELEMENT_NODE &&
+      ['P', 'LI', 'DIV', 'TD', 'TH'].includes((curr as HTMLElement).tagName)
+    ) {
+      return [curr as HTMLElement];
+    }
+    curr = curr.parentNode;
+  }
+  return [];
+}
+
+/**
+ * Scans text nodes inside rootEl and wraps any raw {{variable}} tokens into
+ * <span class="smart-tag" contenteditable="false" data-var="variable">{{variable}}</span>
+ */
+export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
+  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+  const nodesToProcess: Text[] = [];
+  let current: Node | null;
+
+  while ((current = walker.nextNode())) {
+    const tNode = current as Text;
+    const parentEl = tNode.parentElement;
+    if (
+      parentEl &&
+      (parentEl.classList.contains('smart-tag') ||
+        parentEl.classList.contains('smart-placeholder'))
+    ) {
+      continue;
+    }
+    if (tNode.nodeValue && /\{\{\s*[^}]+?\s*\}\}/.test(tNode.nodeValue)) {
+      nodesToProcess.push(tNode);
+    }
+  }
+
+  for (const tNode of nodesToProcess) {
+    const text = tNode.nodeValue || '';
+    const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    const frag = document.createDocumentFragment();
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      const varName = match[1].trim();
+      const span = document.createElement('span');
+      span.className = 'smart-tag';
+      span.setAttribute('contenteditable', 'false');
+      span.setAttribute('data-var', varName);
+      span.textContent = `{{${varName}}}`;
+      frag.appendChild(span);
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+
+    tNode.parentNode?.replaceChild(frag, tNode);
+  }
+}
+
+/**
+ * Enforces the strict Notary Office rule on a container:
+ * - Font is always Arial 13pt
+ * - Line height is always 1.0
+ * - Zero top/bottom margins on paragraphs
+ * - Decorates {{...}} smart tags
+ */
+export function normalizeNotaryContainerDOM(
+  rootEl: HTMLElement,
+  decorateTags: boolean = true
+): void {
+  if (rootEl.innerHTML.trim() === '') {
+    rootEl.innerHTML = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
+    return;
+  }
+
+  if (decorateTags) {
+    decorateSmartTagsInDOM(rootEl);
+  }
+
+  const allElements = Array.from(rootEl.querySelectorAll('*')) as HTMLElement[];
+  for (const el of allElements) {
+    if (el.classList.contains('page-break')) continue;
+
+    if (el.style) {
+      el.style.fontFamily = STRICT_FONT_FAMILY;
+      el.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+      el.style.lineHeight = '1';
+      if (
+        ['P', 'DIV', 'LI', 'UL', 'OL', 'TABLE', 'H1', 'H2', 'H3', 'H4'].includes(el.tagName)
+      ) {
+        el.style.marginTop = '0';
+        el.style.marginBottom = '0';
+      }
+    }
+    if (el.hasAttribute('face')) el.removeAttribute('face');
+    if (el.hasAttribute('size')) el.removeAttribute('size');
+  }
+
+  const lastChild = rootEl.lastElementChild;
+  if (
+    lastChild &&
+    (lastChild.classList.contains('page-break') ||
+      lastChild.tagName === 'TABLE' ||
+      lastChild.classList.contains('clause-container'))
+  ) {
+    const trailingP = document.createElement('p');
+    trailingP.setAttribute('dir', 'rtl');
+    trailingP.style.margin = '0';
+    trailingP.style.lineHeight = '1';
+    trailingP.style.fontFamily = STRICT_FONT_FAMILY;
+    trailingP.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+    trailingP.style.textAlign = 'justify';
+    trailingP.appendChild(document.createElement('br'));
+    rootEl.appendChild(trailingP);
+  }
+}
+
+/**
+ * Sanitizes HTML pasted from Microsoft Word or external sources while preserving
+ * bold, italic, underline, colors, tables (rowSpan/colSpan/borders), and lists,
+ * and strictly enforcing Arial 13pt and 1.0 line spacing with 0 paragraph margins.
+ */
+export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): string {
+  if (!rawHtml || rawHtml.trim() === '') {
+    return fallbackText
+      .split(/\r?\n/)
+      .map(
+        (line) =>
+          `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;">${
+            line.trim() ? escapeHtml(line) : '<br>'
+          }</p>`
+      )
+      .join('');
+  }
+
+  const cleaned = rawHtml
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<meta[^>]*>/gi, '')
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/<\/?o:[^>]*>/gi, '')
+    .replace(/<\/?w:[^>]*>/gi, '')
+    .replace(/<\/?v:[^>]*>/gi, '')
+    .replace(/<\/?m:[^>]*>/gi, '');
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(cleaned, 'text/html');
+
+  const allNodes = Array.from(doc.body.querySelectorAll('*')) as HTMLElement[];
+  for (const el of allNodes) {
+    const tag = el.tagName.toUpperCase();
+    if (['SCRIPT', 'STYLE', 'META', 'LINK', 'OBJECT', 'IFRAME'].includes(tag)) {
+      el.remove();
+      continue;
+    }
+
+    const computedAlign = el.style?.textAlign || el.getAttribute('align') || '';
+    const fontWeight = el.style?.fontWeight || '';
+    const fontStyle = el.style?.fontStyle || '';
+    const textDecoration = el.style?.textDecoration || '';
+    const color = el.style?.color || '';
+    const bg = el.style?.backgroundColor || el.style?.background || '';
+    const border = el.style?.border || '';
+    const dir = el.getAttribute('dir') || el.style?.direction || 'rtl';
+
+    el.removeAttribute('class');
+    el.removeAttribute('id');
+    el.removeAttribute('lang');
+    el.removeAttribute('face');
+    el.removeAttribute('size');
+    el.removeAttribute('style');
+
+    el.style.fontFamily = STRICT_FONT_FAMILY;
+    el.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+    el.style.lineHeight = '1';
+
+    if (['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) {
+      el.style.marginTop = '0';
+      el.style.marginBottom = '0';
+      el.setAttribute('dir', dir === 'ltr' ? 'ltr' : 'rtl');
+      if (computedAlign) {
+        el.style.textAlign = computedAlign === 'justify' ? 'justify' : computedAlign;
+      }
+    }
+
+    if (fontWeight === 'bold' || Number(fontWeight) >= 600) {
+      el.style.fontWeight = 'bold';
+    }
+    if (fontStyle === 'italic') {
+      el.style.fontStyle = 'italic';
+    }
+    if (textDecoration.includes('underline')) {
+      el.style.textDecoration = 'underline';
+    }
+    if (color && color !== 'windowtext' && color !== '#000000' && color !== 'rgb(0, 0, 0)') {
+      el.style.color = color;
+    }
+    if (bg && bg !== 'transparent' && !bg.includes('none')) {
+      el.style.backgroundColor = bg;
+    }
+
+    if (tag === 'TABLE') {
+      el.setAttribute('dir', 'rtl');
+      el.style.width = '100%';
+      el.style.maxWidth = '120mm';
+      el.style.borderCollapse = 'collapse';
+      el.style.tableLayout = 'fixed';
+      el.style.marginTop = '0';
+      el.style.marginBottom = '0';
+    }
+    if (tag === 'TD' || tag === 'TH') {
+      el.style.border = border || '1px solid #000000';
+      el.style.padding = '2px 4px';
+      el.style.verticalAlign = 'top';
+    }
+  }
+
+  decorateSmartTagsInDOM(doc.body);
+  return doc.body.innerHTML;
+}
+
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Extracts all unique {{placeholder}} names from HTML strings.
+ */
+export function extractPlaceholdersFromHtml(...htmlParts: string[]): string[] {
+  const combined = htmlParts.join(' ');
+  const found = new Set<string>();
+
+  // Extract from data-var attributes as well as {{...}} text
+  const dataVarRegex = /data-var="([^"]+)"/g;
+  let dm: RegExpExecArray | null;
+  while ((dm = dataVarRegex.exec(combined)) !== null) {
+    if (dm[1]?.trim()) found.add(dm[1].trim());
+  }
+
+  const textOnly = combined.replace(/<[^>]+>/g, '');
+  const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(textOnly)) !== null) {
+    const key = match[1].trim();
+    if (key) found.add(key);
+  }
+  return Array.from(found);
+}
+
+/**
+ * Inserts HTML snippet or template at the active caret position inside the editor.
+ */
+export function insertHtmlAtSelection(
+  editorEl: HTMLElement,
+  htmlToInsert: string,
+  savedRange: Range | null
+): void {
+  editorEl.focus();
+  const sel = window.getSelection();
+  if (!sel) return;
+
+  if (savedRange && editorEl.contains(savedRange.commonAncestorContainer)) {
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+
+  if (sel.rangeCount === 0) {
+    const fallbackRange = document.createRange();
+    fallbackRange.selectNodeContents(editorEl);
+    fallbackRange.collapse(false);
+    sel.addRange(fallbackRange);
+  }
+
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  const temp = document.createElement('div');
+  temp.innerHTML = htmlToInsert;
+  normalizeNotaryContainerDOM(temp);
+
+  const frag = document.createDocumentFragment();
+  let lastInsertedNode: Node | null = null;
+
+  const children = Array.from(temp.childNodes);
+  const isSingleParagraph =
+    children.length === 1 &&
+    children[0].nodeType === Node.ELEMENT_NODE &&
+    (children[0] as HTMLElement).tagName === 'P';
+
+  if (isSingleParagraph) {
+    const pEl = children[0] as HTMLElement;
+    while (pEl.firstChild) {
+      lastInsertedNode = pEl.firstChild;
+      frag.appendChild(lastInsertedNode);
+    }
+  } else {
+    while (temp.firstChild) {
+      lastInsertedNode = temp.firstChild;
+      frag.appendChild(lastInsertedNode);
+    }
+  }
+
+  range.insertNode(frag);
+
+  if (lastInsertedNode) {
+    const newRange = document.createRange();
+    newRange.setStartAfter(lastInsertedNode);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+
+  normalizeNotaryContainerDOM(editorEl);
+}
+
+/**
+ * Multi-Node Find & Replace across formatted text runs using TreeWalker(NodeFilter.SHOW_TEXT).
+ */
+export interface MultiNodeTextMatch {
+  startNode: Text;
+  startOffset: number;
+  endNode: Text;
+  endOffset: number;
+  matchedText: string;
+}
+
+export function findMatchesAcrossNodes(
+  rootEl: HTMLElement,
+  query: string
+): MultiNodeTextMatch[] {
+  if (!query) return [];
+  const results: MultiNodeTextMatch[] = [];
+
+  const blocks = Array.from(
+    rootEl.querySelectorAll('p, li, td, th, h1, h2, h3, h4')
+  ) as HTMLElement[];
+  const containers = blocks.length > 0 ? blocks : [rootEl];
+
+  const leafBlocks = containers.filter(
+    (b) => !containers.some((other) => other !== b && b.contains(other))
+  );
+
+  for (const block of leafBlocks) {
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    const textNodes: { node: Text; start: number; end: number }[] = [];
+    let fullText = '';
+    let current: Node | null;
+
+    while ((current = walker.nextNode())) {
+      const tNode = current as Text;
+      const len = (tNode.nodeValue || '').length;
+      if (len > 0) {
+        textNodes.push({
+          node: tNode,
+          start: fullText.length,
+          end: fullText.length + len,
+        });
+        fullText += tNode.nodeValue;
+      }
+    }
+
+    if (!fullText) continue;
+
+    let searchIdx = 0;
+    while (searchIdx <= fullText.length - query.length) {
+      const matchStart = fullText.indexOf(query, searchIdx);
+      if (matchStart === -1) break;
+      const matchEnd = matchStart + query.length;
+
+      const startEntry = textNodes.find((t) => matchStart >= t.start && matchStart < t.end);
+      const endEntry = textNodes.find((t) => matchEnd > t.start && matchEnd <= t.end);
+
+      if (startEntry && endEntry) {
+        results.push({
+          startNode: startEntry.node,
+          startOffset: matchStart - startEntry.start,
+          endNode: endEntry.node,
+          endOffset: matchEnd - endEntry.start,
+          matchedText: fullText.slice(matchStart, matchEnd),
+        });
+      }
+
+      searchIdx = matchEnd;
+    }
+  }
+
+  return results;
+}
+
+export function replaceMatchesAcrossNodes(
+  rootEl: HTMLElement,
+  query: string,
+  replacement: string,
+  replaceAll: boolean,
+  matchIndex: number = 0
+): number {
+  const matches = findMatchesAcrossNodes(rootEl, query);
+  if (matches.length === 0) return 0;
+
+  const targetMatches = replaceAll
+    ? [...matches].reverse()
+    : [matches[Math.min(matchIndex, matches.length - 1)]];
+
+  let replacedCount = 0;
+
+  for (const m of targetMatches) {
+    try {
+      if (m.startNode === m.endNode) {
+        const val = m.startNode.nodeValue || '';
+        m.startNode.nodeValue =
+          val.slice(0, m.startOffset) + replacement + val.slice(m.endOffset);
+      } else {
+        const range = document.createRange();
+        range.setStart(m.startNode, m.startOffset);
+        range.setEnd(m.endNode, m.endOffset);
+        range.deleteContents();
+        m.startNode.nodeValue =
+          (m.startNode.nodeValue || '').slice(0, m.startOffset) +
+          replacement +
+          (m.startNode.nodeValue || '').slice(m.startOffset);
+      }
+      replacedCount++;
+    } catch {
+      // Ignore DOM mutation boundary error
+    }
+  }
+
+  normalizeNotaryContainerDOM(rootEl);
+  return replacedCount;
+}
+
+/**
+ * Counts words and estimated A4 pages from HTML string for the Bottom Status Bar.
+ */
+export function computeDocumentMetrics(html: string): {
+  wordCount: number;
+  charCount: number;
+  estimatedPages: number;
+} {
+  const plain = html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) {
+    return { wordCount: 0, charCount: 0, estimatedPages: 1 };
+  }
+  const words = plain.split(' ').filter(Boolean);
+  const pageBreakMatches = (html.match(/data-page-break="true"/g) || []).length;
+  const estimatedPages = Math.max(1, Math.ceil(words.length / 320) + pageBreakMatches);
+  return {
+    wordCount: words.length,
+    charCount: plain.length,
+    estimatedPages,
+  };
+}
+
+/**
+ * Computes word-by-word Diff tokens between two HTML versions for the Version Diff Viewer.
+ */
+export interface DiffSegment {
+  type: 'equal' | 'added' | 'removed';
+  text: string;
+}
+
+export function computeTextDiff(oldHtml: string, newHtml: string): DiffSegment[] {
+  const toWords = (h: string) =>
+    h
+      .replace(/<\/p>|<\/div>|<\/tr>|<\/li>|<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .split(/(\s+)/)
+      .filter((t) => t.length > 0);
+
+  const a = toWords(oldHtml);
+  const b = toWords(newHtml);
+
+  // Limit LCS matrix size for performance on very large contracts
+  const maxTokens = 1600;
+  const aSlice = a.slice(0, maxTokens);
+  const bSlice = b.slice(0, maxTokens);
+  const n = aSlice.length;
+  const m = bSlice.length;
+
+  const dp: Uint16Array[] = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      if (aSlice[i] === bSlice[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  const raw: DiffSegment[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (aSlice[i] === bSlice[j]) {
+      raw.push({ type: 'equal', text: aSlice[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      raw.push({ type: 'removed', text: aSlice[i] });
+      i++;
+    } else {
+      raw.push({ type: 'added', text: bSlice[j] });
+      j++;
+    }
+  }
+  while (i < n) {
+    raw.push({ type: 'removed', text: aSlice[i++] });
+  }
+  while (j < m) {
+    raw.push({ type: 'added', text: bSlice[j++] });
+  }
+
+  // Merge adjacent segments of the same type
+  const merged: DiffSegment[] = [];
+  for (const seg of raw) {
+    if (merged.length > 0 && merged[merged.length - 1].type === seg.type) {
+      merged[merged.length - 1].text += seg.text;
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+  return merged;
+}

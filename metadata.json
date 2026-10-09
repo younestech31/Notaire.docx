@@ -1,0 +1,6 @@
+{
+  "name": "الموثق الرقمي — محرر العقود التوثيقية",
+  "description": "منصة مكتبية متخصصة لتحرير العقود التوثيقية باللغة العربية مع استيراد وتصدير ملفات Word (.docx) وإدارة قوالب المكتب وجداول الوصف التقسيمي للعقارات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

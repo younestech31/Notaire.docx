@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+@layer base {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Strict Notarial Document Rules:
+   1. Font: Always Arial, 13pt
+   2. Line spacing: Always 1.0, 0 paragraph spacing before/after
+   3. Page Margins on A4 (210mm x 297mm):
+      Top: 1cm (10mm), Right: 7cm (70mm), Bottom: 6cm (60mm), Left: 2cm (20mm)
+      Net Printable Width: 12cm (120mm)
+*/
+.notary-a4-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  padding-top: 10mm;
+  padding-right: 70mm;
+  padding-bottom: 60mm;
+  padding-left: 20mm;
+  background-color: #ffffff;
+  box-sizing: border-box;
+  position: relative;
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+  font-size: 13pt !important;
+  line-height: 1 !important;
+  color: #000000;
+}
+
+.notary-editor-zone,
+.notary-editor-zone p,
+.notary-editor-zone div:not(.page-break),
+.notary-editor-zone span,
+.notary-editor-zone li,
+.notary-editor-zone td,
+.notary-editor-zone th,
+.notary-editor-zone h1,
+.notary-editor-zone h2,
+.notary-editor-zone h3,
+.notary-editor-zone h4 {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+  font-size: 13pt !important;
+  line-height: 1 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.notary-editor-zone p,
+.notary-editor-zone li {
+  min-height: 13pt;
+}
+
+.notary-editor-zone ul,
+.notary-editor-zone ol {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-inline-start: 1.5rem;
+}
+
+.notary-editor-zone ol[data-list-type="arabic-alpha"] {
+  list-style-type: arabic-indic;
+}
+
+.notary-editor-zone table {
+  width: 100%;
+  max-width: 120mm;
+  border-collapse: collapse;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  table-layout: fixed;
+}
+
+.notary-editor-zone td,
+.notary-editor-zone th {
+  border: 1px solid #000000;
+  padding: 2px 4px;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.notary-editor-zone td.selected-table-cell,
+.notary-editor-zone th.selected-table-cell {
+  outline: 2px solid #1e3a8a;
+  outline-offset: -2px;
+  background-color: rgba(219, 234, 254, 0.45) !important;
+}
+
+.notary-editor-zone img {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+}
+
+.notary-editor-zone .page-break {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 18px;
+  margin: 6px 0 !important;
+  border-top: 1px dashed #94a3b8;
+  border-bottom: 1px dashed #94a3b8;
+  background-color: #f8fafc;
+  color: #64748b;
+  font-size: 9pt !important;
+  user-select: none;
+  cursor: default;
+}
+
+.notary-editor-zone .smart-placeholder,
+.notary-editor-zone .smart-tag {
+  background-color: #fdf2f8;
+  color: #9d174d;
+  font-weight: bold !important;
+  border: 1px solid #fbcfe8;
+  border-bottom: 2px solid #c2185b;
+  padding: 0 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: all;
+  display: inline;
+}
+
+.notary-editor-zone .smart-tag:hover {
+  background-color: #fce7f3;
+  color: #831843;
+}
+
+.notary-editor-zone .smart-placeholder-filled {
+  background-color: #eff6ff;
+  color: #1e3a8a;
+  font-weight: bold !important;
+  border-bottom: 1px dashed #3b82f6;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* Visual-only Clause Container inside A4 Sheet during editing */
+.notary-editor-zone .clause-container {
+  position: relative;
+  border-right: 2px dashed #cbd5e1;
+  padding-right: 6px;
+  margin-right: -8px;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.notary-editor-zone .clause-container:hover {
+  border-right-color: #1e3a8a;
+  background-color: rgba(241, 245, 249, 0.45);
+}
+
+.notary-editor-zone .clause-container::before {
+  content: attr(data-clause-title);
+  position: absolute;
+  right: -66mm;
+  top: 0;
+  width: 62mm;
+  font-size: 8.5pt !important;
+  line-height: 1.2 !important;
+  color: #475569;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 3px;
+  padding: 2px 5px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notary-editor-zone mark.search-highlight {
+  background-color: #fde047;
+  color: #000000;
+  padding: 0;
+}
+
+.notary-editor-zone mark.search-highlight-active {
+  background-color: #f97316;
+  color: #ffffff;
+  padding: 0;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .notary-a4-sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  .notary-editor-zone .page-break {
+    page-break-after: always;
+    break-after: page;
+    border: none;
+    height: 0;
+    margin: 0 !important;
+    overflow: hidden;
+  }
+  .notary-editor-zone .smart-placeholder,
+  .notary-editor-zone .smart-tag,
+  .notary-editor-zone .smart-placeholder-filled {
+    background: transparent !important;
+    color: #000000 !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+  .notary-editor-zone .clause-container {
+    border-right: none !important;
+    padding-right: 0 !important;
+    margin-right: 0 !important;
+    background: transparent !important;
+  }
+  .notary-editor-zone .clause-container::before {
+    display: none !important;
+  }
+}
