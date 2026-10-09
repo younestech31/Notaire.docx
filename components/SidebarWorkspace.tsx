@@ -17,6 +17,7 @@ import {
   GitCompare,
   History,
   ListChecks,
+  PanelRightClose,
   Plus,
   RotateCcw,
   Save,
@@ -121,6 +122,7 @@ interface SidebarWorkspaceProps {
   onExportBackupJson: () => Promise<void>;
   onImportBackupJson: (file: File) => Promise<void>;
   onSaveSelectionBookmark: () => void;
+  onToggleCollapse?: () => void;
 }
 
 export default function SidebarWorkspace({
@@ -197,6 +199,7 @@ export default function SidebarWorkspace({
   onExportBackupJson,
   onImportBackupJson,
   onSaveSelectionBookmark,
+  onToggleCollapse,
 }: SidebarWorkspaceProps) {
   // Clause creation state
   const [newClauseTitle, setNewClauseTitle] = useState('');
@@ -295,6 +298,29 @@ export default function SidebarWorkspace({
 
   return (
     <aside className="w-full lg:w-88 xl:w-96 bg-white border-l border-slate-200 flex flex-col h-full shrink-0 select-none no-print">
+      {/* Sidebar Header & Collapse Toggle */}
+      <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-blue-900" />
+          <h3 className="text-xs font-bold text-slate-900">
+            {activeTab === 'clauses' && 'بنود وصياغات العقود'}
+            {activeTab === 'parties' && 'استمارة الأطراف والتعيينات'}
+            {activeTab === 'templates' && 'قوالب المكتب والوثائق المشتقة'}
+            {activeTab === 'documents' && 'المستندات والأرشيف المحلي'}
+          </h3>
+        </div>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
+            title="طي اللوحة الجانبية لتركيز أكبر على ورقة العقد"
+          >
+            <PanelRightClose className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
       {/* Sidebar Segmented Navigation — Ordered by Daily Usage Frequency */}
       <div className="grid grid-cols-4 gap-1 p-2 bg-slate-50 border-b border-slate-200">
         {/* 1. البنود الجاهزة (الأكثر استخداماً أثناء التحرير) */}

@@ -181,12 +181,12 @@ export default function EditorRibbon({
   };
 
   const btnClass = (active: boolean = false, disabled: boolean = false) =>
-    `inline-flex items-center justify-center h-8 px-2 rounded text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+    `inline-flex items-center justify-center h-7 px-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
       disabled
         ? 'text-slate-300 cursor-not-allowed'
         : active
-        ? 'bg-blue-50 text-blue-900 border border-blue-200'
-        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-transparent'
+        ? 'bg-blue-900 text-white shadow-2xs font-bold'
+        : 'text-slate-700 hover:bg-slate-200/80 hover:text-slate-900'
     }`;
 
   return (

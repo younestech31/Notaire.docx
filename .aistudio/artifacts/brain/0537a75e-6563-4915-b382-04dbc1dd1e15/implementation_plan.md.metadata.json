@@ -1,6 +1,6 @@
 {
-  "summary":  "Updated Version 2.7 Implementation Plan aligned with the actual Next.js codebase architecture (contentEditable A4 editor, NotaryEditorApp, SmartModals, SidebarWorkspace, docx-engine, storage), incorporating double-click smart-tag focus, template application modes, RTL/table-aware Word import, custom office templates, Arabic Find & Replace, version snapshots, and a 5-step onboarding tour strictly focused on contract editing workflows.",
-  "updatedAt":  "2026-10-09T18:55:28.788507115Z",
+  "summary":  "خطة تنفيذ الإصدار 2.8 لإعادة هيكلة وتنسيق واجهة سطح المكتب ومساحة العمل: دمج الأشرطة العلوية المزدوجة في شريط تحكم موحد، توحيد شريط الأدوات (Ribbon) في سطر متكامل ومضغوط، وتوفير لوحة جانبية قابلة للطي والتوسيع مع شريط أيقونات سريع لتعظيم مساحة الرؤية لورقة العقد A4.",
+  "updatedAt":  "2026-10-09T20:02:16.063006817Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
