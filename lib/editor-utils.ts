@@ -167,14 +167,18 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
     ) {
       continue;
     }
-    if (tNode.nodeValue && /\{\{\s*[^}]+?\s*\}\}/.test(tNode.nodeValue)) {
+    if (
+      tNode.nodeValue &&
+      (/\{\{\s*[^}]+?\s*\}\}/.test(tNode.nodeValue) ||
+        /\[\s*[^\[\]<>]{1,45}?\s*\]/.test(tNode.nodeValue))
+    ) {
       nodesToProcess.push(tNode);
     }
   }
 
   for (const tNode of nodesToProcess) {
     const text = tNode.nodeValue || '';
-    const regex = /\{\{\s*([^}]+?)\s*\}\}/g;
+    const regex = /\{\{\s*([^}]+?)\s*\}\}|\[\s*([^\[\]<>]{1,45}?)\s*\]/g;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     const frag = document.createDocumentFragment();
@@ -183,8 +187,9 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
       if (match.index > lastIndex) {
         frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
       }
-      const varName = normalizePlaceholderKey(match[1]).replace(/\s+/g, '_');
-      if (varName) {
+      const rawCaptured = match[1] || match[2] || '';
+      const varName = normalizePlaceholderKey(rawCaptured).replace(/\s+/g, '_');
+      if (varName && !/^\d+$/.test(varName)) {
         const span = document.createElement('span');
         span.className = 'smart-tag';
         span.setAttribute('data-var', varName);
@@ -846,11 +851,65 @@ export interface MultiNodeTextMatch {
   matchedText: string;
 }
 
+/**
+ * Normalizes Arabic text for smart search (strips Tashkeel/Tatweel and unifies Hamza/Alef/Ta-Marbuta)
+ * while maintaining an exact index map back to original string positions.
+ */
+function buildNormalizedSearchString(
+  input: string,
+  ignoreArabicHamzaAndDiacritics: boolean
+): { normText: string; normToOrigStart: number[]; normToOrigEnd: number[] } {
+  if (!ignoreArabicHamzaAndDiacritics) {
+    const starts = Array.from({ length: input.length }, (_, i) => i);
+    const ends = Array.from({ length: input.length }, (_, i) => i + 1);
+    return {
+      normText: input.toLowerCase(),
+      normToOrigStart: starts,
+      normToOrigEnd: ends,
+    };
+  }
+
+  let normText = '';
+  const normToOrigStart: number[] = [];
+  const normToOrigEnd: number[] = [];
+
+  const isDiacritic = (ch: string) => /[\u064B-\u065F\u0670\u0640]/.test(ch);
+  const normalizeArabicChar = (ch: string): string => {
+    if (/[أإآٱ]/.test(ch)) return 'ا';
+    if (ch === 'ؤ') return 'و';
+    if (ch === 'ئ' || ch === 'ى') return 'ي';
+    if (ch === 'ة') return 'ه';
+    return ch.toLowerCase();
+  };
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (isDiacritic(ch)) {
+      if (normToOrigEnd.length > 0) {
+        normToOrigEnd[normToOrigEnd.length - 1] = i + 1;
+      }
+      continue;
+    }
+    normText += normalizeArabicChar(ch);
+    normToOrigStart.push(i);
+    normToOrigEnd.push(i + 1);
+  }
+
+  return { normText, normToOrigStart, normToOrigEnd };
+}
+
 export function findMatchesAcrossNodes(
   rootEl: HTMLElement,
-  query: string
+  query: string,
+  ignoreArabicHamzaAndDiacritics: boolean = true
 ): MultiNodeTextMatch[] {
-  if (!query) return [];
+  if (!query || !query.trim()) return [];
+  const { normText: normQuery } = buildNormalizedSearchString(
+    query,
+    ignoreArabicHamzaAndDiacritics
+  );
+  if (!normQuery) return [];
+
   const results: MultiNodeTextMatch[] = [];
 
   const blocks = Array.from(
@@ -883,11 +942,20 @@ export function findMatchesAcrossNodes(
 
     if (!fullText) continue;
 
+    const { normText, normToOrigStart, normToOrigEnd } = buildNormalizedSearchString(
+      fullText,
+      ignoreArabicHamzaAndDiacritics
+    );
+    if (!normText || normText.length < normQuery.length) continue;
+
     let searchIdx = 0;
-    while (searchIdx <= fullText.length - query.length) {
-      const matchStart = fullText.indexOf(query, searchIdx);
-      if (matchStart === -1) break;
-      const matchEnd = matchStart + query.length;
+    while (searchIdx <= normText.length - normQuery.length) {
+      const normMatchStart = normText.indexOf(normQuery, searchIdx);
+      if (normMatchStart === -1) break;
+      const normMatchEnd = normMatchStart + normQuery.length - 1;
+
+      const matchStart = normToOrigStart[normMatchStart];
+      const matchEnd = normToOrigEnd[normMatchEnd];
 
       const startEntry = textNodes.find((t) => matchStart >= t.start && matchStart < t.end);
       const endEntry = textNodes.find((t) => matchEnd > t.start && matchEnd <= t.end);
@@ -902,11 +970,31 @@ export function findMatchesAcrossNodes(
         });
       }
 
-      searchIdx = matchEnd;
+      searchIdx = normMatchStart + normQuery.length;
     }
   }
 
   return results;
+}
+
+export function focusAndSelectMatchInDOM(match: MultiNodeTextMatch | null): void {
+  if (!match || typeof window === 'undefined') return;
+  try {
+    const range = document.createRange();
+    range.setStart(match.startNode, match.startOffset);
+    range.setEnd(match.endNode, match.endOffset);
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    const parentEl = match.startNode.parentElement;
+    if (parentEl) {
+      parentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch {
+    // Ignore detached DOM node errors
+  }
 }
 
 export function replaceMatchesAcrossNodes(
@@ -914,14 +1002,19 @@ export function replaceMatchesAcrossNodes(
   query: string,
   replacement: string,
   replaceAll: boolean,
-  matchIndex: number = 0
+  matchIndex: number = 0,
+  ignoreArabicHamzaAndDiacritics: boolean = true
 ): number {
-  const matches = findMatchesAcrossNodes(rootEl, query);
+  const matches = findMatchesAcrossNodes(
+    rootEl,
+    query,
+    ignoreArabicHamzaAndDiacritics
+  );
   if (matches.length === 0) return 0;
 
   const targetMatches = replaceAll
     ? [...matches].reverse()
-    : [matches[Math.min(matchIndex, matches.length - 1)]];
+    : [matches[Math.min(Math.max(0, matchIndex), matches.length - 1)]];
 
   let replacedCount = 0;
 

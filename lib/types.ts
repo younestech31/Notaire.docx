@@ -128,11 +128,13 @@ export interface CustomTemplate {
   id: string;
   name: string;
   category: string;
+  description?: string;
   bodyHtml: string;
   headerHtml: string;
   footerHtml: string;
   pageNumberingEnabled: boolean;
   extractedPlaceholders: string[];
+  defaultFieldValues?: Record<string, string>;
   sourceFileName?: string;
   updatedAt: string;
 }

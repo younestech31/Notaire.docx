@@ -3,24 +3,35 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   Download,
   Eye,
   FilePlus2,
   FileUp,
   FormInput,
   GitCompare,
+  HelpCircle,
+  History,
   PanelRightOpen,
   Printer,
   Replace,
+  RotateCcw,
   Save,
   Search,
+  Sparkles,
   X,
 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
 import SidebarWorkspace, { SidebarTab } from './SidebarWorkspace';
 import {
+  DocxImportPreviewModal,
   MultiSourceStartModal,
+  OnboardingTourModal,
+  SaveAsTemplateModal,
   SmartVariablesModal,
+  SnapshotsHistoryModal,
   VersionDiffModal,
 } from './SmartModals';
 import {
@@ -47,12 +58,15 @@ import {
   deleteCustomTemplate,
   deleteDerivedDocTemplate,
   deleteDocumentRecord,
+  deleteDocumentRevision,
   deleteDownloadArchiveItem,
   deleteNotaryClause,
   deletePartyRecord,
   deletePropertyRecord,
   deleteSubdivisionEstate,
+  exportCustomTemplatesJson,
   exportFullBackupBundle,
+  importCustomTemplatesJson,
   importFullBackupBundle,
   loadActiveDraftSession,
   loadCustomTemplates,
@@ -85,9 +99,11 @@ import {
   extractPlaceholdersFromHtml,
   extractPlaceholdersGroupedByClause,
   findMatchesAcrossNodes,
+  focusAndSelectMatchInDOM,
   getIntersectingBlockElements,
   insertHtmlAtSelection,
   insertOrWrapNewClauseAtSelection,
+  MultiNodeTextMatch,
   normalizeNotaryContainerDOM,
   replaceMatchesAcrossNodes,
   restoreSerializedSelection,
@@ -105,6 +121,7 @@ import {
   splitMergedTableCell,
 } from '@/lib/table-grid';
 import {
+  DocxImportResult,
   downloadNotaryDocx,
   importNotaryDocxFile,
   lookupPlaceholderValue,
@@ -129,6 +146,7 @@ export default function NotaryEditorApp() {
   const [showHeaderFooter, setShowHeaderFooter] = useState<boolean>(false);
   const [pageNumberingEnabled, setPageNumberingEnabled] = useState<boolean>(true);
   const [previewMergedMode, setPreviewMergedMode] = useState<boolean>(false);
+  const [mergedPreviewHtml, setMergedPreviewHtml] = useState<string>('');
   const [zoom, setZoom] = useState<number>(100);
 
   // Mode for editing a Derived Document Template or a Clause directly inside the A4 Editor
@@ -171,7 +189,14 @@ export default function NotaryEditorApp() {
   const [showSmartVarsModal, setShowSmartVarsModal] = useState<boolean>(false);
   const [focusedVarKey, setFocusedVarKey] = useState<string | null>(null);
   const [showVersionDiffModal, setShowVersionDiffModal] = useState<boolean>(false);
+  const [diffComparisonRevision, setDiffComparisonRevision] = useState<DocumentRevision | null>(null);
   const [showMultiSourceModal, setShowMultiSourceModal] = useState<boolean>(false);
+  const [showDocxPreviewModal, setShowDocxPreviewModal] = useState<boolean>(false);
+  const [pendingDocxImport, setPendingDocxImport] = useState<DocxImportResult | null>(null);
+  const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState<boolean>(false);
+  const [showSnapshotsHistoryModal, setShowSnapshotsHistoryModal] = useState<boolean>(false);
+  const [modalActiveBodyHtml, setModalActiveBodyHtml] = useState<string>(INITIAL_EMPTY_PARAGRAPH);
+  const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
 
   // Auto-save & Status Bar metrics
   const [autoSaveState, setAutoSaveState] = useState<'saved' | 'saving'>('saved');
@@ -190,6 +215,9 @@ export default function NotaryEditorApp() {
   const [showFindReplace, setShowFindReplace] = useState<boolean>(false);
   const [findQuery, setFindQuery] = useState<string>('');
   const [replaceQuery, setReplaceQuery] = useState<string>('');
+  const [ignoreArabicHamzaAndDiacritics, setIgnoreArabicHamzaAndDiacritics] = useState<boolean>(true);
+  const [activeMatchIdx, setActiveMatchIdx] = useState<number>(0);
+  const [matches, setMatches] = useState<MultiNodeTextMatch[]>([]);
   const [matchCount, setMatchCount] = useState<number>(0);
 
   // Toolbar Active State
@@ -253,6 +281,10 @@ export default function NotaryEditorApp() {
       syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
 
+      if (previewMergedMode) {
+        setMergedPreviewHtml(mergePlaceholdersIntoHtml(bodyHtml, activeValues));
+      }
+
       if (editingDerivedTpl || editingClauseObj) {
         return;
       }
@@ -290,6 +322,7 @@ export default function NotaryEditorApp() {
       fieldValues,
       getEditorZonesHtml,
       pageNumberingEnabled,
+      previewMergedMode,
       refreshActiveClausesInDOM,
       selectedEstateId,
       selectedLotNumber,
@@ -297,31 +330,50 @@ export default function NotaryEditorApp() {
     ]
   );
 
-  // Record a snapshot in the custom Undo Stack
-  const recordHistorySnapshot = useCallback(() => {
-    const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
-    const selection = serializeCurrentSelection({
-      body: bodyEditorRef.current,
-      header: headerEditorRef.current,
-      footer: footerEditorRef.current,
-    });
-    setUndoStack((prev) => {
-      if (prev.length > 0 && prev[prev.length - 1].bodyHtml === bodyHtml) {
-        return prev;
-      }
-      return [
-        ...prev.slice(-49),
-        {
+  // Record a snapshot in the custom Undo Stack and optionally in persistent document revisions
+  const recordHistorySnapshot = useCallback(
+    (label?: string) => {
+      const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
+      const selection = serializeCurrentSelection({
+        body: bodyEditorRef.current,
+        header: headerEditorRef.current,
+        footer: footerEditorRef.current,
+      });
+      setUndoStack((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1].bodyHtml === bodyHtml) {
+          return prev;
+        }
+        return [
+          ...prev.slice(-49),
+          {
+            bodyHtml,
+            headerHtml,
+            footerHtml,
+            selection,
+            timestamp: Date.now(),
+          },
+        ];
+      });
+      setRedoStack([]);
+
+      if (label) {
+        const rev: DocumentRevision = {
+          id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          documentId: docId,
+          documentTitle: docTitle || 'عقد توثيقي',
+          author: 'النظام التوثيقي',
           bodyHtml,
-          headerHtml,
-          footerHtml,
-          selection,
-          timestamp: Date.now(),
-        },
-      ];
-    });
-    setRedoStack([]);
-  }, [getEditorZonesHtml]);
+          fieldValues: { ...fieldValuesRef.current },
+          createdAt: new Date().toISOString(),
+          summary: label,
+        };
+        saveDocumentRevision(rev).then(() => {
+          loadDocumentRevisions().then((revs) => setRevisions(revs));
+        });
+      }
+    },
+    [docId, docTitle, getEditorZonesHtml]
+  );
 
   // Initial Load from IndexedDB / LocalStorage
   useEffect(() => {
@@ -404,6 +456,13 @@ export default function NotaryEditorApp() {
         syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
       } else if (bodyEditorRef.current) {
         bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
+      }
+
+      if (typeof window !== 'undefined') {
+        const tourDone = localStorage.getItem('notary_editor_tour_v27');
+        if (!tourDone) {
+          setShowOnboardingTour(true);
+        }
       }
     }
     initWorkspace();
@@ -1367,33 +1426,62 @@ export default function NotaryEditorApp() {
     }
   };
 
-  // Import a Word (.docx) file directly into the Editor
-  const handleImportDocxDirectlyToEditor = async (file: File) => {
+  // Word (.docx) Importer with Preview & Option to Replace or Insert at Caret
+  const handleParseAndPreviewDocx = async (file: File) => {
     try {
-      recordHistorySnapshot();
       const imported = await importNotaryDocxFile(file);
-      setDocTitle(imported.title);
-      if (bodyEditorRef.current) {
-        bodyEditorRef.current.innerHTML = imported.bodyHtml;
-        normalizeNotaryContainerDOM(bodyEditorRef.current);
-      }
-      if (imported.headerHtml || imported.footerHtml) {
-        setShowHeaderFooter(true);
-        if (headerEditorRef.current)
-          headerEditorRef.current.innerHTML = imported.headerHtml;
-        if (footerEditorRef.current)
-          footerEditorRef.current.innerHTML = imported.footerHtml;
-      }
-      setExtractedPlaceholders(imported.extractedPlaceholders);
-      syncPlaceholdersAndDraft();
-      showToast(
-        `تم فتح ملف "${imported.title}" وتوحيد خطه إلى Arial 13pt والهوامش التوثيقية`
-      );
+      setPendingDocxImport(imported);
+      setShowDocxPreviewModal(true);
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : 'تعذر قراءة ملف الوورد المرفوع'
       );
     }
+  };
+
+  const handleApplyDocxImport = (mode: 'replace' | 'insert') => {
+    if (!pendingDocxImport) return;
+
+    if (mode === 'replace') {
+      recordHistorySnapshot('قبل استبدال العقد بملف Word مستورد');
+      setDocTitle(pendingDocxImport.title);
+      if (bodyEditorRef.current) {
+        bodyEditorRef.current.innerHTML = pendingDocxImport.bodyHtml;
+        normalizeNotaryContainerDOM(bodyEditorRef.current);
+      }
+      if (pendingDocxImport.headerHtml || pendingDocxImport.footerHtml) {
+        setShowHeaderFooter(true);
+        if (headerEditorRef.current)
+          headerEditorRef.current.innerHTML = pendingDocxImport.headerHtml;
+        if (footerEditorRef.current)
+          footerEditorRef.current.innerHTML = pendingDocxImport.footerHtml;
+      }
+      setExtractedPlaceholders(pendingDocxImport.extractedPlaceholders);
+      syncPlaceholdersAndDraft();
+      showToast(
+        `تم استبدال العقد بمحتوى ملف "${pendingDocxImport.title}" وتوحيد قياسات A4 بنجاح`
+      );
+    } else {
+      // Insert at caret / savedRangeRef
+      if (!bodyEditorRef.current) return;
+      recordHistorySnapshot('قبل إدراج ملف Word عند المؤشر');
+      insertHtmlAtSelection(
+        bodyEditorRef.current,
+        pendingDocxImport.bodyHtml,
+        savedRangeRef.current
+      );
+      normalizeNotaryContainerDOM(bodyEditorRef.current);
+      syncPlaceholdersAndDraft();
+      showToast(
+        `تم إدراج محتوى ملف "${pendingDocxImport.title}" عند موضع المؤشر بنجاح`
+      );
+    }
+
+    setPendingDocxImport(null);
+  };
+
+  const handleImportDocxDirectlyToEditor = async (file: File) => {
+    await handleParseAndPreviewDocx(file);
   };
 
   const handleImportDocxAsTemplate = async (files: FileList) => {
@@ -1426,7 +1514,12 @@ export default function NotaryEditorApp() {
     }
   };
 
-  const handleSaveCurrentAsTemplate = async (name: string, category: string) => {
+  const handleSaveCurrentAsTemplate = async (
+    name: string,
+    category: string,
+    description?: string,
+    clearFilledValues: boolean = true
+  ) => {
     const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
     const placeholders = extractPlaceholdersFromHtml(
       headerHtml,
@@ -1437,16 +1530,66 @@ export default function NotaryEditorApp() {
       id: `tpl_${Date.now()}`,
       name,
       category,
+      description: description || '',
       bodyHtml,
       headerHtml,
       footerHtml,
       pageNumberingEnabled,
       extractedPlaceholders: placeholders,
+      defaultFieldValues: clearFilledValues ? {} : { ...fieldValues },
       updatedAt: new Date().toISOString(),
     };
     await saveCustomTemplate(newTpl);
     setTemplates(await loadCustomTemplates());
-    showToast(`تم حفظ القالب "${name}" في مكتبة المكتب`);
+    showToast(`تم حفظ القالب "${name}" في مكتبة المكتب بنجاح`);
+  };
+
+  const handleSaveCustomTemplateAdvanced = async (data: {
+    name: string;
+    category: string;
+    description: string;
+    clearFilledValues: boolean;
+  }) => {
+    await handleSaveCurrentAsTemplate(
+      data.name,
+      data.category,
+      data.description,
+      data.clearFilledValues
+    );
+  };
+
+  const handleExportTemplatesJson = async () => {
+    try {
+      const jsonStr = await exportCustomTemplatesJson();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `قوالب_مكتب_التوثيق_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('تم تصدير قوالب المكتب إلى ملف JSON بنجاح');
+    } catch {
+      showToast('تعذر تصدير ملف القوالب');
+    }
+  };
+
+  const handleImportTemplatesJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        const count = await importCustomTemplatesJson(parsed);
+        setTemplates(await loadCustomTemplates());
+        showToast(`تم استيراد وحفظ (${count}) قالب في مكتبة المكتب`);
+      } else {
+        showToast('ملف JSON غير صالح كقائمة قوالب');
+      }
+    } catch {
+      showToast('تعذر قراءة ملف القوالب');
+    }
   };
 
   const handleSaveCurrentDocumentAndRevision = async (summaryLabel?: string) => {
@@ -1481,7 +1624,47 @@ export default function NotaryEditorApp() {
     };
     await saveDocumentRevision(rev);
     setRevisions(await loadDocumentRevisions());
-    showToast('تم حفظ العقد وتسجيل نسخة مرجعية في سجل التعديلات (Diff)');
+    showToast(summaryLabel || 'تم حفظ العقد وتسجيل نسخة مرجعية في سجل التعديلات (Diff)');
+  };
+
+  const handleTakeManualSnapshot = async (label: string) => {
+    recordHistorySnapshot(label);
+    await handleSaveCurrentDocumentAndRevision(label);
+  };
+
+  const handleRestoreSnapshot = async (rev: DocumentRevision) => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot('قبل استعادة النسخة: ' + (rev.summary || rev.documentTitle));
+    bodyEditorRef.current.innerHTML = rev.bodyHtml;
+    normalizeNotaryContainerDOM(bodyEditorRef.current);
+    const nextVals = rev.fieldValues || {};
+    fieldValuesRef.current = nextVals;
+    setFieldValues(nextVals);
+    syncPlaceholdersAndDraft(nextVals);
+    showToast(`تم استعادة النسخة: "${rev.summary || 'نسخة مرجعية'}"`);
+  };
+
+  const handleDeleteSnapshot = async (id: string) => {
+    await deleteDocumentRevision(id);
+    setRevisions(await loadDocumentRevisions());
+    showToast('تم حذف النسخة من السجل');
+  };
+
+  const handleOpenSnapshotsHistoryModal = () => {
+    setModalActiveBodyHtml(bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH);
+    setShowSnapshotsHistoryModal(true);
+  };
+
+  const handleOpenVersionDiffModal = () => {
+    setModalActiveBodyHtml(bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH);
+    setDiffComparisonRevision(null);
+    setShowVersionDiffModal(true);
+  };
+
+  const handleOpenDiffComparison = (rev: DocumentRevision) => {
+    setModalActiveBodyHtml(bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH);
+    setDiffComparisonRevision(rev);
+    setShowVersionDiffModal(true);
   };
 
   // Saved Parties & Saved Properties Directory Handlers (v2.5)
@@ -1759,27 +1942,66 @@ export default function NotaryEditorApp() {
     showToast('تم دمج واستبدال قيم الحقول داخل نص العقد بنجاح');
   };
 
-  // Find & Replace Handlers
+  // Find & Replace Handlers (Arabic-Aware with Hamza & Diacritics Normalization)
   useEffect(() => {
     if (!showFindReplace || !findQuery.trim() || !bodyEditorRef.current) {
+      setMatches([]);
       setMatchCount(0);
+      setActiveMatchIdx(0);
       return;
     }
-    const matches = findMatchesAcrossNodes(bodyEditorRef.current, findQuery);
-    setMatchCount(matches.length);
-  }, [findQuery, showFindReplace]);
+    const foundMatches = findMatchesAcrossNodes(
+      bodyEditorRef.current,
+      findQuery,
+      ignoreArabicHamzaAndDiacritics
+    );
+    setMatches(foundMatches);
+    setMatchCount(foundMatches.length);
+    if (foundMatches.length > 0) {
+      setActiveMatchIdx(0);
+      focusAndSelectMatchInDOM(foundMatches[0]);
+    }
+  }, [findQuery, showFindReplace, ignoreArabicHamzaAndDiacritics]);
+
+  const handleNextMatch = () => {
+    if (matches.length === 0) return;
+    const next = (activeMatchIdx + 1) % matches.length;
+    setActiveMatchIdx(next);
+    focusAndSelectMatchInDOM(matches[next]);
+  };
+
+  const handlePrevMatch = () => {
+    if (matches.length === 0) return;
+    const prev = (activeMatchIdx - 1 + matches.length) % matches.length;
+    setActiveMatchIdx(prev);
+    focusAndSelectMatchInDOM(matches[prev]);
+  };
 
   const handleRunReplace = (replaceAll: boolean) => {
     if (!bodyEditorRef.current || !findQuery) return;
-    recordHistorySnapshot();
+    recordHistorySnapshot(
+      replaceAll ? 'قبل استبدال الكل في البحث' : 'قبل استبدال تطابق نصي'
+    );
     const count = replaceMatchesAcrossNodes(
       bodyEditorRef.current,
       findQuery,
       replaceQuery,
-      replaceAll
+      replaceAll,
+      activeMatchIdx,
+      ignoreArabicHamzaAndDiacritics
     );
-    const remaining = findMatchesAcrossNodes(bodyEditorRef.current, findQuery).length;
-    setMatchCount(remaining);
+    const updated = findMatchesAcrossNodes(
+      bodyEditorRef.current,
+      findQuery,
+      ignoreArabicHamzaAndDiacritics
+    );
+    setMatches(updated);
+    setMatchCount(updated.length);
+    if (updated.length > 0) {
+      const nextIdx = Math.min(activeMatchIdx, updated.length - 1);
+      setActiveMatchIdx(nextIdx);
+      focusAndSelectMatchInDOM(updated[nextIdx]);
+    }
     syncPlaceholdersAndDraft();
     showToast(`تم استبدال (${count}) تطابق بنجاح`);
   };
@@ -1850,12 +2072,32 @@ export default function NotaryEditorApp() {
           </button>
         </nav>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: 1 primary action + helper utilities */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowOnboardingTour(true)}
+            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5"
+            title="فتح الجولة الإرشادية التفاعلية للمحرر (5 خطوات)"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-blue-900" />
+            <span className="hidden sm:inline">دليل المحرر</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenSnapshotsHistoryModal}
+            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5"
+            title="عرض سجل اللقطات الزمنية والمقارنة"
+          >
+            <History className="w-3.5 h-3.5 text-blue-900" />
+            <span className="hidden sm:inline">سجل اللقطات ({revisions.length})</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportCurrentToWord}
-            className="px-4 py-2 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5"
+            className="px-4 py-2 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
           >
             <Download className="w-4 h-4" />
             <span>تصدير Word (.docx)</span>
@@ -1920,12 +2162,18 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => {
               const next = !previewMergedMode;
-              setPreviewMergedMode(next);
               if (next) {
+                const currentHtml =
+                  bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+                const activeVals = fieldValuesRef.current || fieldValues;
+                setMergedPreviewHtml(mergePlaceholdersIntoHtml(currentHtml, activeVals));
+                setPreviewMergedMode(true);
                 setSidebarTab('parties');
                 showToast(
                   'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
                 );
+              } else {
+                setPreviewMergedMode(false);
               }
             }}
             className={`px-2.5 py-1.5 border rounded text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
@@ -1945,11 +2193,22 @@ export default function NotaryEditorApp() {
 
           <button
             type="button"
-            onClick={() => handleSaveCurrentDocumentAndRevision()}
+            onClick={handleOpenSnapshotsHistoryModal}
             className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 rounded text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            title="عرض سجل اللقطات الزمنية والمقارنة"
+          >
+            <Clock className="w-3.5 h-3.5 text-blue-900" />
+            <span>سجل اللقطات ({revisions.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTakeManualSnapshot('لقطة يدوية سريعة')}
+            className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 rounded text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            title="أخذ لقطة زمنية وحفظ نسخة مرجعية للعقد الآن"
           >
             <Save className="w-3.5 h-3.5 text-blue-900" />
-            <span>حفظ في السجل</span>
+            <span>أخذ لقطة للعقد</span>
           </button>
 
           <button
@@ -1986,7 +2245,7 @@ export default function NotaryEditorApp() {
         onConvertSelectionToSmartTag={handleConvertSelectionToSmartTag}
         onInsertSmartTagAtCaret={handleInsertSmartTagAtCaret}
         onInsertNewClauseHeadingAtCaret={handleInsertNewClauseHeadingAtCaret}
-        onOpenVersionDiffModal={() => setShowVersionDiffModal(true)}
+        onOpenVersionDiffModal={handleOpenVersionDiffModal}
         onGenerateDerivedDoc={handleGenerateDerivedDoc}
         onEditDerivedTemplateInEditor={handleEditDerivedTemplateInEditor}
         onUndo={handleUndo}
@@ -2046,30 +2305,77 @@ export default function NotaryEditorApp() {
         </div>
       )}
 
-      {/* Multi-Node Find & Replace Bar */}
+      {/* Multi-Node Arabic-Aware Find & Replace Bar */}
       {showFindReplace && (
-        <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-2 flex flex-wrap items-center gap-2.5 text-xs no-print">
-          <div className="flex items-center gap-1.5 font-semibold text-amber-950">
-            <Search className="w-3.5 h-3.5" />
-            <span>بحث واستبدال عبر الفقرات والتنسيقات:</span>
+        <div className="bg-amber-50/95 border-b border-amber-200 px-4 py-2 flex flex-wrap items-center gap-2.5 text-xs no-print">
+          <div className="flex items-center gap-1.5 font-semibold text-amber-950 shrink-0">
+            <Search className="w-3.5 h-3.5 text-amber-900" />
+            <span>بحث واستبدال عربي:</span>
           </div>
           <input
             type="text"
             value={findQuery}
             onChange={(e) => setFindQuery(e.target.value)}
-            placeholder="ابحث عن نص..."
-            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-800 focus:outline-none"
+            placeholder="ابحث عن نص (مثال: البائع)..."
+            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-900 focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (e.shiftKey) handlePrevMatch();
+                else handleNextMatch();
+              } else if (e.key === 'Escape') {
+                setShowFindReplace(false);
+              }
+            }}
           />
           <input
             type="text"
             value={replaceQuery}
             onChange={(e) => setReplaceQuery(e.target.value)}
             placeholder="استبدال بـ..."
-            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-800 focus:outline-none"
+            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-900 focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRunReplace(false);
+              else if (e.key === 'Escape') setShowFindReplace(false);
+            }}
           />
-          <span className="text-slate-600 tabular-nums">
-            النتائج: <strong>{matchCount}</strong>
+
+          <label className="flex items-center gap-1.5 text-[11px] text-amber-950 bg-white/70 px-2 py-1 rounded border border-amber-200 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={ignoreArabicHamzaAndDiacritics}
+              onChange={(e) => setIgnoreArabicHamzaAndDiacritics(e.target.checked)}
+              className="rounded border-slate-300 text-blue-900"
+            />
+            <span>تجاهل الهمزات والتشكيل (أ/إ/آ، ة/ه)</span>
+          </label>
+
+          <span className="text-slate-600 tabular-nums text-xs">
+            {matchCount > 0
+              ? `${activeMatchIdx + 1} من ${matchCount}`
+              : '0 نتائج'}
           </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handlePrevMatch}
+              disabled={matchCount === 0}
+              className="p-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40"
+              title="التطابق السابق (Shift+Enter)"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleNextMatch}
+              disabled={matchCount === 0}
+              className="p-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40"
+              title="التطابق التالي (Enter)"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => handleRunReplace(false)}
@@ -2077,13 +2383,14 @@ export default function NotaryEditorApp() {
             className="px-2.5 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 inline-flex items-center gap-1"
           >
             <Replace className="w-3.5 h-3.5" />
-            <span>استبدال التالي</span>
+            <span>استبدال الحالي</span>
           </button>
           <button
             type="button"
             onClick={() => handleRunReplace(true)}
             disabled={matchCount === 0}
-            className="px-2.5 py-1 bg-blue-900 text-white rounded hover:bg-blue-800 disabled:opacity-40"
+            className="px-2.5 py-1 bg-blue-900 text-white rounded hover:bg-blue-800 disabled:opacity-40 font-medium"
+            title="استبدال كل المطابقات مع أخذ لقطة أمان تلقائية"
           >
             استبدال الكل ({matchCount})
           </button>
@@ -2091,6 +2398,7 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => setShowFindReplace(false)}
             className="mr-auto p-1 text-slate-500 hover:text-slate-800"
+            title="إغلاق (Esc)"
           >
             <X className="w-4 h-4" />
           </button>
@@ -2209,6 +2517,9 @@ export default function NotaryEditorApp() {
             templates={templates}
             onImportDocxAsTemplate={handleImportDocxAsTemplate}
             onSaveCurrentAsTemplate={handleSaveCurrentAsTemplate}
+            onOpenSaveAsTemplateModal={() => setShowSaveAsTemplateModal(true)}
+            onExportTemplatesJson={handleExportTemplatesJson}
+            onImportTemplatesJson={handleImportTemplatesJson}
             onLoadTemplateFull={(tpl, clearPreviousClauses = true) => {
               if (!bodyEditorRef.current) return;
               recordHistorySnapshot();
@@ -2336,7 +2647,7 @@ export default function NotaryEditorApp() {
                 fieldValues: doc.fieldValues,
               });
             }}
-            onOpenVersionDiffModal={() => setShowVersionDiffModal(true)}
+            onOpenVersionDiffModal={handleOpenVersionDiffModal}
             onRestoreRevision={(rev) => {
               if (!bodyEditorRef.current) return;
               recordHistorySnapshot();
@@ -2540,10 +2851,7 @@ export default function NotaryEditorApp() {
                   dir="rtl"
                   className="notary-editor-zone relative z-10 min-h-[210mm]"
                   dangerouslySetInnerHTML={{
-                    __html: mergePlaceholdersIntoHtml(
-                      bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH,
-                      fieldValues
-                    ),
+                    __html: mergedPreviewHtml,
                   }}
                 />
               ) : (
@@ -2687,22 +2995,59 @@ export default function NotaryEditorApp() {
 
       <VersionDiffModal
         isOpen={showVersionDiffModal}
-        onClose={() => setShowVersionDiffModal(false)}
-        revisions={revisions}
-        currentBodyHtml={
-          bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH
+        onClose={() => {
+          setShowVersionDiffModal(false);
+          setDiffComparisonRevision(null);
+        }}
+        revisions={
+          diffComparisonRevision
+            ? [diffComparisonRevision, ...revisions.filter((r) => r.id !== diffComparisonRevision.id)]
+            : revisions
         }
+        currentBodyHtml={modalActiveBodyHtml}
         currentTitle={docTitle}
-        onRestoreRevision={(rev) => {
-          if (!bodyEditorRef.current) return;
-          recordHistorySnapshot();
-          bodyEditorRef.current.innerHTML = rev.bodyHtml;
-          normalizeNotaryContainerDOM(bodyEditorRef.current);
-          const nextVals = rev.fieldValues || {};
-          fieldValuesRef.current = nextVals;
-          setFieldValues(nextVals);
-          syncPlaceholdersAndDraft(nextVals);
-          showToast('تم استعادة النسخة المرجعية المختارة');
+        onRestoreRevision={handleRestoreSnapshot}
+      />
+
+      <DocxImportPreviewModal
+        isOpen={showDocxPreviewModal}
+        onClose={() => {
+          setShowDocxPreviewModal(false);
+          setPendingDocxImport(null);
+        }}
+        importResult={pendingDocxImport}
+        onConfirmApply={handleApplyDocxImport}
+      />
+
+      <SaveAsTemplateModal
+        isOpen={showSaveAsTemplateModal}
+        onClose={() => setShowSaveAsTemplateModal(false)}
+        currentDocTitle={docTitle}
+        extractedPlaceholders={extractedPlaceholders}
+        currentFieldValues={fieldValues}
+        onConfirmSave={handleSaveCustomTemplateAdvanced}
+      />
+
+      <SnapshotsHistoryModal
+        isOpen={showSnapshotsHistoryModal}
+        onClose={() => setShowSnapshotsHistoryModal(false)}
+        revisions={revisions}
+        currentBodyHtml={modalActiveBodyHtml}
+        currentTitle={docTitle}
+        onTakeManualSnapshot={handleTakeManualSnapshot}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        onDeleteSnapshot={handleDeleteSnapshot}
+        onOpenDiffComparison={handleOpenDiffComparison}
+      />
+
+      <OnboardingTourModal
+        isOpen={showOnboardingTour}
+        onClose={() => setShowOnboardingTour(false)}
+        onFinishTour={() => {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('notary_editor_tour_v27', 'true');
+          }
+          setShowOnboardingTour(false);
         }}
       />
 
@@ -2714,7 +3059,7 @@ export default function NotaryEditorApp() {
         downloads={downloads}
         onStartBlank={(clearPreviousClauses = true) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot();
+          recordHistorySnapshot('قبل فتح عقد جديد فارغ');
           setDocId(`doc_${Date.now()}`);
           setDocTitle('عقد توثيقي جديد');
           bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
@@ -2728,7 +3073,11 @@ export default function NotaryEditorApp() {
         }}
         onSelectTemplate={(tpl, mode, clearPreviousClauses) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot();
+          recordHistorySnapshot(
+            mode === 'insert'
+              ? `قبل إدراج القالب "${tpl.name}" عند المؤشر`
+              : `قبل استبدال المحتوى بالقالب "${tpl.name}"`
+          );
           if (mode === 'insert') {
             insertHtmlAtSelection(
               bodyEditorRef.current,
@@ -2756,7 +3105,14 @@ export default function NotaryEditorApp() {
           }
           bodyEditorRef.current.innerHTML = nextHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          syncPlaceholdersAndDraft();
+          if (tpl.defaultFieldValues && Object.keys(tpl.defaultFieldValues).length > 0) {
+            const nextVals = { ...fieldValuesRef.current, ...tpl.defaultFieldValues };
+            fieldValuesRef.current = nextVals;
+            setFieldValues(nextVals);
+            syncPlaceholdersAndDraft(nextVals);
+          } else {
+            syncPlaceholdersAndDraft();
+          }
           showToast(
             `تم استبدال المحتوى بالقالب "${tpl.name}"${
               clearPreviousClauses ? ' مع حذف البنود السابقة' : ''
@@ -2765,7 +3121,7 @@ export default function NotaryEditorApp() {
         }}
         onSelectSavedDoc={(doc) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot();
+          recordHistorySnapshot(`قبل فتح المسودة "${doc.title}"`);
           setDocId(doc.id);
           setDocTitle(doc.title);
           bodyEditorRef.current.innerHTML = doc.bodyHtml;
@@ -2779,7 +3135,7 @@ export default function NotaryEditorApp() {
         onImportDocxFile={handleImportDocxDirectlyToEditor}
         onSelectDownloadArchiveItem={(item) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot();
+          recordHistorySnapshot(`قبل استيراد وثيقة "${item.docTypeLabel}" من الأرشيف`);
           setDocId(`doc_${Date.now()}`);
           setDocTitle(`${item.documentTitle} (${item.docTypeLabel})`);
           bodyEditorRef.current.innerHTML = item.bodyHtml;

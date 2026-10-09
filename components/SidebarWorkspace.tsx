@@ -89,6 +89,9 @@ interface SidebarWorkspaceProps {
   templates: CustomTemplate[];
   onImportDocxAsTemplate: (files: FileList) => Promise<void>;
   onSaveCurrentAsTemplate: (name: string, category: string) => Promise<void>;
+  onOpenSaveAsTemplateModal?: () => void;
+  onExportTemplatesJson?: () => void;
+  onImportTemplatesJson?: (file: File) => void;
   onLoadTemplateFull: (tpl: CustomTemplate, clearPreviousClauses?: boolean) => void;
   onInsertTemplateAtCaret: (tpl: CustomTemplate) => void;
   onExportTemplateDocx: (tpl: CustomTemplate) => Promise<void>;
@@ -163,6 +166,9 @@ export default function SidebarWorkspace({
   templates,
   onImportDocxAsTemplate,
   onSaveCurrentAsTemplate,
+  onOpenSaveAsTemplateModal,
+  onExportTemplatesJson,
+  onImportTemplatesJson,
   onLoadTemplateFull,
   onInsertTemplateAtCaret,
   onExportTemplateDocx,
@@ -1474,10 +1480,24 @@ export default function SidebarWorkspace({
                   </label>
                 </div>
 
+                {/* Save Current Contract as Template Box */}
                 <div className="border border-slate-200 rounded-md p-3 space-y-2 bg-white">
-                  <div className="text-xs font-bold text-slate-900">
-                    حفظ العقد الحالي كقالب في مكتبة المكتب
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900">
+                      حفظ العقد الحالي كقالب مكتب
+                    </span>
+                    {onOpenSaveAsTemplateModal && (
+                      <button
+                        type="button"
+                        onClick={onOpenSaveAsTemplateModal}
+                        className="text-[11px] text-blue-900 hover:underline font-semibold"
+                        title="فتح نافذة الخيارات المتقدمة وتفريغ القيم المعبأة"
+                      >
+                        خيارات متقدمة...
+                      </button>
+                    )}
                   </div>
+
                   <input
                     type="text"
                     value={newTplName}
@@ -1490,24 +1510,66 @@ export default function SidebarWorkspace({
                       type="text"
                       value={newTplCategory}
                       onChange={(e) => setNewTplCategory(e.target.value)}
-                      placeholder="التصنيف"
+                      placeholder="التصنيف (مثال: عقود البيع)"
                       className="flex-1 px-2.5 py-1.5 text-xs border border-slate-300 rounded"
                     />
                     <button
                       type="button"
                       onClick={async () => {
                         if (!newTplName.trim()) return;
-                        await onSaveCurrentAsTemplate(
-                          newTplName.trim(),
-                          newTplCategory.trim() || 'عام'
-                        );
-                        setNewTplName('');
+                        if (onOpenSaveAsTemplateModal) {
+                          onOpenSaveAsTemplateModal();
+                        } else {
+                          await onSaveCurrentAsTemplate(
+                            newTplName.trim(),
+                            newTplCategory.trim() || 'عام'
+                          );
+                          setNewTplName('');
+                        }
                       }}
-                      className="px-3 py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800"
+                      className="px-3 py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800 shrink-0"
                     >
                       حفظ كقالب
                     </button>
                   </div>
+                </div>
+
+                {/* Templates JSON Export / Import Strip */}
+                <div className="flex items-center gap-2">
+                  {onExportTemplatesJson && (
+                    <button
+                      type="button"
+                      onClick={onExportTemplatesJson}
+                      disabled={templates.length === 0}
+                      className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 disabled:opacity-40"
+                      title="تصدير جميع قوالب مكتبكم المحفوظة إلى ملف JSON"
+                    >
+                      <Download className="w-3 h-3 text-blue-900" />
+                      <span>تصدير القوالب (JSON)</span>
+                    </button>
+                  )}
+
+                  {onImportTemplatesJson && (
+                    <label
+                      className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 cursor-pointer"
+                      title="استيراد قوالب من ملف JSON تم تصديره مسبقاً"
+                    >
+                      <Upload className="w-3 h-3 text-blue-900" />
+                      <span>استيراد قوالب (JSON)</span>
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            onImportTemplatesJson(file);
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
 
                 <div className="space-y-2">

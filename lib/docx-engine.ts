@@ -21,10 +21,16 @@ export interface DocxExportOptions {
 
 export interface DocxImportResult {
   title: string;
+  fileName: string;
   bodyHtml: string;
   headerHtml: string;
   footerHtml: string;
   extractedPlaceholders: string[];
+  stats: {
+    paragraphCount: number;
+    wordCount: number;
+    tableCount: number;
+  };
 }
 
 interface MediaRelationship {
@@ -1164,24 +1170,59 @@ export async function importNotaryDocxFile(file: File): Promise<DocxImportResult
     }
   }
 
-  // Extract {{...}} placeholders
-  const combinedText = `${headerHtml} ${bodyHtml} ${footerHtml}`.replace(/<[^>]+>/g, '');
+  // Normalize bracket placeholders like [البائع] or [الطرف الأول] into {{البائع}} / .smart-tag
+  const normalizeBracketPlaceholdersInHtml = (htmlStr: string): string => {
+    if (!htmlStr) return '';
+    // Only replace [text] outside HTML tags when text is 1..45 chars and doesn't contain HTML/newlines
+    return htmlStr.replace(/(>[^<]*)|(<[^>]+>)/g, (segment) => {
+      if (segment.startsWith('<')) return segment;
+      return segment.replace(/\[\s*([^\[\]<>]{1,45}?)\s*\]/g, (fullMatch, inner) => {
+        const cleanKey = normalizePlaceholderKey(inner).replace(/\s+/g, '_');
+        if (!cleanKey || /^\d+$/.test(cleanKey)) return fullMatch;
+        return `<span class="smart-tag" data-var="${escapeXml(cleanKey)}">{{${escapeXml(cleanKey)}}}</span>`;
+      });
+    });
+  };
+
+  const normalizedBodyHtml = normalizeBracketPlaceholdersInHtml(bodyHtml);
+  const normalizedHeaderHtml = normalizeBracketPlaceholdersInHtml(headerHtml);
+  const normalizedFooterHtml = normalizeBracketPlaceholdersInHtml(footerHtml);
+
+  // Extract {{...}} and data-var placeholders
+  const combinedHtml = `${normalizedHeaderHtml} ${normalizedBodyHtml} ${normalizedFooterHtml}`;
+  const combinedText = combinedHtml.replace(/<[^>]+>/g, ' ');
   const placeholderRegex = /\{\{\s*([^}]+?)\s*\}\}/g;
   const placeholders = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = placeholderRegex.exec(combinedText)) !== null) {
-    if (m[1]?.trim()) placeholders.add(m[1].trim());
+    const clean = normalizePlaceholderKey(m[1] || '').replace(/\s+/g, '_');
+    if (clean) placeholders.add(clean);
   }
+
+  const paragraphCount = (normalizedBodyHtml.match(/<p\b/gi) || []).length || 1;
+  const tableCount = (normalizedBodyHtml.match(/<table\b/gi) || []).length;
+  const plainWords = combinedText
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
 
   const title = file.name.replace(/\.docx$/i, '');
   return {
     title,
+    fileName: file.name,
     bodyHtml:
-      bodyHtml ||
+      normalizedBodyHtml ||
       `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;"><br></p>`,
-    headerHtml,
-    footerHtml,
+    headerHtml: normalizedHeaderHtml,
+    footerHtml: normalizedFooterHtml,
     extractedPlaceholders: Array.from(placeholders),
+    stats: {
+      paragraphCount,
+      wordCount: plainWords.length,
+      tableCount,
+    },
   };
 }
 

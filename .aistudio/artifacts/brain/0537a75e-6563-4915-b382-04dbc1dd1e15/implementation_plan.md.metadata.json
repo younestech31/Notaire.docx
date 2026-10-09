@@ -1,6 +1,6 @@
 {
-  "summary":  "خطة الإصلاح الدقيق 2.6.1 شاملة الكود المحدد لحل Stale Closure في SmartModals.tsx وSidebarWorkspace.tsx وNotaryEditorApp.tsx، وتقوية mergePlaceholdersIntoHtml باستخدام DOMParser في lib/docx-engine.ts، وتفعيل decorateSmartTagsInDOM عند كتابة {{...}} يدوياً، وإصلاح عرض RTL.",
-  "updatedAt":  "2026-10-09T18:11:51.424524660Z",
+  "summary":  "Updated Version 2.7 Implementation Plan aligned with the actual Next.js codebase architecture (contentEditable A4 editor, NotaryEditorApp, SmartModals, SidebarWorkspace, docx-engine, storage), incorporating double-click smart-tag focus, template application modes, RTL/table-aware Word import, custom office templates, Arabic Find & Replace, version snapshots, and a 5-step onboarding tour strictly focused on contract editing workflows.",
+  "updatedAt":  "2026-10-09T18:55:28.788507115Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -399,6 +399,35 @@ export async function deleteCustomTemplate(id: string): Promise<void> {
   await deleteFromStore(STORE_TEMPLATES, 'notary_templates_v1', id);
 }
 
+export async function exportCustomTemplatesJson(): Promise<string> {
+  const templates = await loadCustomTemplates();
+  return JSON.stringify(templates, null, 2);
+}
+
+export async function importCustomTemplatesJson(templates: CustomTemplate[]): Promise<number> {
+  let count = 0;
+  for (const tpl of templates) {
+    if (tpl && tpl.name && (tpl.bodyHtml !== undefined || tpl.id)) {
+      const sanitized: CustomTemplate = {
+        id: tpl.id || `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: tpl.name,
+        category: tpl.category || 'عام',
+        description: tpl.description || '',
+        bodyHtml: tpl.bodyHtml || '',
+        headerHtml: tpl.headerHtml || '',
+        footerHtml: tpl.footerHtml || '',
+        pageNumberingEnabled: !!tpl.pageNumberingEnabled,
+        extractedPlaceholders: Array.isArray(tpl.extractedPlaceholders) ? tpl.extractedPlaceholders : [],
+        defaultFieldValues: tpl.defaultFieldValues || {},
+        updatedAt: tpl.updatedAt || new Date().toISOString(),
+      };
+      await saveCustomTemplate(sanitized);
+      count++;
+    }
+  }
+  return count;
+}
+
 // 6. Saved Documents CRUD
 export async function loadSavedDocuments(): Promise<SavedDocument[]> {
   const items = await getAllFromStore<SavedDocument>(STORE_DOCUMENTS, 'notary_documents_v1');
