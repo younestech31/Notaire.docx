@@ -99,6 +99,20 @@ export interface DerivedDocTemplate {
   updatedAt: string;
 }
 
+export type WordTemplateType = 'original' | 'copy' | 'extract' | 'registration' | 'fiscal' | string;
+
+export interface WordTemplateDefinition {
+  id: string;
+  name: string;
+  type: WordTemplateType;
+  description: string;
+  bodyHtml: string;
+  headerHtml: string;
+  footerHtml: string;
+  isDefault?: boolean;
+  updatedAt: string;
+}
+
 export interface DocumentRevision {
   id: string;
   documentId: string;
@@ -139,6 +153,34 @@ export interface CustomTemplate {
   updatedAt: string;
 }
 
+export interface NotaryClerk {
+  id: string;
+  name: string;
+  role: 'notary' | 'clerk';
+  color: string;
+  createdAt: string;
+}
+
+export interface ContractFolder {
+  id: string;
+  name: string;
+  parentId: string | null; // null for root level
+  clerkId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedContractDerivedDoc {
+  id: string;
+  typeId: DerivedDocCode;
+  title: string;
+  content: string;
+  headerHtml?: string;
+  footerHtml?: string;
+  fieldValues?: Record<string, string>;
+  updatedAt: string;
+}
+
 export interface SavedDocument {
   id: string;
   title: string;
@@ -150,6 +192,16 @@ export interface SavedDocument {
   fieldValues: Record<string, string>;
   selectedEstateId?: string;
   selectedLotNumber?: string;
+  folderId?: string | null;
+  clerkId?: string;
+  clerkName?: string;
+  contractNumber?: string;
+  year?: number;
+  clientName?: string;
+  modelId?: string;
+  modelTitle?: string;
+  status?: 'draft' | 'editing' | 'ready_to_sign' | 'signed' | 'registered';
+  derivedDocuments?: SavedContractDerivedDoc[];
   updatedAt: string;
   createdAt: string;
 }
@@ -217,6 +269,8 @@ export interface ClauseVariableGroup {
 export interface BackupBundle {
   version: string;
   exportedAt: string;
+  clerks?: NotaryClerk[];
+  folders?: ContractFolder[];
   templates: CustomTemplate[];
   documents: SavedDocument[];
   estates: SubdivisionEstate[];

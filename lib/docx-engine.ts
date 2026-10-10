@@ -170,7 +170,7 @@ export function mergePlaceholdersIntoHtml(
           }
         }
 
-        // 1b. Replace {{...}} inside individual Text nodes
+        // 1b. Replace [...] and legacy {{...}} inside individual Text nodes
         const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
         const textNodes: Text[] = [];
         let curr: Node | null;
@@ -179,18 +179,25 @@ export function mergePlaceholdersIntoHtml(
         }
         for (const tNode of textNodes) {
           const txt = tNode.nodeValue || '';
-          if (txt.includes('{{') && txt.includes('}}')) {
-            const replaced = txt.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, rk) => {
-              const val = lookupPlaceholderValue(fieldValues, rk);
-              return val !== undefined && val.trim() !== '' ? val.trim() : full;
-            });
+          if (
+            (txt.includes('[') && txt.includes(']')) ||
+            (txt.includes('{{') && txt.includes('}}'))
+          ) {
+            const replaced = txt.replace(
+              /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g,
+              (full, bKey, cKey) => {
+                const rk = bKey || cKey || '';
+                const val = lookupPlaceholderValue(fieldValues, rk);
+                return val !== undefined && val.trim() !== '' ? val.trim() : full;
+              }
+            );
             if (replaced !== txt) {
               tNode.nodeValue = replaced;
             }
           }
         }
 
-        // 1c. Replace cross-node split {{...}} inside block elements (e.g. when browser split {{key}} across spans)
+        // 1c. Replace cross-node split [...] or {{...}} inside block elements
         const blocks = Array.from(
           container.querySelectorAll('p, li, td, th, div, h1, h2, h3, h4')
         ) as HTMLElement[];
@@ -199,7 +206,9 @@ export function mergePlaceholdersIntoHtml(
         );
         for (const block of leafBlocks) {
           const bText = block.textContent || '';
-          if (!bText.includes('{{') || !bText.includes('}}')) continue;
+          const hasBrackets = bText.includes('[') && bText.includes(']');
+          const hasBraces = bText.includes('{{') && bText.includes('}}');
+          if (!hasBrackets && !hasBraces) continue;
           const bWalker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
           const segs: { node: Text; start: number; end: number }[] = [];
           let full = '';
@@ -212,10 +221,13 @@ export function mergePlaceholdersIntoHtml(
               full += tn.nodeValue;
             }
           }
-          const matches = Array.from(full.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)).reverse();
+          const matches = Array.from(
+            full.matchAll(/\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g)
+          ).reverse();
           for (const m of matches) {
             if (m.index === undefined) continue;
-            const val = lookupPlaceholderValue(fieldValues, m[1]);
+            const rawK = m[1] || m[2] || '';
+            const val = lookupPlaceholderValue(fieldValues, rawK);
             if (val === undefined || val.trim() === '') continue;
             const mStart = m.index;
             const mEnd = mStart + m[0].length;
@@ -257,18 +269,18 @@ export function mergePlaceholdersIntoHtml(
 
   // 3. Regex replacement for <span class="...smart-tag...">...</span>
   workingHtml = workingHtml.replace(
-    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>\{\{\s*([^}<]+?)\s*\}\}<\/span>/gi,
-    (fullMatch, rawKey) => {
-      const val = lookupPlaceholderValue(fieldValues, rawKey);
+    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>(?:\[\s*([^\[\]<]+?)\s*\]|\{\{\s*([^}<]+?)\s*\}\})<\/span>/gi,
+    (fullMatch, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
 
-  // 4. Replace any remaining raw {{key}} occurrences in text (even if surrounded by &nbsp; or inline tags)
+  // 4. Replace any remaining raw [key] or {{key}} occurrences in text
   return workingHtml.replace(
-    /\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
-    (fullMatch, rawKey) => {
-      const val = lookupPlaceholderValue(fieldValues, rawKey);
+    /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
+    (fullMatch, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
@@ -1170,17 +1182,21 @@ export async function importNotaryDocxFile(file: File): Promise<DocxImportResult
     }
   }
 
-  // Normalize bracket placeholders like [البائع] or [الطرف الأول] into {{البائع}} / .smart-tag
+  // Normalize bracket placeholders like [البائع] (and any legacy {{البائع}}) into [البائع] / .smart-tag
   const normalizeBracketPlaceholdersInHtml = (htmlStr: string): string => {
     if (!htmlStr) return '';
-    // Only replace [text] outside HTML tags when text is 1..45 chars and doesn't contain HTML/newlines
+    // Only replace [text] or {{text}} outside HTML tags when text is 1..45 chars and doesn't contain HTML/newlines
     return htmlStr.replace(/(>[^<]*)|(<[^>]+>)/g, (segment) => {
       if (segment.startsWith('<')) return segment;
-      return segment.replace(/\[\s*([^\[\]<>]{1,45}?)\s*\]/g, (fullMatch, inner) => {
-        const cleanKey = normalizePlaceholderKey(inner).replace(/\s+/g, '_');
-        if (!cleanKey || /^\d+$/.test(cleanKey)) return fullMatch;
-        return `<span class="smart-tag" data-var="${escapeXml(cleanKey)}">{{${escapeXml(cleanKey)}}}</span>`;
-      });
+      return segment.replace(
+        /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}<>]{1,45}?)\s*\}\}/g,
+        (fullMatch, bInner, cInner) => {
+          const inner = bInner || cInner || '';
+          const cleanKey = normalizePlaceholderKey(inner).replace(/\s+/g, '_');
+          if (!cleanKey || /^\d+$/.test(cleanKey)) return fullMatch;
+          return `<span class="smart-tag" data-var="${escapeXml(cleanKey)}">[${escapeXml(cleanKey)}]</span>`;
+        }
+      );
     });
   };
 
@@ -1188,15 +1204,16 @@ export async function importNotaryDocxFile(file: File): Promise<DocxImportResult
   const normalizedHeaderHtml = normalizeBracketPlaceholdersInHtml(headerHtml);
   const normalizedFooterHtml = normalizeBracketPlaceholdersInHtml(footerHtml);
 
-  // Extract {{...}} and data-var placeholders
+  // Extract [...] (and legacy {{...}}) and data-var placeholders
   const combinedHtml = `${normalizedHeaderHtml} ${normalizedBodyHtml} ${normalizedFooterHtml}`;
   const combinedText = combinedHtml.replace(/<[^>]+>/g, ' ');
-  const placeholderRegex = /\{\{\s*([^}]+?)\s*\}\}/g;
+  const placeholderRegex = /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g;
   const placeholders = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = placeholderRegex.exec(combinedText)) !== null) {
-    const clean = normalizePlaceholderKey(m[1] || '').replace(/\s+/g, '_');
-    if (clean) placeholders.add(clean);
+    const raw = m[1] || m[2] || '';
+    const clean = normalizePlaceholderKey(raw).replace(/\s+/g, '_');
+    if (clean && !/^\d+$/.test(clean)) placeholders.add(clean);
   }
 
   const paragraphCount = (normalizedBodyHtml.match(/<p\b/gi) || []).length || 1;

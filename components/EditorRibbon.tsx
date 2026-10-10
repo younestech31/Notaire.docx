@@ -77,6 +77,7 @@ interface EditorRibbonProps {
     file: File
   ) => Promise<void>;
   onDeleteDerivedTemplate?: (id: string) => Promise<void>;
+  onOpenWordTemplatesModal?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleBold: () => void;
@@ -152,6 +153,7 @@ export default function EditorRibbon({
   onSaveCurrentAsDerivedTemplate,
   onImportDocxForDerivedTemplate,
   onDeleteDerivedTemplate,
+  onOpenWordTemplatesModal,
   onUndo,
   onRedo,
   onToggleBold,
@@ -829,7 +831,7 @@ export default function EditorRibbon({
           }}
           onClick={onConvertSelectionToSmartTag}
           className="inline-flex items-center gap-1 h-7 px-2.5 rounded text-xs font-bold bg-pink-800 text-white hover:bg-pink-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
-          title="حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم ذكي {{...}} دون فتح أي نافذة (Alt+V)"
+          title="حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم متغير [...] دون فتح أي نافذة (Alt+V)"
         >
           <span className="font-mono text-[10px] bg-pink-950/40 px-1 rounded">[ ]</span>
           <span>تحويل المحدد لوسم</span>
@@ -855,9 +857,9 @@ export default function EditorRibbon({
               setShowTagInserterMenu(next);
             }}
             className="inline-flex items-center gap-1 h-7 px-2 rounded text-xs font-semibold bg-white border border-pink-200 text-pink-900 hover:bg-pink-50 transition-colors whitespace-nowrap shrink-0"
-            title="إدراج وسم متغير جاهز أو إنشاء وسم جديد عند موضع المؤشر"
+            title="إدراج وسم متغير جاهز [...] أو إنشاء وسم جديد عند موضع المؤشر"
           >
-            <span className="font-mono font-bold text-[11px]">{`{{ }}`}</span>
+            <span className="font-mono font-bold text-[11px]">[ ]</span>
             <span>إدراج وسم</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
@@ -955,7 +957,7 @@ export default function EditorRibbon({
                               : 'bg-pink-50 text-pink-800 border border-pink-200'
                           }`}
                         >
-                          {`{{${key}}}`}
+                          {`[${key}]`}
                         </span>
                       </button>
                     );
@@ -1000,6 +1002,20 @@ export default function EditorRibbon({
 
           {showDerivedMenu && (
             <div className="absolute right-0 mt-1 w-96 max-w-[92vw] bg-white border border-slate-200 rounded-md shadow-xl p-2.5 z-50 space-y-2">
+              {onOpenWordTemplatesModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenWordTemplatesModal();
+                    setShowDerivedMenu(false);
+                  }}
+                  className="w-full mb-2 py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-950 text-xs font-bold rounded flex items-center justify-between border border-blue-200"
+                >
+                  <span>قوالب Word الرسمية والمشتقة (Original, Extract...)</span>
+                  <span className="text-[10px] font-mono">⚙️ إدارة وقوالب</span>
+                </button>
+              )}
+
               <div className="px-1.5 py-1 text-[11px] font-bold text-slate-800 border-b border-slate-100 flex items-center justify-between">
                 <span>توليد فوري (.docx) أو تعديل قوالب المشتقات:</span>
                 <span className="text-[10px] font-normal text-slate-500">

@@ -40,17 +40,21 @@ import {
   SmartVariablesModal,
   SnapshotsHistoryModal,
   VersionDiffModal,
+  WordTemplatesModal,
 } from './SmartModals';
 import {
   ClauseVariableGroup,
+  ContractFolder,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
   DownloadArchiveItem,
   HistorySnapshot,
   ListNumberingStyle,
+  NotaryClerk,
   NotaryClause,
   PartyField,
+  SavedContractDerivedDoc,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
@@ -59,6 +63,7 @@ import {
   SubdivisionEstate,
   SubdivisionLot,
   ToolbarState,
+  WordTemplateDefinition,
 } from '@/lib/types';
 import {
   DEFAULT_DERIVED_DOC_TEMPLATES,
@@ -71,32 +76,40 @@ import {
   deletePartyRecord,
   deletePropertyRecord,
   deleteSubdivisionEstate,
+  deleteWordTemplate,
   exportCustomTemplatesJson,
   exportFullBackupBundle,
   importCustomTemplatesJson,
   importFullBackupBundle,
   loadActiveDraftSession,
+  loadContractFolders,
   loadCustomTemplates,
   loadDerivedDocTemplates,
   loadDocumentRevisions,
   loadDownloadArchive,
+  loadNotaryClerks,
   loadNotaryClauses,
   loadPartyFields,
   loadSavedDocuments,
   loadSavedParties,
   loadSavedProperties,
   loadSubdivisionEstates,
+  loadWordTemplates,
   saveActiveDraftSession,
+  saveContractFolder,
   saveCustomTemplate,
   saveDerivedDocTemplate,
   saveDocumentRecord,
   saveDocumentRevision,
   saveDownloadArchiveItem,
+  saveNotaryClerk,
   saveNotaryClause,
   savePartyFields,
   savePartyRecord,
   savePropertyRecord,
   saveSubdivisionEstate,
+  saveWordTemplate,
+  deleteContractFolder,
 } from '@/lib/storage';
 import {
   computeDocumentMetrics,
@@ -135,6 +148,7 @@ import {
   mergePlaceholdersIntoHtml,
   normalizePlaceholderKey,
 } from '@/lib/docx-engine';
+import { parseContractIntoClauses } from '@/lib/docx-template-engine';
 
 const INITIAL_EMPTY_PARAGRAPH = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
 
@@ -183,6 +197,8 @@ export default function NotaryEditorApp() {
   const [derivedTemplates, setDerivedTemplates] = useState<DerivedDocTemplate[]>(
     DEFAULT_DERIVED_DOC_TEMPLATES
   );
+  const [wordTemplates, setWordTemplates] = useState<WordTemplateDefinition[]>([]);
+  const [showWordTemplatesModal, setShowWordTemplatesModal] = useState<boolean>(false);
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [downloads, setDownloads] = useState<DownloadArchiveItem[]>([]);
@@ -191,6 +207,17 @@ export default function NotaryEditorApp() {
   const [selectedLotNumber, setSelectedLotNumber] = useState<string>('');
   const [savedParties, setSavedParties] = useState<SavedPartyRecord[]>([]);
   const [savedProperties, setSavedProperties] = useState<SavedPropertyRecord[]>([]);
+  const [clerks, setClerks] = useState<NotaryClerk[]>([]);
+  const [activeClerk, setActiveClerk] = useState<NotaryClerk>({
+    id: 'notary-head',
+    name: 'الموثق الرئيسي (الأستاذ)',
+    role: 'notary',
+    color: '#1e3a8a',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  const [folders, setFolders] = useState<ContractFolder[]>([]);
+  const [activeDocument, setActiveDocument] = useState<SavedDocument | null>(null);
+  const [activeDerivedDoc, setActiveDerivedDoc] = useState<SavedContractDerivedDoc | null>(null);
 
   // Modals state
   const [showSmartVarsModal, setShowSmartVarsModal] = useState<boolean>(false);
@@ -382,6 +409,158 @@ export default function NotaryEditorApp() {
     [docId, docTitle, getEditorZonesHtml]
   );
 
+  const handleCreateFolder = useCallback(
+    async (parentId: string | null, name: string) => {
+      const newFolder: ContractFolder = {
+        id: `folder_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        parentId,
+        clerkId: activeClerk.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveContractFolder(newFolder);
+      setFolders(await loadContractFolders());
+      showToast(`تم إنشاء المجلد "${name}"`);
+    },
+    [activeClerk.id, showToast]
+  );
+
+  const handleRenameFolder = useCallback(
+    async (folderId: string, newName: string) => {
+      const f = folders.find((x) => x.id === folderId);
+      if (!f) return;
+      const updated = { ...f, name: newName, updatedAt: new Date().toISOString() };
+      await saveContractFolder(updated);
+      setFolders(await loadContractFolders());
+      showToast('تمت إعادة تسمية المجلد');
+    },
+    [folders, showToast]
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      await deleteContractFolder(folderId);
+      const docsInFolder = documents.filter((d) => d.folderId === folderId);
+      for (const d of docsInFolder) {
+        await saveDocumentRecord({ ...d, folderId: null, updatedAt: new Date().toISOString() });
+      }
+      setFolders(await loadContractFolders());
+      setDocuments(await loadSavedDocuments());
+      showToast('تم حذف المجلد ونقل محتوياته');
+    },
+    [documents, showToast]
+  );
+
+  const handleMoveDocument = useCallback(
+    async (docId: string, targetFolderId: string | null) => {
+      const d = documents.find((x) => x.id === docId);
+      if (!d) return;
+      const updated: SavedDocument = { ...d, folderId: targetFolderId, updatedAt: new Date().toISOString() };
+      await saveDocumentRecord(updated);
+      setDocuments(await loadSavedDocuments());
+      showToast('تم نقل العقد بنجاح');
+    },
+    [documents, showToast]
+  );
+
+  const handleMoveFolder = useCallback(
+    async (folderId: string, targetParentId: string | null) => {
+      if (folderId === targetParentId) return;
+      const f = folders.find((x) => x.id === folderId);
+      if (!f) return;
+      const updated: ContractFolder = { ...f, parentId: targetParentId, updatedAt: new Date().toISOString() };
+      await saveContractFolder(updated);
+      setFolders(await loadContractFolders());
+      showToast('تم نقل المجلد بنجاح');
+    },
+    [folders, showToast]
+  );
+
+  const handleSelectDocument = useCallback(
+    (doc: SavedDocument) => {
+      if (!bodyEditorRef.current) return;
+      recordHistorySnapshot();
+      setDocId(doc.id);
+      setDocTitle(doc.title);
+      setShowHeaderFooter(doc.showHeaderFooter);
+      setPageNumberingEnabled(doc.pageNumberingEnabled);
+      setFieldValues(doc.fieldValues || {});
+      if (doc.selectedEstateId) setSelectedEstateId(doc.selectedEstateId);
+      if (doc.selectedLotNumber) setSelectedLotNumber(doc.selectedLotNumber);
+      bodyEditorRef.current.innerHTML = doc.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
+      normalizeNotaryContainerDOM(bodyEditorRef.current);
+      if (headerEditorRef.current)
+        headerEditorRef.current.innerHTML = doc.headerHtml || '';
+      if (footerEditorRef.current)
+        footerEditorRef.current.innerHTML = doc.footerHtml || '';
+      setActiveDocument(doc);
+      setActiveDerivedDoc(null);
+      syncPlaceholdersAndDraft();
+    },
+    [recordHistorySnapshot, syncPlaceholdersAndDraft]
+  );
+
+  const handleCreateContractInFolder = useCallback(
+    async (folderId: string | null) => {
+      const newDocId = `doc_${Date.now()}`;
+      const newDoc: SavedDocument = {
+        id: newDocId,
+        title: 'عقد توثيقي جديد',
+        bodyHtml: INITIAL_EMPTY_PARAGRAPH,
+        headerHtml: '',
+        footerHtml: '',
+        pageNumberingEnabled: true,
+        showHeaderFooter: false,
+        fieldValues: {},
+        folderId,
+        clerkId: activeClerk.id,
+        clerkName: activeClerk.name,
+        contractNumber: `2026/${Math.floor(100 + Math.random() * 900)}`,
+        status: 'draft',
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        derivedDocuments: [],
+      };
+      await saveDocumentRecord(newDoc);
+      setDocuments(await loadSavedDocuments());
+      handleSelectDocument(newDoc);
+      showToast('تم إنشاء عقد جديد داخل المجلد');
+    },
+    [activeClerk, handleSelectDocument, showToast]
+  );
+
+  const handleSelectDerivedDoc = useCallback(
+    (derivedDoc: SavedContractDerivedDoc) => {
+      if (!bodyEditorRef.current) return;
+      recordHistorySnapshot();
+      setActiveDerivedDoc(derivedDoc);
+      setDocTitle(derivedDoc.title);
+      bodyEditorRef.current.innerHTML = derivedDoc.content || INITIAL_EMPTY_PARAGRAPH;
+      normalizeNotaryContainerDOM(bodyEditorRef.current);
+      if (headerEditorRef.current)
+        headerEditorRef.current.innerHTML = derivedDoc.headerHtml || '';
+      if (footerEditorRef.current)
+        footerEditorRef.current.innerHTML = derivedDoc.footerHtml || '';
+      if (derivedDoc.fieldValues) {
+        setFieldValues(derivedDoc.fieldValues);
+      }
+      syncPlaceholdersAndDraft();
+      showToast(`تم فتح وثيقة المشتق: ${derivedDoc.title}`);
+    },
+    [recordHistorySnapshot, syncPlaceholdersAndDraft, showToast]
+  );
+
+  const handleUpdateDocumentMeta = useCallback(
+    async (updated: SavedDocument) => {
+      await saveDocumentRecord(updated);
+      setDocuments(await loadSavedDocuments());
+      setActiveDocument((prev) => (prev?.id === updated.id ? updated : prev));
+      showToast('تم تحديث بيانات العقد');
+    },
+    [showToast]
+  );
+
   // Initial Load from IndexedDB / LocalStorage
   useEffect(() => {
     let mounted = true;
@@ -396,6 +575,9 @@ export default function NotaryEditorApp() {
         loadedDownloads,
         loadedSavedParties,
         loadedSavedProps,
+        loadedClerks,
+        loadedFolders,
+        loadedWordTpls,
       ] = await Promise.all([
         loadCustomTemplates(),
         loadSavedDocuments(),
@@ -406,6 +588,9 @@ export default function NotaryEditorApp() {
         loadDownloadArchive(),
         loadSavedParties(),
         loadSavedProperties(),
+        loadNotaryClerks(),
+        loadContractFolders(),
+        loadWordTemplates(),
       ]);
       if (!mounted) return;
 
@@ -416,10 +601,14 @@ export default function NotaryEditorApp() {
       setEstates(loadedEstates);
       setClauses(loadedClauses);
       setDerivedTemplates(loadedDerived);
+      setWordTemplates(loadedWordTpls);
       setRevisions(loadedRevs);
       setDownloads(loadedDownloads);
       setSavedParties(loadedSavedParties);
       setSavedProperties(loadedSavedProps);
+      setClerks(loadedClerks);
+      if (loadedClerks.length > 0) setActiveClerk(loadedClerks[0]);
+      setFolders(loadedFolders);
 
       if (loadedEstates.length > 0) {
         setSelectedEstateId(loadedEstates[0].id);
@@ -894,7 +1083,7 @@ export default function NotaryEditorApp() {
       e.preventDefault();
       const varKey =
         smartTag.getAttribute('data-var') ||
-        (smartTag.textContent || '').replace(/[{}]/g, '').trim();
+        (smartTag.textContent || '').replace(/[\[\]{}]/g, '').trim();
       if (varKey) {
         setFocusedVarKey(varKey);
         setShowSmartVarsModal(true);
@@ -1835,7 +2024,7 @@ export default function NotaryEditorApp() {
       savePartyFields(updated);
     }
     syncPlaceholdersAndDraft();
-    showToast(`تم تحويل النص المحدد إلى وسم ذكي {{${createdVar}}} فوراً`);
+    showToast(`تم تحويل النص المحدد إلى وسم ذكي [${createdVar}] فوراً`);
   };
 
   // # New Clause Toolbar Action (زر # بند جديد)
@@ -1882,10 +2071,10 @@ export default function NotaryEditorApp() {
     }
     const tagHtml = `<span class="smart-tag" data-var="${escapeHtml(
       cleanKey
-    )}">{{${escapeHtml(cleanKey)}}}</span>&nbsp;`;
+    )}">[${escapeHtml(cleanKey)}]</span>&nbsp;`;
     insertHtmlAtSelection(bodyEditorRef.current, tagHtml, savedRangeRef.current);
     syncPlaceholdersAndDraft();
-    showToast(`تم إدراج الوسم {{${cleanKey}}} عند موضع المؤشر`);
+    showToast(`تم إدراج الوسم [${cleanKey}] عند موضع المؤشر`);
   };
 
   const decorateEditorZonesPreservingSelection = useCallback(() => {
@@ -2233,6 +2422,12 @@ export default function NotaryEditorApp() {
         onTogglePageNumbering={() => setPageNumberingEnabled((v) => !v)}
         onToggleFindReplace={() => setShowFindReplace((v) => !v)}
         onChangeZoom={setZoom}
+        onOpenWordTemplatesModal={() => {
+          setModalActiveBodyHtml(
+            bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH
+          );
+          setShowWordTemplatesModal(true);
+        }}
         onSaveSelectionBookmark={saveSelectionBookmark}
       />
 
@@ -2241,7 +2436,7 @@ export default function NotaryEditorApp() {
         <div className="bg-amber-100 border-b border-amber-300 px-6 py-2 flex flex-wrap items-center justify-between gap-3 no-print">
           <div className="text-xs font-bold text-amber-950">
             {editingDerivedTpl
-              ? `وضع تعديل قالب الوثيقة المشتقة: "${editingDerivedTpl.name}" — يمكنك تعديل النص والجداول ووسوم {{...}} بحرية تامة.`
+              ? `وضع تعديل قالب الوثيقة المشتقة: "${editingDerivedTpl.name}" — يمكنك تعديل النص والجداول ووسوم [...] بحرية تامة.`
               : `وضع تعديل صياغة البند الجاهز: "${editingClauseObj?.title}"`}
           </div>
           <div className="flex items-center gap-2">
@@ -2431,14 +2626,14 @@ export default function NotaryEditorApp() {
               ];
               setPartyFields(updated);
               savePartyFields(updated);
-              showToast(`تمت إضافة الحقل {{${key}}}`);
+              showToast(`تمت إضافة الحقل [${key}]`);
             }}
             onInsertPlaceholderAtCaret={(key) => {
               if (!bodyEditorRef.current) return;
               recordHistorySnapshot();
               const tagHtml = `<span class="smart-tag" data-var="${escapeHtml(
                 key
-              )}">{{${escapeHtml(key)}}}</span>&nbsp;`;
+              )}">[${escapeHtml(key)}]</span>&nbsp;`;
               insertHtmlAtSelection(
                 bodyEditorRef.current,
                 tagHtml,
@@ -2578,30 +2773,25 @@ export default function NotaryEditorApp() {
               setDerivedTemplates(await loadDerivedDocTemplates());
               showToast('تم حذف القالب المشتق');
             }}
+            folders={folders}
+            clerks={clerks}
+            activeClerk={activeClerk}
+            activeDocument={activeDocument}
+            activeDerivedDocId={activeDerivedDoc?.id || null}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onMoveDocument={handleMoveDocument}
+            onMoveFolder={handleMoveFolder}
+            onCreateContractInFolder={handleCreateContractInFolder}
+            onUpdateDocumentMeta={handleUpdateDocumentMeta}
+            onOpenDerivedModal={() => setShowMultiSourceModal(true)}
+            onSelectDerivedDoc={handleSelectDerivedDoc}
             documents={documents}
             revisions={revisions}
             downloads={downloads}
             activeDocumentId={docId}
-            onOpenDocument={(doc) => {
-              if (!bodyEditorRef.current) return;
-              recordHistorySnapshot();
-              setDocId(doc.id);
-              setDocTitle(doc.title);
-              setShowHeaderFooter(doc.showHeaderFooter);
-              setPageNumberingEnabled(doc.pageNumberingEnabled);
-              setFieldValues(doc.fieldValues || {});
-              if (doc.selectedEstateId) setSelectedEstateId(doc.selectedEstateId);
-              if (doc.selectedLotNumber) setSelectedLotNumber(doc.selectedLotNumber);
-              bodyEditorRef.current.innerHTML =
-                doc.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
-              normalizeNotaryContainerDOM(bodyEditorRef.current);
-              if (headerEditorRef.current)
-                headerEditorRef.current.innerHTML = doc.headerHtml || '';
-              if (footerEditorRef.current)
-                footerEditorRef.current.innerHTML = doc.footerHtml || '';
-              syncPlaceholdersAndDraft(doc.fieldValues || {});
-              showToast(`تم فتح العقد "${doc.title}"`);
-            }}
+            onOpenDocument={handleSelectDocument}
             onOpenMultiSourceNewModal={() => setShowMultiSourceModal(true)}
             onSaveCurrentDocument={() => handleSaveCurrentDocumentAndRevision()}
             onDeleteDocument={async (id) => {
@@ -2870,7 +3060,7 @@ export default function NotaryEditorApp() {
                     dir="rtl"
                     onInput={() => syncPlaceholdersAndDraft()}
                     onKeyUp={(e) => {
-                      if (e.key === '}') decorateEditorZonesPreservingSelection();
+                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
                     }}
                     onBlur={decorateEditorZonesPreservingSelection}
                     onKeyDown={handleEditorKeyDown}
@@ -2897,7 +3087,7 @@ export default function NotaryEditorApp() {
                   dir="rtl"
                   onInput={() => syncPlaceholdersAndDraft()}
                   onKeyUp={(e) => {
-                    if (e.key === '}') decorateEditorZonesPreservingSelection();
+                    if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
                   }}
                   onBlur={decorateEditorZonesPreservingSelection}
                   onKeyDown={handleEditorKeyDown}
@@ -2923,7 +3113,7 @@ export default function NotaryEditorApp() {
                         dir="rtl"
                         onInput={() => syncPlaceholdersAndDraft()}
                         onKeyUp={(e) => {
-                          if (e.key === '}') decorateEditorZonesPreservingSelection();
+                          if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
                         }}
                         onBlur={decorateEditorZonesPreservingSelection}
                         onKeyDown={handleEditorKeyDown}
@@ -3180,6 +3370,46 @@ export default function NotaryEditorApp() {
           setFieldValues(nextVals);
           syncPlaceholdersAndDraft(nextVals);
           showToast(`تم استيراد "${item.docTypeLabel}" من أرشيف التحميلات للمحرر`);
+        }}
+      />
+
+      <WordTemplatesModal
+        isOpen={showWordTemplatesModal}
+        onClose={() => setShowWordTemplatesModal(false)}
+        wordTemplates={wordTemplates}
+        onSaveWordTemplate={async (tpl) => {
+          await saveWordTemplate(tpl);
+          setWordTemplates(await loadWordTemplates());
+          showToast('تم حفظ قالب Word بنجاح');
+        }}
+        onDeleteWordTemplate={async (id) => {
+          await deleteWordTemplate(id);
+          setWordTemplates(await loadWordTemplates());
+          showToast('تم حذف قالب Word');
+        }}
+        contractData={{
+          officeName: activeClerk.name,
+          officeAddr: 'مكتب التوثيق الرسمي',
+          typeActe: docTitle,
+          client1: fieldValues['الطرف_الأول_الاسم'] || '',
+          client2: fieldValues['الطرف_الثاني_الاسم'] || '',
+          dateActe: fieldValues['تاريخ_العقد'] || new Date().toLocaleDateString('ar-DZ'),
+          clauses: (() => {
+            const parsedFromSheet = parseContractIntoClauses(
+              modalActiveBodyHtml,
+              fieldValues
+            );
+            if (parsedFromSheet.length > 0) {
+              return parsedFromSheet.map((c) => ({
+                title: c.title,
+                contentHtml: c.bodyHtml,
+              }));
+            }
+            return clauses
+              .filter((cl) => activeClauseIdsInDoc.includes(cl.id))
+              .map((cl) => ({ title: cl.title, contentHtml: cl.contentHtml }));
+          })(),
+          fieldValues,
         }}
       />
     </div>

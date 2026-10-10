@@ -28,18 +28,22 @@ import {
 } from 'lucide-react';
 import {
   ClauseVariableGroup,
+  ContractFolder,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
   DownloadArchiveItem,
+  NotaryClerk,
   NotaryClause,
   PartyField,
+  SavedContractDerivedDoc,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
   SubdivisionEstate,
   SubdivisionLot,
 } from '@/lib/types';
+import FolderTreeExplorer from './FolderTreeExplorer';
 
 export type SidebarTab = 'clauses' | 'parties' | 'templates' | 'documents';
 
@@ -123,6 +127,20 @@ interface SidebarWorkspaceProps {
   onImportBackupJson: (file: File) => Promise<void>;
   onSaveSelectionBookmark: () => void;
   onToggleCollapse?: () => void;
+  folders: ContractFolder[];
+  clerks: NotaryClerk[];
+  activeClerk: NotaryClerk;
+  activeDocument: SavedDocument | null;
+  activeDerivedDocId?: string | null;
+  onCreateFolder: (parentId: string | null, name: string) => void;
+  onRenameFolder: (folderId: string, newName: string) => void;
+  onDeleteFolder: (folderId: string) => void;
+  onMoveDocument: (docId: string, targetFolderId: string | null) => void;
+  onMoveFolder: (folderId: string, targetParentId: string | null) => void;
+  onCreateContractInFolder: (folderId: string | null) => void;
+  onUpdateDocumentMeta: (updated: SavedDocument) => void;
+  onOpenDerivedModal: (templateId?: string) => void;
+  onSelectDerivedDoc: (derivedDoc: SavedContractDerivedDoc) => void;
 }
 
 export default function SidebarWorkspace({
@@ -200,6 +218,20 @@ export default function SidebarWorkspace({
   onImportBackupJson,
   onSaveSelectionBookmark,
   onToggleCollapse,
+  folders,
+  clerks,
+  activeClerk,
+  activeDocument,
+  activeDerivedDocId,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveDocument,
+  onMoveFolder,
+  onCreateContractInFolder,
+  onUpdateDocumentMeta,
+  onOpenDerivedModal,
+  onSelectDerivedDoc,
 }: SidebarWorkspaceProps) {
   // Clause creation state
   const [newClauseTitle, setNewClauseTitle] = useState('');
@@ -431,7 +463,7 @@ export default function SidebarWorkspace({
                 rows={3}
                 value={newClauseText}
                 onChange={(e) => setNewClauseText(e.target.value)}
-                placeholder="اكتب نص البند هنا (يمكنك تضمين وسوم مثل {{الطرف_الأول_الاسم}}) أو اتركه فارغاً لحفظ النص المحدد حالياً داخل ورقة A4..."
+                placeholder="اكتب نص البند هنا (يمكنك تضمين وسوم مثل [الطرف_الأول_الاسم]) أو اتركه فارغاً لحفظ النص المحدد حالياً داخل ورقة A4..."
                 className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
               />
               <div className="grid grid-cols-2 gap-1.5">
@@ -1049,7 +1081,7 @@ export default function SidebarWorkspace({
                             }}
                             onClick={() => onInsertPlaceholderAtCaret(field.key)}
                             className="text-[10px] text-pink-800 font-semibold hover:underline"
-                            title={`إدراج الوسم {{${field.key}}} في موضع المؤشر`}
+                            title={`إدراج الوسم [${field.key}] في موضع المؤشر`}
                           >
                             + وسم
                           </button>
@@ -1075,7 +1107,7 @@ export default function SidebarWorkspace({
                         type={field.inputType === 'date' ? 'date' : 'text'}
                         value={fieldValues[field.key] || ''}
                         onChange={(e) => onUpdateFieldValue(field.key, e.target.value)}
-                        placeholder={`{{${field.key}}}`}
+                        placeholder={`[${field.key}]`}
                         className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:border-blue-800 focus:outline-none"
                       />
                     </div>
@@ -1534,269 +1566,26 @@ export default function SidebarWorkspace({
             TAB 4: SAVED DOCUMENTS, VERSION DIFF & DOWNLOAD ARCHIVE
            ========================================================= */}
         {activeTab === 'documents' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenMultiSourceNewModal}
-                className="flex-1 py-1.5 px-2.5 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800 inline-flex items-center justify-center gap-1.5"
-              >
-                <FilePlus2 className="w-3.5 h-3.5" />
-                <span>عقد جديد (متعدد المصادر)</span>
-              </button>
-              <button
-                type="button"
-                onClick={onSaveCurrentDocument}
-                className="py-1.5 px-3 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800 inline-flex items-center gap-1.5"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>حفظ</span>
-              </button>
-            </div>
-
-            {/* Sub-tabs: Saved Contracts | Revisions Diff | Download Archive */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded text-[11px] font-medium">
-              <button
-                type="button"
-                onClick={() => setDocsSubTab('saved')}
-                className={`py-1 rounded ${
-                  docsSubTab === 'saved' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600'
-                }`}
-              >
-                المسودات ({documents.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setDocsSubTab('revisions')}
-                className={`py-1 rounded ${
-                  docsSubTab === 'revisions'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600'
-                }`}
-              >
-                سجل النسخ ({revisions.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setDocsSubTab('downloads')}
-                className={`py-1 rounded ${
-                  docsSubTab === 'downloads'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600'
-                }`}
-              >
-                أرشيف التحميلات ({downloads.length})
-              </button>
-            </div>
-
-            {docsSubTab === 'saved' && (
-              <div className="space-y-2.5">
-                <input
-                  type="text"
-                  value={docSearch}
-                  onChange={(e) => setDocSearch(e.target.value)}
-                  placeholder="بحث في العقود والمسودات المحفوظة..."
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded"
-                />
-
-                {documents
-                  .filter((d) => !docSearch.trim() || d.title.includes(docSearch.trim()))
-                  .map((doc) => {
-                    const isCurrent = doc.id === activeDocumentId;
-                    return (
-                      <div
-                        key={doc.id}
-                        className={`border rounded-md p-2.5 space-y-2 ${
-                          isCurrent
-                            ? 'border-blue-400 bg-blue-50/40'
-                            : 'border-slate-200 bg-white'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-bold text-slate-900">{doc.title}</div>
-                            <div className="text-[11px] text-slate-500 tabular-nums">
-                              {new Date(doc.updatedAt).toLocaleString('ar-DZ')}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteDocument(doc.id)}
-                            className="p-1 text-slate-400 hover:text-red-600"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onOpenDocument(doc)}
-                            className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
-                          >
-                            فتح في المحرر
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onExportDocumentDocx(doc)}
-                            className="py-1 px-2.5 bg-slate-100 text-slate-800 text-[11px] font-medium rounded hover:bg-slate-200 inline-flex items-center gap-1"
-                          >
-                            <Download className="w-3 h-3" />
-                            <span>.docx</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-
-            {docsSubTab === 'revisions' && (
-              <div className="space-y-2.5">
-                <button
-                  type="button"
-                  onClick={onOpenVersionDiffModal}
-                  className="w-full py-2 px-3 bg-blue-900 text-white text-xs font-semibold rounded hover:bg-blue-800 inline-flex items-center justify-center gap-1.5"
-                >
-                  <GitCompare className="w-4 h-4" />
-                  <span>فتح مقارن النسخ التفصيلي (Diff بالأخضر والأحمر)</span>
-                </button>
-
-                {revisions.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-slate-500">
-                    لا توجد نسخ مسجلة بعد. يتم تسجيل النسخ تلقائياً مع الحفظ.
-                  </div>
-                ) : (
-                  revisions.map((rev) => (
-                    <div
-                      key={rev.id}
-                      className="border border-slate-200 rounded-md p-2.5 bg-white space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900">
-                          {rev.documentTitle}
-                        </span>
-                        <span className="text-[10px] text-slate-500 tabular-nums">
-                          {new Date(rev.createdAt).toLocaleString('ar-DZ')}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-600">
-                        {rev.summary} · ({rev.author})
-                      </div>
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <button
-                          type="button"
-                          onClick={onOpenVersionDiffModal}
-                          className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium rounded"
-                        >
-                          مقارنة مع الحالية
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onRestoreRevision(rev)}
-                          className="py-1 px-2 bg-blue-50 text-blue-900 hover:bg-blue-100 text-[11px] font-medium rounded inline-flex items-center gap-1"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>استعادة</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {docsSubTab === 'downloads' && (
-              <div className="space-y-2.5">
-                <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
-                  يُحفظ هنا كل ملف تم تصديره (سواء العقد الأصلي أو المستخرج أو إجراء الشهر أو شهادة البيع أو الصيغة التنفيذية) لإعادة فتحه أو تحميله فوراً.
-                </div>
-
-                {downloads.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-slate-500">
-                    أرشيف التحميلات فارغ حالياً.
-                  </div>
-                ) : (
-                  downloads.map((item) => (
-                    <div
-                      key={item.id}
-                      className="border border-slate-200 rounded-md p-2.5 bg-white space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-bold text-slate-900">
-                            {item.documentTitle}
-                          </div>
-                          <div className="text-[11px] text-blue-900 font-semibold">
-                            نوع الوثيقة: {item.docTypeLabel}
-                          </div>
-                          <div className="text-[10px] text-slate-500 tabular-nums">
-                            {new Date(item.createdAt).toLocaleString('ar-DZ')}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteDownloadArchiveItem(item.id)}
-                          className="p-1 text-slate-400 hover:text-red-600"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => onOpenDownloadArchiveItemInEditor(item)}
-                          className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium rounded"
-                        >
-                          فتح في المحرر
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onRedownloadArchiveItemDocx(item)}
-                          className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800 inline-flex items-center justify-center gap-1"
-                        >
-                          <Download className="w-3 h-3" />
-                          <span>إعادة تحميل .docx</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* Full Offline Backup Export / Import (JSON) */}
-            <div className="border-t border-slate-200 pt-3 space-y-2">
-              <div className="text-xs font-bold text-slate-900">
-                النسخ الاحتياطي الشامل للمكتب (JSON)
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={onExportBackupJson}
-                  className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded inline-flex items-center justify-center gap-1"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>تصدير قاعدة المكتب</span>
-                </button>
-                <label className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded inline-flex items-center justify-center gap-1 cursor-pointer">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>استيراد نسخة</span>
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) {
-                        onImportBackupJson(f);
-                        e.target.value = '';
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
+          <FolderTreeExplorer
+            folders={folders}
+            documents={documents}
+            clerks={clerks}
+            activeClerk={activeClerk}
+            activeDocument={activeDocument}
+            onSelectDocument={onOpenDocument}
+            onCreateFolder={onCreateFolder}
+            onRenameFolder={onRenameFolder}
+            onDeleteFolder={onDeleteFolder}
+            onMoveDocument={onMoveDocument}
+            onMoveFolder={onMoveFolder}
+            onCreateContractInFolder={onCreateContractInFolder}
+            onDeleteDocument={onDeleteDocument}
+            onUpdateDocumentMeta={onUpdateDocumentMeta}
+            derivedTemplates={derivedTemplates}
+            onOpenDerivedModal={onOpenMultiSourceNewModal}
+            onSelectDerivedDoc={() => {}}
+            activeDerivedDocId={activeDerivedDocId}
+          />
         )}
       </div>
     </aside>
