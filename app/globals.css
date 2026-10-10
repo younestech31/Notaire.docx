@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+:root {
+  --brand-ink: #0F2744;
+  --brand-action: #1E3A8A;
+  --brand-paper: #F7F5F0;
+  --brand-gold: #C4A46A;
+  --brand-seal: #8C1D2C;
+  --brand-muted: #5C6B7A;
+  --brand-surface: #F1F5F9;
+}
+
 @layer base {
   .tabular-nums {
     font-variant-numeric: tabular-nums;

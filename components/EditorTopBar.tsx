@@ -59,37 +59,46 @@ export default function EditorTopBar({
     : null;
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-slate-200 shrink-0 no-print select-none">
-      {/* Right: Brand & Editable Contract Title Input with Auto-Save Badge */}
+    <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-[#C4A46A]/35 shrink-0 no-print select-none shadow-2xs">
+      {/* Right: Brand Mark (/brand/mark.svg) & Editable Contract Title Input with Auto-Save Badge */}
       <div className="flex items-center gap-2.5 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
-            م
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/brand/mark.svg"
+            alt="الموثق الرقمي"
+            width={34}
+            height={34}
+            className="w-8.5 h-8.5 rounded-lg shadow-2xs shrink-0 select-none"
+          />
+          <div className="hidden sm:flex flex-col leading-tight">
+            <span className="text-sm font-bold tracking-tight text-[#0F2744]">
+              الموثق الرقمي
+            </span>
+            <span className="text-[10px] font-medium text-[#5C6B7A]">
+              محرر العقود التوثيقية
+            </span>
           </div>
-          <span className="text-sm font-bold tracking-tight text-slate-900 hidden sm:inline">
-            الموثق الرقمي
-          </span>
         </div>
 
-        <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+        <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
-        <div className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100/90 border border-slate-200 focus-within:border-blue-900 focus-within:bg-white rounded-lg px-2.5 py-1 transition-all">
-          <FileEdit className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <div className="flex items-center gap-1.5 bg-[#F1F5F9] hover:bg-slate-100 border border-slate-200 focus-within:border-[#1E3A8A] focus-within:bg-white rounded-lg px-2.5 py-1 transition-all">
+          <FileEdit className="w-3.5 h-3.5 text-[#5C6B7A] shrink-0" />
           <input
             type="text"
             value={docTitle}
             onChange={(e) => onChangeDocTitle(e.target.value)}
             title="انقر لتعديل عنوان العقد مباشرة"
-            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-36 sm:w-48 md:w-60 truncate"
+            className="bg-transparent text-xs font-bold text-[#0F2744] focus:outline-none w-36 sm:w-48 md:w-60 truncate"
             placeholder="عنوان العقد..."
           />
           <span className="text-[10px] shrink-0">
             {autoSaveState === 'saving' ? (
               <span className="text-amber-600 font-medium">جاري الحفظ...</span>
             ) : autoSaveState === 'error' ? (
-              <span className="text-red-600 font-bold">تعذر الحفظ !</span>
+              <span className="text-[#8C1D2C] font-bold">تعذر الحفظ !</span>
             ) : (
-              <span className="text-emerald-600 font-medium">محفوظ ✓</span>
+              <span className="text-emerald-700 font-medium">محفوظ ✓</span>
             )}
           </span>
         </div>
@@ -97,7 +106,7 @@ export default function EditorTopBar({
 
       {/* Left: GROUP 1 — ملف (File & Office Backup Controls) */}
       <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-        <span className="text-[10px] font-bold text-slate-400 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 select-none hidden xl:inline">
+        <span className="text-[10px] font-bold text-[#5C6B7A] px-1.5 py-0.5 rounded bg-[#F1F5F9] border border-slate-200 select-none hidden xl:inline">
           ملف
         </span>
 
@@ -105,19 +114,19 @@ export default function EditorTopBar({
         <button
           type="button"
           onClick={onOpenNewContractModal}
-          className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
+          className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-[#F7F5F0] text-[#0F2744] rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
           title="بدء عقد جديد من قالب أو مسودة أو ملف وورد أو أرشيف التحميلات"
         >
-          <FilePlus2 className="w-3.5 h-3.5 text-blue-900" />
+          <FilePlus2 className="w-3.5 h-3.5 text-[#1E3A8A]" />
           <span className="hidden md:inline">عقد جديد</span>
         </button>
 
         {/* Import Word (.docx) */}
         <label
-          className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+          className="px-2.5 py-1.5 bg-white border border-slate-300 text-[#0F2744] hover:bg-[#F7F5F0] rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
           title="فتح واستيراد ملف Word (.docx)"
         >
-          <FileUp className="w-3.5 h-3.5 text-blue-900" />
+          <FileUp className="w-3.5 h-3.5 text-[#1E3A8A]" />
           <span className="hidden md:inline">فتح Word</span>
           <input
             type="file"
@@ -139,12 +148,12 @@ export default function EditorTopBar({
           onClick={onTogglePreviewMergedMode}
           className={`px-2.5 py-1.5 border rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
             previewMergedMode
-              ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold'
-              : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              ? 'bg-[#F7F5F0] border-[#C4A46A] text-[#0F2744] font-bold'
+              : 'bg-white border-slate-300 text-[#0F2744] hover:bg-[#F7F5F0]'
           }`}
           title="معاينة دمج الحقول جنباً إلى جنب مع الاستمارة قبل التصدير"
         >
-          <Eye className="w-3.5 h-3.5" />
+          <Eye className="w-3.5 h-3.5 text-[#1E3A8A]" />
           <span className="hidden sm:inline">
             {previewMergedMode ? 'وضع التحرير' : 'معاينة'}
           </span>
@@ -154,10 +163,10 @@ export default function EditorTopBar({
         <button
           type="button"
           onClick={onOpenSnapshotsHistoryModal}
-          className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+          className="px-2.5 py-1.5 bg-white border border-slate-300 text-[#0F2744] hover:bg-[#F7F5F0] rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
           title="سجل التعديلات واللقطات الزمنية والمقارنة الخاصة بهذا العقد"
         >
-          <History className="w-3.5 h-3.5 text-blue-900" />
+          <History className="w-3.5 h-3.5 text-[#1E3A8A]" />
           <span className="hidden lg:inline">السجل ({revisionsCount})</span>
         </button>
 
@@ -165,10 +174,10 @@ export default function EditorTopBar({
         <button
           type="button"
           onClick={onPrint}
-          className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
+          className="px-2.5 py-1.5 bg-white border border-slate-300 text-[#0F2744] hover:bg-[#F7F5F0] rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
           title="طباعة العقد A4"
         >
-          <Printer className="w-3.5 h-3.5" />
+          <Printer className="w-3.5 h-3.5 text-[#0F2744]" />
           <span className="hidden xl:inline">طباعة</span>
         </button>
 
@@ -176,7 +185,7 @@ export default function EditorTopBar({
         <button
           type="button"
           onClick={onExportCurrentToWord}
-          className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
+          className="px-3 py-1.5 text-xs font-semibold text-white bg-[#1E3A8A] rounded-lg hover:bg-[#0F2744] transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
           title="تصدير العقد التوثيقي كاملاً إلى ملف Word (.docx)"
         >
           <Download className="w-3.5 h-3.5" />

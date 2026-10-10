@@ -1,0 +1,34 @@
+{
+  "name": "الموثق الرقمي",
+  "nameLatin": "Notaire",
+  "tagline": "محرر العقود التوثيقية",
+  "colors": {
+    "ink": "#0F2744",
+    "action": "#1E3A8A",
+    "paper": "#F7F5F0",
+    "gold": "#C4A46A",
+    "seal": "#8C1D2C",
+    "muted": "#5C6B7A",
+    "surface": "#F1F5F9"
+  },
+  "type": {
+    "ui": "Cairo",
+    "document": "Arial",
+    "documentSizePt": 13,
+    "note": "خط العقد داخل ورقة A4 يبقى Arial 13pt. Cairo للواجهة فقط."
+  },
+  "files": {
+    "favicon": "/favicon.svg",
+    "mark": "/brand/mark.svg",
+    "lockup": "/brand/logo-lockup.svg",
+    "icon192": "/icons/icon-192.png",
+    "icon512": "/icons/icon-512.png",
+    "appleTouch": "/icons/apple-touch-icon.png"
+  },
+  "usage": [
+    "العلامة المربعة للأيقونة وشريط العنوان وأيقونة برنامج سطح المكتب.",
+    "الشعار الأفقي لشاشة البداية وعنوان النافذة العريض فقط.",
+    "لا تُلوَّن الورقة التوثيقية بألوان العلامة. متن العقد أسود على أبيض.",
+    "لا يُستخدم ختم الدولة ولا علمها داخل العلامة."
+  ]
+}

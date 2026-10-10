@@ -3510,7 +3510,7 @@ export default function NotaryEditorApp() {
         </div>
       ) : (
         /* SLIM ACTIVITY RAIL (الشريط الجانبي يبدأ مطوياً كعمود أيقونات نحيف للأقسام الأربعة ويفتح عند اختيار قسم) */
-        <aside className="flex w-14 bg-white border-l border-slate-200 flex-col items-center py-2.5 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
+        <aside className="flex w-14 bg-white border-l border-[#C4A46A]/35 flex-col items-center py-2.5 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
           {/* 1. Clauses Section */}
           <button
             type="button"
@@ -3518,7 +3518,7 @@ export default function NotaryEditorApp() {
               setSidebarTab('clauses');
               setIsSidebarOpen(true);
             }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
             title="فتح قسم البنود الجاهزة"
           >
             <ListChecks className="w-4 h-4" />
@@ -3532,13 +3532,13 @@ export default function NotaryEditorApp() {
               setSidebarTab('parties');
               setIsSidebarOpen(true);
             }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900 relative"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744] relative"
             title="فتح قسم الأطراف والتعيينات"
           >
             <UserCheck className="w-4 h-4" />
             <span className="text-[10px] font-medium">الأطراف</span>
             {unfilledCount > 0 && (
-              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-red-600" />
+              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-[#8C1D2C]" />
             )}
           </button>
 
@@ -3549,7 +3549,7 @@ export default function NotaryEditorApp() {
               setSidebarTab('templates');
               setIsSidebarOpen(true);
             }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
             title="فتح قسم قوالب عقود المكتب"
           >
             <FileText className="w-4 h-4" />
@@ -3563,7 +3563,7 @@ export default function NotaryEditorApp() {
               setSidebarTab('documents');
               setIsSidebarOpen(true);
             }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
             title="فتح قسم المستندات والأرشيف"
           >
             <FolderArchive className="w-4 h-4" />
@@ -3573,10 +3573,10 @@ export default function NotaryEditorApp() {
       )}
 
         {/* CENTER A4 CANVAS AREA WITH HORIZONTAL & VERTICAL RULERS */}
-        <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-slate-200/80">
+        <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-[#F7F5F0]">
           {/* Top Horizontal A4 Margin Ruler Indicator (21cm total: 7cm Right | 12cm Content | 2cm Left) */}
           <div
-            className="mb-2 bg-white border border-slate-300 rounded-t shadow-2xs text-[10px] font-mono text-slate-500 flex items-center select-none overflow-hidden no-print"
+            className="mb-2 bg-white border border-[#C4A46A]/45 rounded-t shadow-2xs text-[10px] font-mono text-[#5C6B7A] flex items-center select-none overflow-hidden no-print"
             style={{
               width: '210mm',
               transform: `scale(${zoom / 100})`,
@@ -3586,14 +3586,14 @@ export default function NotaryEditorApp() {
           >
             <div
               style={{ width: '70mm' }}
-              className="bg-slate-100 border-l border-dashed border-slate-400 py-1 text-center text-slate-500 tabular-nums"
+              className="bg-[#F1F5F9] border-l border-dashed border-[#C4A46A] py-1 text-center text-[#5C6B7A] tabular-nums"
               title="هامش أيمن توثيقي ثابت: 7 سنتيمتر"
             >
               هامش يمين: 7 سم
             </div>
             <div
               style={{ width: '120mm' }}
-              className="py-1 text-center font-semibold text-blue-950 tabular-nums flex items-center justify-between px-2"
+              className="py-1 text-center font-semibold text-[#0F2744] tabular-nums flex items-center justify-between px-2"
             >
               <span>0</span>
               <span>المساحة النصية الصافية (12 سم · Arial 13pt · تباعد 1.0)</span>
@@ -3601,7 +3601,7 @@ export default function NotaryEditorApp() {
             </div>
             <div
               style={{ width: '20mm' }}
-              className="bg-slate-100 border-r border-dashed border-slate-400 py-1 text-center text-slate-500 tabular-nums"
+              className="bg-[#F1F5F9] border-r border-dashed border-[#C4A46A] py-1 text-center text-[#5C6B7A] tabular-nums"
               title="هامش أيسر توثيقي ثابت: 2 سنتيمتر"
             >
               2 سم
@@ -3770,16 +3770,16 @@ export default function NotaryEditorApp() {
       </div>
 
       {/* BOTTOM STATUS BAR (شريط الحالة التوثيقي) */}
-      <footer className="bg-white border-t border-slate-200 px-4 py-1.5 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-4 select-none no-print">
+      <footer className="bg-white border-t border-[#C4A46A]/35 px-4 py-1.5 text-[11px] text-[#5C6B7A] flex flex-wrap items-center justify-between gap-4 select-none no-print">
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
+          <span className="inline-flex items-center gap-1.5 font-medium text-[#0F2744]">
             <span
               className={`w-2 h-2 rounded-full ${
                 autoSaveState === 'saved'
                   ? 'bg-emerald-500'
                   : autoSaveState === 'error'
-                  ? 'bg-red-600'
-                  : 'bg-amber-500 animate-pulse'
+                  ? 'bg-[#8C1D2C]'
+                  : 'bg-[#C4A46A] animate-pulse'
               }`}
             />
             {autoSaveState === 'saved'
@@ -3798,7 +3798,7 @@ export default function NotaryEditorApp() {
               setShowSmartVarsModal(true);
             }}
             className={`font-semibold hover:underline ${
-              unfilledCount > 0 ? 'text-red-700' : 'text-emerald-700'
+              unfilledCount > 0 ? 'text-[#8C1D2C]' : 'text-emerald-700'
             }`}
           >
             {unfilledCount > 0
@@ -3814,7 +3814,7 @@ export default function NotaryEditorApp() {
           <span className="text-slate-300">·</span>
           <span>الصفحات المقدرة: {docMetrics.estimatedPages}</span>
           <span className="text-slate-300">·</span>
-          <span className="font-semibold text-slate-800">
+          <span className="font-semibold text-[#0F2744]">
             Arial 13pt · تباعد 1.0 · هوامش 7/2/1/6 سم
           </span>
         </div>
