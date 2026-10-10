@@ -35,6 +35,7 @@ import {
   SavedPartyRecord,
   SavedPropertyRecord,
   SubdivisionEstate,
+  VariableInputType,
   WordTemplateDefinition,
 } from '@/lib/types';
 import { computeDocumentMetrics, computeTextDiff } from '@/lib/editor-utils';
@@ -49,6 +50,7 @@ interface SmartVariablesModalProps {
   clauseGroups: ClauseVariableGroup[];
   partyFields: PartyField[];
   fieldValues: Record<string, string>;
+  fieldInputTypes?: Record<string, VariableInputType>;
   estates: SubdivisionEstate[];
   selectedEstateId: string;
   selectedLotNumber: string;
@@ -74,6 +76,7 @@ export function SmartVariablesModal({
   clauseGroups,
   partyFields,
   fieldValues,
+  fieldInputTypes = {},
   estates,
   selectedEstateId,
   selectedLotNumber,
@@ -93,7 +96,6 @@ export function SmartVariablesModal({
   const inputRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const [selectedPartyIdForRecall, setSelectedPartyIdForRecall] = useState<string>('');
   const [selectedPropIdForRecall, setSelectedPropIdForRecall] = useState<string>('');
-  const [showStandardUnusedFields, setShowStandardUnusedFields] = useState<boolean>(true);
 
   useEffect(() => {
     if (isOpen && focusedVarKey) {
@@ -114,7 +116,7 @@ export function SmartVariablesModal({
     (k) => !fieldValues[k] || !fieldValues[k].trim()
   );
 
-  // Build Clause-Grouped sections from the live contract + optional standard office fields
+  // Build Clause-Grouped sections strictly from the live contract's [...] placeholders
   const activeDocGroups: ClauseVariableGroup[] =
     clauseGroups.length > 0
       ? clauseGroups
@@ -129,9 +131,6 @@ export function SmartVariablesModal({
       : [];
 
   const inDocSet = new Set(extractedPlaceholders);
-  const unusedStandardKeys = partyFields
-    .map((f) => f.key)
-    .filter((k) => !inDocSet.has(k));
 
   const selectedEstate = estates.find((e) => e.id === selectedEstateId) || estates[0] || null;
   const activePartyToRecall =
@@ -147,10 +146,12 @@ export function SmartVariablesModal({
     const isFilled = val.trim() !== '';
     const isEmptyInDoc = inCurrentDoc && !isFilled;
     const isFocused = focusedVarKey === key;
+    const perContractType = fieldInputTypes[key];
+    const resolvedType = perContractType || meta?.inputType;
     const currentType: 'text' | 'number' | 'date' =
-      meta?.inputType === 'number'
+      resolvedType === 'number'
         ? 'number'
-        : meta?.inputType === 'date'
+        : resolvedType === 'date'
         ? 'date'
         : 'text';
 
@@ -507,30 +508,7 @@ export function SmartVariablesModal({
             </div>
           ) : (
             <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-md text-xs text-amber-950">
-              لا توجد وسوم <code className="font-mono">{`[...]`}</code> مدرجة في نص العقد الحالي بعد. يمكنك تحديد أي كلمة في المحرر والضغط على زر <strong>«[ ] تحويل المحدد لوسم»</strong> أو تعبئة حقول المكتب القياسية أدناه لتوليد الوثائق المشتقة.
-            </div>
-          )}
-
-          {/* SECTION 2: STANDARD OFFICE FIELDS FOR DERIVED DOCUMENTS */}
-          {unusedStandardKeys.length > 0 && (
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setShowStandardUnusedFields((v) => !v)}
-                className="w-full px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700"
-              >
-                <span>
-                  حقول المكتب القياسية الإضافية للوثائق المشتقة ({unusedStandardKeys.length})
-                </span>
-                <span className="text-[11px] text-blue-900">
-                  {showStandardUnusedFields ? 'إخفاء ▲' : 'إظهار ▼'}
-                </span>
-              </button>
-              {showStandardUnusedFields && (
-                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
-                  {unusedStandardKeys.map((k) => renderVariableCard(k))}
-                </div>
-              )}
+              لا توجد وسوم <code className="font-mono">{`[...]`}</code> مدرجة في نص العقد المفتوح حالياً بعد. يمكنك كتابة أي وسم مثل <code className="font-mono">{`[البائع]`}</code> أو تحديد أي كلمة في المحرر والضغط على زر <strong>«[ ] تحويل المحدد لوسم»</strong> ليظهر الحقل هنا فوراً دون أي حقول دخيلة من عقود أخرى.
             </div>
           )}
         </div>
@@ -1878,6 +1856,7 @@ interface WordTemplatesModalProps {
     dateActe?: string;
     dateLettre?: string;
     clauses?: { title: string; contentHtml: string }[];
+    rawContractBodyHtml?: string;
     fieldValues?: Record<string, string>;
   };
 }

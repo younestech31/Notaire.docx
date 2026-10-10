@@ -181,6 +181,17 @@ export interface SavedContractDerivedDoc {
   updatedAt: string;
 }
 
+export interface ContractOutlineClause {
+  id: string;
+  index: number;
+  title: string;
+  previewText: string;
+  variables: string[];
+  contentHtml: string;
+  domIndex: number;
+  isContainer: boolean;
+}
+
 export interface SavedDocument {
   id: string;
   title: string;
@@ -190,6 +201,8 @@ export interface SavedDocument {
   pageNumberingEnabled: boolean;
   showHeaderFooter: boolean;
   fieldValues: Record<string, string>;
+  fieldInputTypes?: Record<string, VariableInputType>;
+  outlineClauses?: ContractOutlineClause[];
   selectedEstateId?: string;
   selectedLotNumber?: string;
   folderId?: string | null;

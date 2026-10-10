@@ -4,10 +4,15 @@ import React, { useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  BookmarkPlus,
   Building2,
+  Check,
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
   Download,
   Edit3,
+  Eye,
   FileOutput,
   FilePlus2,
   FileText,
@@ -15,6 +20,7 @@ import {
   FolderArchive,
   FormInput,
   GitCompare,
+  Hash,
   History,
   ListChecks,
   PanelRightClose,
@@ -25,10 +31,12 @@ import {
   Trash2,
   Upload,
   UserCheck,
+  X,
 } from 'lucide-react';
 import {
   ClauseVariableGroup,
   ContractFolder,
+  ContractOutlineClause,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
@@ -42,6 +50,7 @@ import {
   SavedPropertyRecord,
   SubdivisionEstate,
   SubdivisionLot,
+  VariableInputType,
 } from '@/lib/types';
 import FolderTreeExplorer from './FolderTreeExplorer';
 
@@ -50,7 +59,13 @@ export type SidebarTab = 'clauses' | 'parties' | 'templates' | 'documents';
 interface SidebarWorkspaceProps {
   activeTab: SidebarTab;
   onSelectTab: (tab: SidebarTab) => void;
-  // 1. Ready Clauses (البنود الجاهزة — التبويب الأول الأكثر استخداماً)
+  // 1. Live Contract Clauses (from # headings in sheet) + Optional Ready Clauses Library
+  liveContractClauses: ContractOutlineClause[];
+  onScrollToLiveClause: (domIndex: number) => void;
+  onMoveLiveClauseInDoc: (domIndex: number, direction: 'up' | 'down') => void;
+  onDeleteLiveClauseFromDoc: (domIndex: number) => void;
+  onRenameLiveClauseInDoc: (domIndex: number, newTitle: string) => void;
+  onInsertNewClauseHeadingInDoc: (title?: string) => void;
   clauses: NotaryClause[];
   activeClauseIdsInDoc: string[];
   onToggleClauseInDoc: (clause: NotaryClause) => void;
@@ -66,6 +81,7 @@ interface SidebarWorkspaceProps {
   clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
+  fieldInputTypes?: Record<string, VariableInputType>;
   onOpenSmartVariablesModal: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
   onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
@@ -147,6 +163,12 @@ interface SidebarWorkspaceProps {
 export default function SidebarWorkspace({
   activeTab,
   onSelectTab,
+  liveContractClauses,
+  onScrollToLiveClause,
+  onMoveLiveClauseInDoc,
+  onDeleteLiveClauseFromDoc,
+  onRenameLiveClauseInDoc,
+  onInsertNewClauseHeadingInDoc,
   clauses,
   activeClauseIdsInDoc,
   onToggleClauseInDoc,
@@ -161,6 +183,7 @@ export default function SidebarWorkspace({
   clauseGroups,
   unfilledCount,
   fieldValues,
+  fieldInputTypes = {},
   onOpenSmartVariablesModal,
   onUpdateFieldValue,
   onChangeFieldInputType,
@@ -235,11 +258,16 @@ export default function SidebarWorkspace({
   onOpenDerivedModal,
   onSelectDerivedDoc,
 }: SidebarWorkspaceProps) {
-  // Clause creation state
+  // Clause creation & live contract outline state
   const [newClauseTitle, setNewClauseTitle] = useState('');
   const [newClauseCategory, setNewClauseCategory] = useState('بنود عامة');
   const [newClauseText, setNewClauseText] = useState('');
   const [clauseSearch, setClauseSearch] = useState('');
+  const [quickDocClauseTitle, setQuickDocClauseTitle] = useState('');
+  const [renamingDomIndex, setRenamingDomIndex] = useState<number | null>(null);
+  const [renamingClauseVal, setRenamingClauseVal] = useState('');
+  const [showSuggestionsLibrary, setShowSuggestionsLibrary] = useState<boolean>(true);
+  const [showAddLibraryForm, setShowAddLibraryForm] = useState<boolean>(false);
 
   // Parties sub-view: 'fields' vs 'subdivision'
   const [partiesSubTab, setPartiesSubTab] = useState<'fields' | 'subdivision'>('fields');
@@ -437,152 +465,360 @@ export default function SidebarWorkspace({
       {/* Tab Content Area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
         {/* =========================================================
-            TAB 1: READY CLAUSES SYSTEM (نظام البنود الجاهزة)
+            TAB 1: LIVE CONTRACT CLAUSES (#) + OPTIONAL CLAUSE LIBRARY
            ========================================================= */}
         {activeTab === 'clauses' && (
           <div className="space-y-4">
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2.5">
-              <div className="text-xs font-bold text-slate-900">
-                إضافة بند جديد إلى مكتبة بنود المكتب
+            {/* 1. LIVE CONTRACT CLAUSES OUTLINE (بنود هذا العقد الحالية من عناوين # داخل الورقة) */}
+            <div className="border border-blue-200 bg-blue-50/30 rounded-md p-3 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Hash className="w-3.5 h-3.5 text-blue-900" />
+                  <span className="text-xs font-bold text-slate-900">
+                    بنود العقد المفتوح حالياً ({liveContractClauses.length})
+                  </span>
+                </div>
+                <span className="text-[10px] text-blue-900 font-medium">
+                  تُقرأ حياً من `#` في الورقة
+                </span>
               </div>
-              <input
-                type="text"
-                value={newClauseTitle}
-                onChange={(e) => setNewClauseTitle(e.target.value)}
-                placeholder="عنوان البند (مثال: بند أصل الملكية / بند الحالة المدنية)"
-                className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
-              />
-              <div className="flex items-center gap-2">
+
+              {/* Quick add `# Clause` directly into the open contract */}
+              <div className="flex items-center gap-1.5">
                 <input
                   type="text"
-                  value={newClauseCategory}
-                  onChange={(e) => setNewClauseCategory(e.target.value)}
-                  placeholder="التصنيف (بنود عامة، بيع، هبة...)"
-                  className="flex-1 px-2.5 py-1 text-xs bg-white border border-slate-300 rounded"
-                />
-              </div>
-              <textarea
-                rows={3}
-                value={newClauseText}
-                onChange={(e) => setNewClauseText(e.target.value)}
-                placeholder="اكتب نص البند هنا (يمكنك تضمين وسوم مثل [الطرف_الأول_الاسم]) أو اتركه فارغاً لحفظ النص المحدد حالياً داخل ورقة A4..."
-                className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
-              />
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!newClauseTitle.trim()) return;
-                    const html = newClauseText.trim()
-                      ? newClauseText
-                          .trim()
-                          .split(/\r?\n/)
-                          .map(
-                            (line) =>
-                              `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;">${
-                                line.trim() || '<br>'
-                              }</p>`
-                          )
-                          .join('')
-                      : undefined;
-                    await onSaveNewClause(
-                      newClauseTitle.trim(),
-                      newClauseCategory.trim() || 'عام',
-                      html
-                    );
-                    setNewClauseTitle('');
-                    setNewClauseText('');
+                  value={quickDocClauseTitle}
+                  onChange={(e) => setQuickDocClauseTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && quickDocClauseTitle.trim()) {
+                      onInsertNewClauseHeadingInDoc(quickDocClauseTitle.trim());
+                      setQuickDocClauseTitle('');
+                    }
                   }}
-                  className="py-1.5 px-2 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800 transition-colors"
-                >
-                  + حفظ البند المكتوب
-                </button>
+                  placeholder="عنوان بند جديد في هذا العقد (مثال: التعيين)..."
+                  className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
+                />
                 <button
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     onSaveSelectionBookmark();
                   }}
-                  onClick={async () => {
-                    if (!newClauseTitle.trim()) return;
-                    await onSaveSelectionAsClause(
-                      newClauseTitle.trim(),
-                      newClauseCategory.trim() || 'عام'
+                  onClick={() => {
+                    onInsertNewClauseHeadingInDoc(
+                      quickDocClauseTitle.trim() || undefined
                     );
-                    setNewClauseTitle('');
+                    setQuickDocClauseTitle('');
                   }}
-                  className="py-1.5 px-2 bg-slate-900 text-white text-[11px] font-medium rounded hover:bg-slate-800 transition-colors"
-                  title="يحفظ الفقرات أو الجداول المظللة حالياً داخل المحرر كبند جاهز"
+                  className="px-2.5 py-1.5 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800 shrink-0 inline-flex items-center gap-1 transition-colors"
+                  title="إدراج عنوان بند جديد (#) عند المؤشر في العقد الحالي"
                 >
-                  حفظ المحدد بالمحرر كبند
+                  <Plus className="w-3.5 h-3.5" />
+                  <span># بند بالعقد</span>
                 </button>
               </div>
-            </div>
 
-            <input
-              type="text"
-              value={clauseSearch}
-              onChange={(e) => setClauseSearch(e.target.value)}
-              placeholder="بحث سريع في البنود الجاهزة..."
-              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded"
-            />
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                <span className="text-xs font-bold text-slate-900">
-                  قائمة البنود الجاهزة ({clauses.length})
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  تفعيل ☑ يدرج البند في حاوية مرئية للتحرير فقط
-                </span>
-              </div>
-
-              {clauses.length === 0 ? (
-                <div className="border border-dashed border-slate-300 rounded-md p-5 text-center space-y-2 bg-slate-50/50">
-                  <ListChecks className="w-7 h-7 text-slate-400 mx-auto" />
+              {liveContractClauses.length === 0 ? (
+                <div className="border border-dashed border-blue-200 rounded p-3 text-center bg-white/80 space-y-1">
                   <div className="text-xs font-semibold text-slate-700">
-                    لا توجد بنود محفوظة بعد
+                    لا توجد بنود مقسّمة بعلامة `#` في هذا العقد بعد
                   </div>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    أضف بنود مكتبك المتكررة (مثل بند التكليف، أصل الملكية، التسليم، الضمان...) لتتمكن من تفعيلها أو تعطيلها وترتيبها بضغطة زر داخل أي عقد.
+                    اكتب <code className="font-mono font-bold text-blue-900"># عنوان البند</code> في بداية أي سطر داخل الورقة أو اضغط زر <strong>«# بند بالعقد»</strong> أعلاه لتقسيم هذا العقد إلى بنود مستقلة خاصة به.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {clauses
-                    .filter(
-                      (c) =>
-                        !clauseSearch.trim() ||
-                        c.title.includes(clauseSearch.trim()) ||
-                        c.category.includes(clauseSearch.trim())
-                    )
-                    .map((clause, idx) => {
-                      const isActiveInDoc = activeClauseIdsInDoc.includes(clause.id);
-                      return (
-                        <div
-                          key={clause.id}
-                          className={`border rounded-md p-2.5 transition-colors space-y-2 ${
-                            isActiveInDoc
-                              ? 'border-blue-400 bg-blue-50/30'
-                              : 'border-slate-200 bg-white hover:border-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                  {liveContractClauses.map((c, idx) => {
+                    const isRenaming = renamingDomIndex === c.domIndex;
+                    return (
+                      <div
+                        key={c.id}
+                        className="border border-slate-200 bg-white rounded-md p-2.5 space-y-1.5 hover:border-blue-400 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          {isRenaming ? (
+                            <div className="flex items-center gap-1 flex-1">
+                              <input
+                                type="text"
+                                value={renamingClauseVal}
+                                onChange={(e) => setRenamingClauseVal(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && renamingClauseVal.trim()) {
+                                    onRenameLiveClauseInDoc(
+                                      c.domIndex,
+                                      renamingClauseVal.trim()
+                                    );
+                                    setRenamingDomIndex(null);
+                                  } else if (e.key === 'Escape') {
+                                    setRenamingDomIndex(null);
+                                  }
+                                }}
+                                autoFocus
+                                className="flex-1 px-2 py-0.5 text-xs border border-blue-800 rounded focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (renamingClauseVal.trim()) {
+                                    onRenameLiveClauseInDoc(
+                                      c.domIndex,
+                                      renamingClauseVal.trim()
+                                    );
+                                  }
+                                  setRenamingDomIndex(null);
+                                }}
+                                className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRenamingDomIndex(null)}
+                                className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
                             <button
                               type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                onSaveSelectionBookmark();
-                              }}
-                              onClick={() => onToggleClauseInDoc(clause)}
-                              className="flex items-start gap-2 text-right flex-1"
-                              title="تفعيل أو إزالة حاوية هذا البند داخل ورقة الـ A4"
+                              onClick={() => onScrollToLiveClause(c.domIndex)}
+                              className="text-right flex-1 group"
+                              title="انقر للانتقال إلى موضع هذا البند داخل ورقة العقد"
                             >
-                              {isActiveInDoc ? (
-                                <CheckSquare className="w-4 h-4 text-blue-900 shrink-0 mt-0.5" />
-                              ) : (
-                                <Square className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                              <div className="text-xs font-bold text-slate-900 group-hover:text-blue-900 flex items-center gap-1">
+                                <span className="text-blue-900 font-mono tabular-nums">
+                                  #{c.index}
+                                </span>
+                                <span className="truncate">{c.title}</span>
+                              </div>
+                              {c.previewText && (
+                                <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                                  {c.previewText}
+                                </p>
                               )}
+                            </button>
+                          )}
+
+                          {/* Live Clause Controls inside this Contract */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => onMoveLiveClauseInDoc(c.domIndex, 'up')}
+                              disabled={idx === 0}
+                              className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-30"
+                              title="تحريك البند لأعلى داخل هذا العقد"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onMoveLiveClauseInDoc(c.domIndex, 'down')}
+                              disabled={idx === liveContractClauses.length - 1}
+                              className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-30"
+                              title="تحريك البند لأسفل داخل هذا العقد"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenamingDomIndex(c.domIndex);
+                                setRenamingClauseVal(c.title);
+                              }}
+                              className="p-1 text-slate-400 hover:text-blue-900"
+                              title="تعديل عنوان البند في الورقة"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSaveNewClause(c.title, 'بنود مستخرجة', c.contentHtml)
+                              }
+                              className="p-1 text-slate-400 hover:text-emerald-700"
+                              title="حفظ نسخة من هذا البند في مكتبة البنود المقترحة"
+                            >
+                              <BookmarkPlus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteLiveClauseFromDoc(c.domIndex)}
+                              className="p-1 text-slate-400 hover:text-red-600"
+                              title="حذف هذا البند من العقد الحالي"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {c.variables.length > 0 && (
+                          <div className="flex items-center flex-wrap gap-1 pt-1 border-t border-slate-100">
+                            <span className="text-[10px] text-slate-400">المتغيرات:</span>
+                            {c.variables.map((v) => (
+                              <button
+                                key={v}
+                                type="button"
+                                onClick={() => onOpenSmartVariablesModal(v)}
+                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                  fieldValues[v]?.trim()
+                                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                                    : 'bg-pink-50 text-pink-900 border-pink-200'
+                                }`}
+                              >
+                                [{v}]
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 2. OPTIONAL CLAUSES SUGGESTIONS LIBRARY (مكتبة البنود المقترحة للإدراج فقط) */}
+            <div className="border border-slate-200 rounded-md bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowSuggestionsLibrary((v) => !v)}
+                className="w-full px-3 py-2.5 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center justify-between text-right transition-colors"
+              >
+                <div>
+                  <div className="text-xs font-bold text-slate-900">
+                    مكتبة البنود المقترحة للإدراج ({clauses.length})
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    مكتبة مساعدة منفصلة — لا تدخل في العقد إلا عند ضغط «+ إدراج في العقد»
+                  </div>
+                </div>
+                {showSuggestionsLibrary ? (
+                  <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                )}
+              </button>
+
+              {showSuggestionsLibrary && (
+                <div className="p-3 space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={clauseSearch}
+                      onChange={(e) => setClauseSearch(e.target.value)}
+                      placeholder="بحث في مكتبة البنود المقترحة..."
+                      className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-900 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAddLibraryForm((v) => !v)}
+                      className="px-2.5 py-1.5 bg-slate-900 text-white text-[11px] font-medium rounded hover:bg-slate-800 shrink-0"
+                    >
+                      {showAddLibraryForm ? 'إغلاق' : '+ بند للمكتبة'}
+                    </button>
+                  </div>
+
+                  {showAddLibraryForm && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-md space-y-2">
+                      <div className="text-[11px] font-bold text-slate-900">
+                        حفظ قالب بند جديد في مكتبة المكتب العامة
+                      </div>
+                      <input
+                        type="text"
+                        value={newClauseTitle}
+                        onChange={(e) => setNewClauseTitle(e.target.value)}
+                        placeholder="عنوان البند (مثال: بند أصل الملكية / بند الضمان)"
+                        className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                      />
+                      <input
+                        type="text"
+                        value={newClauseCategory}
+                        onChange={(e) => setNewClauseCategory(e.target.value)}
+                        placeholder="التصنيف (بيع، تأسيس شركة، إيجار...)"
+                        className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                      />
+                      <textarea
+                        rows={3}
+                        value={newClauseText}
+                        onChange={(e) => setNewClauseText(e.target.value)}
+                        placeholder="نص البند (يمكن تضمين وسوم مثل [البائع]) أو اتركه فارغاً لحفظ النص المحدد حالياً في الورقة..."
+                        className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                      />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!newClauseTitle.trim()) return;
+                            const html = newClauseText.trim()
+                              ? `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;font-weight:bold;"># ${newClauseTitle.trim()}</p>` +
+                                newClauseText
+                                  .trim()
+                                  .split(/\r?\n/)
+                                  .map(
+                                    (line) =>
+                                      `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;">${
+                                        line.trim() || '<br>'
+                                      }</p>`
+                                  )
+                                  .join('')
+                              : undefined;
+                            await onSaveNewClause(
+                              newClauseTitle.trim(),
+                              newClauseCategory.trim() || 'عام',
+                              html
+                            );
+                            setNewClauseTitle('');
+                            setNewClauseText('');
+                            setShowAddLibraryForm(false);
+                          }}
+                          className="py-1.5 px-2 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800"
+                        >
+                          حفظ في المكتبة
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            onSaveSelectionBookmark();
+                          }}
+                          onClick={async () => {
+                            if (!newClauseTitle.trim()) return;
+                            await onSaveSelectionAsClause(
+                              newClauseTitle.trim(),
+                              newClauseCategory.trim() || 'عام'
+                            );
+                            setNewClauseTitle('');
+                            setShowAddLibraryForm(false);
+                          }}
+                          className="py-1.5 px-2 bg-slate-800 text-white text-[11px] font-medium rounded hover:bg-slate-700"
+                        >
+                          حفظ المحدد بالورقة
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {clauses.length === 0 ? (
+                    <div className="border border-dashed border-slate-200 rounded p-4 text-center text-xs text-slate-500">
+                      مكتبة البنود المقترحة فارغة. يمكنك حفظ أي بند من العقد بالضغط على أيقونة الحفظ بجانب البند.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                      {clauses
+                        .filter(
+                          (c) =>
+                            !clauseSearch.trim() ||
+                            c.title.includes(clauseSearch.trim()) ||
+                            c.category.includes(clauseSearch.trim())
+                        )
+                        .map((clause) => (
+                          <div
+                            key={clause.id}
+                            className="border border-slate-200 rounded p-2.5 bg-slate-50/40 hover:bg-white transition-colors space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
                               <div>
                                 <div className="text-xs font-bold text-slate-900">
                                   {clause.title}
@@ -591,64 +827,43 @@ export default function SidebarWorkspace({
                                   {clause.category}
                                 </div>
                               </div>
-                            </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => onEditClauseInEditor(clause)}
+                                  className="p-1 text-slate-400 hover:text-blue-900"
+                                  title="تعديل نص هذا البند في المكتبة"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteClause(clause.id)}
+                                  className="p-1 text-slate-400 hover:text-red-600"
+                                  title="حذف من المكتبة"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
 
-                            <div className="flex items-center gap-0.5 shrink-0">
+                            <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => onMoveClauseOrder(clause.id, 'up')}
-                                disabled={idx === 0}
-                                className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30"
-                                title="تحريك لأعلى"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onSaveSelectionBookmark();
+                                }}
+                                onClick={() => onInsertClauseAtCaret(clause)}
+                                className="w-full py-1 px-2 bg-white border border-slate-300 hover:border-blue-900 hover:bg-blue-50/40 text-slate-800 text-[11px] font-semibold rounded transition-colors"
                               >
-                                <ArrowUp className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onMoveClauseOrder(clause.id, 'down')}
-                                disabled={idx === clauses.length - 1}
-                                className="p-1 text-slate-400 hover:text-slate-800 disabled:opacity-30"
-                                title="تحريك لأسفل"
-                              >
-                                <ArrowDown className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onDeleteClause(clause.id)}
-                                className="p-1 text-slate-400 hover:text-red-600"
-                                title="حذف البند"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                + إدراج نسخة من البند عند المؤشر في العقد الحالي
                               </button>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-1.5 pt-0.5">
-                            <button
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                onSaveSelectionBookmark();
-                              }}
-                              onClick={() => onInsertClauseAtCaret(clause)}
-                              className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium rounded transition-colors"
-                              title="إدراج البند عند موضع المؤشر الحالي"
-                            >
-                              إدراج عند المؤشر
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onEditClauseInEditor(clause)}
-                              className="py-1 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] rounded inline-flex items-center gap-1"
-                              title="فتح هذا البند داخل محرر A4 لتعديل صياغته"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              <span>تعديل الصياغة</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -921,34 +1136,51 @@ export default function SidebarWorkspace({
                   )}
                 </div>
 
-                {/* Dynamic Variables Grouped by Clause in Current Document */}
-                {clauseGroups.length > 0 && (
-                  <div className="space-y-2.5">
-                    <div className="text-xs font-bold text-slate-900 flex items-center justify-between">
-                      <span>الاستمارة الديناميكية حسب بنود العقد ({clauseGroups.length})</span>
-                    </div>
-                    {clauseGroups.map((group) => (
+                {/* Dynamic Variables Grouped by Clause in Current Document (STRICTLY EXTRACTED FROM [...] IN OPEN CONTRACT) */}
+                <div className="space-y-2.5">
+                  <div className="text-xs font-bold text-slate-900 flex items-center justify-between border-b border-slate-200 pb-1.5">
+                    <span>
+                      متغيرات هذا العقد المستخرجة من `[...]` ({extractedPlaceholders.length})
+                    </span>
+                    {extractedPlaceholders.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
+                        className="text-[11px] text-pink-800 font-semibold hover:underline"
+                      >
+                        دمج الكل في النص
+                      </button>
+                    )}
+                  </div>
+
+                  {clauseGroups.length > 0 ? (
+                    clauseGroups.map((group) => (
                       <div
                         key={group.clauseId}
                         className="border border-pink-200 bg-pink-50/30 rounded-md p-2.5 space-y-2"
                       >
                         <div className="text-[11px] font-bold text-pink-950 border-b border-pink-200/70 pb-1 flex items-center justify-between">
                           <span className="truncate">{group.clauseTitle}</span>
-                          <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-pink-200 shrink-0">
+                          <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-pink-200 shrink-0 tabular-nums">
                             {group.variables.length} متغير
                           </span>
                         </div>
                         {group.variables.map((key) => {
                           const meta = partyFields.find((f) => f.key === key);
                           const label = meta?.label || key.replace(/_/g, ' ');
+                          const perContractType = fieldInputTypes[key];
+                          const resolvedType = perContractType || meta?.inputType;
                           const currentType: 'text' | 'number' | 'date' =
-                            meta?.inputType === 'number'
+                            resolvedType === 'number'
                               ? 'number'
-                              : meta?.inputType === 'date'
+                              : resolvedType === 'date'
                               ? 'date'
                               : 'text';
                           return (
-                            <div key={key} className="space-y-1 bg-white p-2 rounded border border-slate-200">
+                            <div
+                              key={key}
+                              className="space-y-1 bg-white p-2 rounded border border-slate-200"
+                            >
                               <div className="flex items-center justify-between gap-1">
                                 <label className="text-[11px] font-semibold text-slate-800 truncate">
                                   {label}
@@ -997,6 +1229,7 @@ export default function SidebarWorkspace({
                                     }}
                                     onClick={() => onInsertPlaceholderAtCaret(key)}
                                     className="text-[10px] text-pink-800 font-semibold hover:underline"
+                                    title={`إدراج الوسم [${key}] مرة أخرى عند المؤشر`}
                                   >
                                     +وسم
                                   </button>
@@ -1012,7 +1245,7 @@ export default function SidebarWorkspace({
                                 }
                                 value={fieldValues[key] || ''}
                                 onChange={(e) => onUpdateFieldValue(key, e.target.value)}
-                                placeholder={`أدخل ${label}...`}
+                                placeholder={`أدخل ${label} [${key}]...`}
                                 className={`w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-800 focus:outline-none ${
                                   currentType === 'number' ? 'tabular-nums font-mono' : ''
                                 }`}
@@ -1021,99 +1254,59 @@ export default function SidebarWorkspace({
                           );
                         })}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  ) : (
+                    <div className="border border-dashed border-pink-200 bg-pink-50/20 rounded-md p-3.5 text-center space-y-1.5">
+                      <div className="text-xs font-bold text-slate-800">
+                        لا توجد وسوم `[...]` مكتوبة في هذا العقد حالياً
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        تُستخرج حقول هذه الاستمارة حصرياً من الوسوم المكتوبة بصيغة <code className="font-mono font-bold text-pink-800">[اسم_المتغير]</code> داخل ورقة العقد المفتوح حالياً لضمان عدم ظهور متغيرات لعقود سابقة.
+                      </p>
+                    </div>
+                  )}
+                </div>
 
-                {/* Add Custom Variable */}
+                {/* Insert New Variable Directly Into Current Contract at Caret */}
                 <div className="border border-slate-200 rounded-md p-2.5 bg-white">
                   <div className="text-xs font-semibold text-slate-800 mb-1.5">
-                    إنشاء وسم متغير جديد
+                    إدراج وسم متغير جديد `[...]` في العقد عند المؤشر
                   </div>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="text"
                       value={newFieldKey}
                       onChange={(e) => setNewFieldKey(e.target.value)}
-                      placeholder="مثال: اسم_الموثق أو رقم_الفهرس"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newFieldKey.trim()) {
+                          const clean = newFieldKey.trim().replace(/\s+/g, '_');
+                          onAddCustomField(clean, newFieldKey.trim());
+                          onInsertPlaceholderAtCaret(clean);
+                          setNewFieldKey('');
+                        }
+                      }}
+                      placeholder="مثال: تسمية_الشركة أو البائع أو الثمن"
                       className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-blue-800 focus:outline-none"
                     />
                     <button
                       type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onSaveSelectionBookmark();
+                      }}
                       onClick={() => {
                         const clean = newFieldKey.trim().replace(/\s+/g, '_');
                         if (clean) {
                           onAddCustomField(clean, newFieldKey.trim());
+                          onInsertPlaceholderAtCaret(clean);
                           setNewFieldKey('');
                         }
                       }}
-                      className="px-2.5 py-1 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800 shrink-0"
+                      className="px-2.5 py-1 bg-pink-800 text-white text-xs font-medium rounded hover:bg-pink-900 shrink-0"
                     >
-                      إضافة
+                      + إدراج بالعقد
                     </button>
                   </div>
-                </div>
-
-                {/* Standard Party & Property Fields */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                    <span className="text-xs font-bold text-slate-900">
-                      حقول الأطراف والتعيينات
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
-                      className="text-[11px] text-pink-800 font-semibold hover:underline"
-                    >
-                      دمج الكل في النص
-                    </button>
-                  </div>
-                  {partyFields.map((field) => (
-                    <div key={field.key} className="space-y-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <label className="text-[11px] font-medium text-slate-700 truncate">
-                          {field.label}
-                        </label>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              onSaveSelectionBookmark();
-                            }}
-                            onClick={() => onInsertPlaceholderAtCaret(field.key)}
-                            className="text-[10px] text-pink-800 font-semibold hover:underline"
-                            title={`إدراج الوسم [${field.key}] في موضع المؤشر`}
-                          >
-                            + وسم
-                          </button>
-                          {fieldValues[field.key] && (
-                            <>
-                              <span className="text-slate-300">·</span>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  onSaveSelectionBookmark();
-                                }}
-                                onClick={() => onInsertValueAtCaret(fieldValues[field.key])}
-                                className="text-[10px] text-emerald-700 hover:underline"
-                              >
-                                + قيمة
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <input
-                        type={field.inputType === 'date' ? 'date' : 'text'}
-                        value={fieldValues[field.key] || ''}
-                        onChange={(e) => onUpdateFieldValue(field.key, e.target.value)}
-                        placeholder={`[${field.key}]`}
-                        className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded focus:border-blue-800 focus:outline-none"
-                      />
-                    </div>
-                  ))}
                 </div>
               </div>
             ) : (

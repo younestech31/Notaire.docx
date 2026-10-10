@@ -45,6 +45,7 @@ import {
 import {
   ClauseVariableGroup,
   ContractFolder,
+  ContractOutlineClause,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
@@ -63,6 +64,7 @@ import {
   SubdivisionEstate,
   SubdivisionLot,
   ToolbarState,
+  VariableInputType,
   WordTemplateDefinition,
 } from '@/lib/types';
 import {
@@ -115,7 +117,9 @@ import {
   computeDocumentMetrics,
   convertSelectionToSmartTag,
   decorateSmartTagsInDOM,
+  deleteContractClauseFromDOM,
   escapeHtml,
+  extractLiveContractClausesFromDOM,
   extractPlaceholdersFromHtml,
   extractPlaceholdersGroupedByClause,
   findMatchesAcrossNodes,
@@ -123,11 +127,14 @@ import {
   getIntersectingBlockElements,
   insertHtmlAtSelection,
   insertOrWrapNewClauseAtSelection,
+  moveContractClauseInDOM,
   MultiNodeTextMatch,
   normalizeNotaryContainerDOM,
+  renameContractClauseInDOM,
   replaceMatchesAcrossNodes,
   restoreSerializedSelection,
   sanitizePastedWordHTML,
+  scrollToContractClauseInDOM,
   serializeCurrentSelection,
   syncSmartTagsFilledStateInDOM,
 } from '@/lib/editor-utils';
@@ -185,12 +192,18 @@ export default function NotaryEditorApp() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [clauses, setClauses] = useState<NotaryClause[]>([]);
   const [activeClauseIdsInDoc, setActiveClauseIdsInDoc] = useState<string[]>([]);
+  const [outlineClauses, setOutlineClauses] = useState<ContractOutlineClause[]>([]);
   const [partyFields, setPartyFields] = useState<PartyField[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const fieldValuesRef = useRef<Record<string, string>>({});
   useEffect(() => {
     fieldValuesRef.current = fieldValues;
   }, [fieldValues]);
+  const [fieldInputTypes, setFieldInputTypes] = useState<Record<string, VariableInputType>>({});
+  const fieldInputTypesRef = useRef<Record<string, VariableInputType>>({});
+  useEffect(() => {
+    fieldInputTypesRef.current = fieldInputTypes;
+  }, [fieldInputTypes]);
   const [extractedPlaceholders, setExtractedPlaceholders] = useState<string[]>([]);
   const [clauseGroups, setClauseGroups] = useState<ClauseVariableGroup[]>([]);
   const [templates, setTemplates] = useState<CustomTemplate[]>([]);
@@ -200,6 +213,10 @@ export default function NotaryEditorApp() {
   const [wordTemplates, setWordTemplates] = useState<WordTemplateDefinition[]>([]);
   const [showWordTemplatesModal, setShowWordTemplatesModal] = useState<boolean>(false);
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
+  const documentsRef = useRef<SavedDocument[]>([]);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
   const [revisions, setRevisions] = useState<DocumentRevision[]>([]);
   const [downloads, setDownloads] = useState<DownloadArchiveItem[]>([]);
   const [estates, setEstates] = useState<SubdivisionEstate[]>([]);
@@ -217,6 +234,10 @@ export default function NotaryEditorApp() {
   });
   const [folders, setFolders] = useState<ContractFolder[]>([]);
   const [activeDocument, setActiveDocument] = useState<SavedDocument | null>(null);
+  const activeDocumentRef = useRef<SavedDocument | null>(null);
+  useEffect(() => {
+    activeDocumentRef.current = activeDocument;
+  }, [activeDocument]);
   const [activeDerivedDoc, setActiveDerivedDoc] = useState<SavedContractDerivedDoc | null>(null);
 
   // Modals state
@@ -286,7 +307,7 @@ export default function NotaryEditorApp() {
     };
   }, []);
 
-  // Scan active clause containers inside the A4 editor
+  // Scan active clause containers and live # outline clauses inside the A4 editor
   const refreshActiveClausesInDOM = useCallback(() => {
     if (!bodyEditorRef.current) return;
     const containers = Array.from(
@@ -296,11 +317,16 @@ export default function NotaryEditorApp() {
       .map((el) => el.getAttribute('data-clause-id') || '')
       .filter(Boolean);
     setActiveClauseIdsInDoc(ids);
+    const liveOutline = extractLiveContractClausesFromDOM(bodyEditorRef.current);
+    setOutlineClauses(liveOutline);
   }, []);
 
-  // Refresh extracted {{...}} placeholders, metrics, and trigger 1800ms auto-save
+  // Refresh extracted [...] placeholders, live clauses, metrics, and trigger atomic per-contract auto-save
   const syncPlaceholdersAndDraft = useCallback(
-    (customFieldValues?: Record<string, string>) => {
+    (
+      customFieldValues?: Record<string, string>,
+      customFieldInputTypes?: Record<string, VariableInputType>
+    ) => {
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
       const found = extractPlaceholdersFromHtml(headerHtml, bodyHtml, footerHtml);
       setExtractedPlaceholders(found);
@@ -308,9 +334,13 @@ export default function NotaryEditorApp() {
         extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
       );
       setDocMetrics(computeDocumentMetrics(bodyHtml));
+      const liveOutline = extractLiveContractClausesFromDOM(bodyEditorRef.current);
+      setOutlineClauses(liveOutline);
       refreshActiveClausesInDOM();
 
       const activeValues = customFieldValues ?? fieldValuesRef.current ?? fieldValues;
+      const activeInputTypes =
+        customFieldInputTypes ?? fieldInputTypesRef.current ?? fieldInputTypes;
       syncSmartTagsFilledStateInDOM(bodyEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
@@ -323,7 +353,21 @@ export default function NotaryEditorApp() {
         return;
       }
 
+      const existingDoc =
+        documentsRef.current.find((d) => d.id === docId) ||
+        (activeDocumentRef.current?.id === docId ? activeDocumentRef.current : null);
+
+      const inferredClient =
+        existingDoc?.clientName ||
+        activeValues['الطرف_الأول_الاسم'] ||
+        activeValues['البائع'] ||
+        activeValues['المؤجر'] ||
+        activeValues['الموكل'] ||
+        '';
+
+      const nowIso = new Date().toISOString();
       const draft: SavedDocument = {
+        ...(existingDoc || {}),
         id: docId,
         title: docTitle,
         bodyHtml,
@@ -332,10 +376,23 @@ export default function NotaryEditorApp() {
         pageNumberingEnabled,
         showHeaderFooter,
         fieldValues: activeValues,
+        fieldInputTypes: activeInputTypes,
+        outlineClauses: liveOutline,
         selectedEstateId,
         selectedLotNumber,
-        updatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
+        folderId: existingDoc?.folderId ?? null,
+        clerkId: existingDoc?.clerkId || activeClerk.id,
+        clerkName: existingDoc?.clerkName || activeClerk.name,
+        contractNumber:
+          existingDoc?.contractNumber ||
+          activeValues['رقم_الفهرس'] ||
+          `2026/${Math.floor(100 + Math.random() * 900)}`,
+        year: existingDoc?.year || new Date().getFullYear(),
+        clientName: inferredClient,
+        status: existingDoc?.status || 'editing',
+        derivedDocuments: existingDoc?.derivedDocuments || [],
+        updatedAt: nowIso,
+        createdAt: existingDoc?.createdAt || nowIso,
       };
       saveActiveDraftSession(draft);
 
@@ -345,14 +402,18 @@ export default function NotaryEditorApp() {
         await saveDocumentRecord(draft);
         const updatedDocs = await loadSavedDocuments();
         setDocuments(updatedDocs);
+        setActiveDocument((prev) => (prev?.id === draft.id ? draft : prev));
         setAutoSaveState('saved');
-      }, 1800);
+      }, 450);
     },
     [
+      activeClerk.id,
+      activeClerk.name,
       docId,
       docTitle,
       editingClauseObj,
       editingDerivedTpl,
+      fieldInputTypes,
       fieldValues,
       getEditorZonesHtml,
       pageNumberingEnabled,
@@ -531,14 +592,27 @@ export default function NotaryEditorApp() {
   const handleSelectDocument = useCallback(
     (doc: SavedDocument) => {
       if (!bodyEditorRef.current) return;
-      recordHistorySnapshot();
+      // Flush any pending auto-save before switching contracts
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      setUndoStack([]);
+      setRedoStack([]);
       setDocId(doc.id);
       setDocTitle(doc.title);
-      setShowHeaderFooter(doc.showHeaderFooter);
-      setPageNumberingEnabled(doc.pageNumberingEnabled);
-      setFieldValues(doc.fieldValues || {});
-      if (doc.selectedEstateId) setSelectedEstateId(doc.selectedEstateId);
-      if (doc.selectedLotNumber) setSelectedLotNumber(doc.selectedLotNumber);
+      setShowHeaderFooter(Boolean(doc.showHeaderFooter));
+      setPageNumberingEnabled(
+        doc.pageNumberingEnabled !== undefined ? doc.pageNumberingEnabled : true
+      );
+      const isolatedValues = { ...(doc.fieldValues || {}) };
+      const isolatedInputTypes = { ...(doc.fieldInputTypes || {}) };
+      fieldValuesRef.current = isolatedValues;
+      fieldInputTypesRef.current = isolatedInputTypes;
+      setFieldValues(isolatedValues);
+      setFieldInputTypes(isolatedInputTypes);
+      setSelectedEstateId(doc.selectedEstateId || '');
+      setSelectedLotNumber(doc.selectedLotNumber || '');
       bodyEditorRef.current.innerHTML = doc.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
       normalizeNotaryContainerDOM(bodyEditorRef.current);
       if (headerEditorRef.current)
@@ -546,10 +620,11 @@ export default function NotaryEditorApp() {
       if (footerEditorRef.current)
         footerEditorRef.current.innerHTML = doc.footerHtml || '';
       setActiveDocument(doc);
+      activeDocumentRef.current = doc;
       setActiveDerivedDoc(null);
-      syncPlaceholdersAndDraft();
+      syncPlaceholdersAndDraft(isolatedValues, isolatedInputTypes);
     },
-    [recordHistorySnapshot, syncPlaceholdersAndDraft]
+    [syncPlaceholdersAndDraft]
   );
 
   const handleCreateContractInFolder = useCallback(
@@ -564,6 +639,10 @@ export default function NotaryEditorApp() {
         pageNumberingEnabled: true,
         showHeaderFooter: false,
         fieldValues: {},
+        fieldInputTypes: {},
+        outlineClauses: [],
+        selectedEstateId: '',
+        selectedLotNumber: '',
         folderId,
         clerkId: activeClerk.id,
         clerkName: activeClerk.name,
@@ -574,12 +653,14 @@ export default function NotaryEditorApp() {
         derivedDocuments: [],
       };
       await saveDocumentRecord(newDoc);
-      setDocuments(await loadSavedDocuments());
+      const refreshed = await loadSavedDocuments();
+      setDocuments(refreshed);
+      documentsRef.current = refreshed;
       handleSelectDocument(newDoc);
       const folderName = folderId
         ? folders.find((f) => f.id === folderId)?.name || 'المجلد المختار'
         : 'الجذر الرئيسي';
-      showToast(`تم إنشاء عقد جديد داخل "${folderName}"`);
+      showToast(`تم إنشاء عقد جديد معزول داخل "${folderName}"`);
     },
     [activeClerk, folders, handleSelectDocument, showToast]
   );
@@ -597,9 +678,10 @@ export default function NotaryEditorApp() {
       if (footerEditorRef.current)
         footerEditorRef.current.innerHTML = derivedDoc.footerHtml || '';
       if (derivedDoc.fieldValues) {
-        setFieldValues(derivedDoc.fieldValues);
+        fieldValuesRef.current = { ...derivedDoc.fieldValues };
+        setFieldValues({ ...derivedDoc.fieldValues });
       }
-      syncPlaceholdersAndDraft();
+      syncPlaceholdersAndDraft(derivedDoc.fieldValues);
       showToast(`تم فتح وثيقة المشتق: ${derivedDoc.title}`);
     },
     [recordHistorySnapshot, syncPlaceholdersAndDraft, showToast]
@@ -679,10 +761,13 @@ export default function NotaryEditorApp() {
             : true
         );
         const initialVals = activeDraft.fieldValues || {};
+        const initialTypes = activeDraft.fieldInputTypes || {};
         fieldValuesRef.current = initialVals;
+        fieldInputTypesRef.current = initialTypes;
         setFieldValues(initialVals);
-        if (activeDraft.selectedEstateId) setSelectedEstateId(activeDraft.selectedEstateId);
-        if (activeDraft.selectedLotNumber) setSelectedLotNumber(activeDraft.selectedLotNumber);
+        setFieldInputTypes(initialTypes);
+        setSelectedEstateId(activeDraft.selectedEstateId || '');
+        setSelectedLotNumber(activeDraft.selectedLotNumber || '');
 
         bodyEditorRef.current.innerHTML = activeDraft.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
         normalizeNotaryContainerDOM(bodyEditorRef.current);
@@ -701,12 +786,14 @@ export default function NotaryEditorApp() {
         setClauseGroups(
           extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
         );
+        setOutlineClauses(extractLiveContractClausesFromDOM(bodyEditorRef.current));
         setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
         refreshActiveClausesInDOM();
         syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
         const matchingSaved = loadedDocs.find((d) => d.id === activeDraft.id);
         if (matchingSaved) {
           setActiveDocument(matchingSaved);
+          activeDocumentRef.current = matchingSaved;
         }
       } else if (bodyEditorRef.current) {
         bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
@@ -1267,8 +1354,59 @@ export default function NotaryEditorApp() {
   };
 
   // =========================================================
-  // READY CLAUSES HANDLERS (نظام البنود الجاهزة)
+  // LIVE CONTRACT OUTLINE CLAUSES (# HEADINGS) & LIBRARY HANDLERS
   // =========================================================
+  const handleScrollToLiveClause = (domIndex: number) => {
+    if (!bodyEditorRef.current) return;
+    scrollToContractClauseInDOM(bodyEditorRef.current, domIndex);
+  };
+
+  const handleMoveLiveClauseInDoc = (
+    domIndex: number,
+    direction: 'up' | 'down'
+  ) => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot();
+    const moved = moveContractClauseInDOM(
+      bodyEditorRef.current,
+      domIndex,
+      direction
+    );
+    if (moved) {
+      syncPlaceholdersAndDraft();
+      showToast(
+        `تم تحريك البند ${direction === 'up' ? 'للأعلى' : 'للأسفل'} داخل العقد`
+      );
+    }
+  };
+
+  const handleDeleteLiveClauseFromDoc = (domIndex: number) => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot('قبل حذف بند من العقد');
+    const deleted = deleteContractClauseFromDOM(
+      bodyEditorRef.current,
+      domIndex
+    );
+    if (deleted) {
+      syncPlaceholdersAndDraft();
+      showToast('تم حذف البند من العقد الحالي');
+    }
+  };
+
+  const handleRenameLiveClauseInDoc = (domIndex: number, newTitle: string) => {
+    if (!bodyEditorRef.current) return;
+    recordHistorySnapshot('قبل تعديل عنوان بند في العقد');
+    const renamed = renameContractClauseInDOM(
+      bodyEditorRef.current,
+      domIndex,
+      newTitle
+    );
+    if (renamed) {
+      syncPlaceholdersAndDraft();
+      showToast(`تم تحديث عنوان البند إلى "# ${newTitle}"`);
+    }
+  };
+
   const handleToggleClauseInDoc = (clause: NotaryClause) => {
     if (!bodyEditorRef.current) return;
     recordHistorySnapshot();
@@ -1292,7 +1430,7 @@ export default function NotaryEditorApp() {
         savedRangeRef.current
       );
       syncPlaceholdersAndDraft();
-      showToast(`تم إدراج وتفعيل البند "${clause.title}" في العقد`);
+      showToast(`تم إدراج البند "${clause.title}" في العقد الحالي`);
     }
   };
 
@@ -1308,7 +1446,7 @@ export default function NotaryEditorApp() {
       savedRangeRef.current
     );
     syncPlaceholdersAndDraft();
-    showToast(`تم إدراج البند "${clause.title}" عند المؤشر`);
+    showToast(`تم إدراج البند المقترح "${clause.title}" عند المؤشر`);
   };
 
   const handleMoveClauseOrder = async (
@@ -1330,25 +1468,6 @@ export default function NotaryEditorApp() {
       await saveNotaryClause(updated[i]);
     }
     setClauses(await loadNotaryClauses());
-
-    // Also reorder inside A4 DOM if both clauses are active in the document
-    if (bodyEditorRef.current) {
-      const elA = bodyEditorRef.current.querySelector(
-        `[data-clause-id="${updated[idx].id}"]`
-      );
-      const elB = bodyEditorRef.current.querySelector(
-        `[data-clause-id="${updated[swapIdx].id}"]`
-      );
-      if (elA && elB && elA.parentNode === elB.parentNode) {
-        recordHistorySnapshot();
-        if (direction === 'up') {
-          elA.parentNode?.insertBefore(elA, elB);
-        } else {
-          elB.parentNode?.insertBefore(elB, elA);
-        }
-        syncPlaceholdersAndDraft();
-      }
-    }
   };
 
   const handleSaveNewClause = async (
@@ -1869,6 +1988,7 @@ export default function NotaryEditorApp() {
       fieldValues['الموكل'] ||
       '';
 
+    const liveOutline = extractLiveContractClausesFromDOM(bodyEditorRef.current);
     const docRecord: SavedDocument = {
       id: docId,
       title: docTitle || 'عقد بدون عنوان',
@@ -1878,6 +1998,8 @@ export default function NotaryEditorApp() {
       pageNumberingEnabled,
       showHeaderFooter,
       fieldValues,
+      fieldInputTypes,
+      outlineClauses: liveOutline,
       selectedEstateId,
       selectedLotNumber,
       folderId: resolvedFolderId,
@@ -1901,7 +2023,9 @@ export default function NotaryEditorApp() {
     await saveDocumentRecord(docRecord);
     const refreshedDocs = await loadSavedDocuments();
     setDocuments(refreshedDocs);
+    documentsRef.current = refreshedDocs;
     setActiveDocument(docRecord);
+    activeDocumentRef.current = docRecord;
 
     const rev: DocumentRevision = {
       id: `rev_${Date.now()}`,
@@ -2076,26 +2200,13 @@ export default function NotaryEditorApp() {
     key: string,
     inputType: 'text' | 'number' | 'date'
   ) => {
-    const exists = partyFields.some((f) => f.key === key);
-    let updated: PartyField[];
-    if (exists) {
-      updated = partyFields.map((f) =>
-        f.key === key ? { ...f, inputType } : f
-      );
-    } else {
-      updated = [
-        ...partyFields,
-        {
-          key,
-          label: key.replace(/_/g, ' '),
-          value: '',
-          category: 'custom',
-          inputType,
-        },
-      ];
-    }
-    setPartyFields(updated);
-    savePartyFields(updated);
+    const nextTypes: Record<string, VariableInputType> = {
+      ...fieldInputTypesRef.current,
+      [key]: inputType,
+    };
+    fieldInputTypesRef.current = nextTypes;
+    setFieldInputTypes(nextTypes);
+    syncPlaceholdersAndDraft(fieldValuesRef.current, nextTypes);
   };
 
   // 1-Click Selection-to-Smart-Tag Converter (تحويل المحدد إلى وسم بضغطة واحدة دون نافذة)
@@ -2112,46 +2223,36 @@ export default function NotaryEditorApp() {
       );
       return;
     }
-    if (!partyFields.some((f) => f.key === createdVar)) {
-      const updated: PartyField[] = [
-        ...partyFields,
-        {
-          key: createdVar,
-          label: createdVar.replace(/_/g, ' '),
-          value: '',
-          category: 'custom',
-          inputType: 'text',
-        },
-      ];
-      setPartyFields(updated);
-      savePartyFields(updated);
-    }
     syncPlaceholdersAndDraft();
-    showToast(`تم تحويل النص المحدد إلى وسم ذكي [${createdVar}] فوراً`);
+    showToast(`تم تحويل النص المحدد إلى وسم ذكي [${createdVar}] مرتبط بهذا العقد`);
   };
 
-  // # New Clause Toolbar Action (زر # بند جديد)
-  const handleInsertNewClauseHeadingAtCaret = async () => {
+  // # New Clause Toolbar Action (زر # بند جديد خاص بالعقد الحالي فقط)
+  const handleInsertNewClauseHeadingAtCaret = async (customTitle?: string) => {
     if (!bodyEditorRef.current) return;
     recordHistorySnapshot();
-    const { clauseId, title, contentHtml } = insertOrWrapNewClauseAtSelection(
+    if (customTitle && customTitle.trim()) {
+      const cleanTitle = customTitle.replace(/^#+\s*/, '').trim();
+      const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
+      const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
+        cleanTitle
+      )}</span></p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات [اسم_المتغير] هنا.</p>`;
+      const wrapperHtml = `<div class="clause-container" data-clause-id="${clauseId}" data-clause-title="${escapeHtml(
+        cleanTitle
+      )}">${innerContentHtml}</div><p dir="rtl" style="${pStyle}"><br></p>`;
+      insertHtmlAtSelection(bodyEditorRef.current, wrapperHtml, savedRangeRef.current);
+      syncPlaceholdersAndDraft();
+      showToast(`تم إدراج عنوان البند "# ${cleanTitle}" في هيكل العقد الحالي`);
+      return;
+    }
+    const { title } = insertOrWrapNewClauseAtSelection(
       bodyEditorRef.current,
       savedRangeRef.current,
-      clauses.length + 1
+      outlineClauses.length + 1
     );
-    const newClause: NotaryClause = {
-      id: clauseId,
-      title,
-      category: 'بنود العقد',
-      contentHtml,
-      order: clauses.length + 1,
-      enabled: true,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveNotaryClause(newClause);
-    setClauses(await loadNotaryClauses());
     syncPlaceholdersAndDraft();
-    showToast(`تم إنشاء وربط البند الجديد "${title}" بالقائمة الجانبية`);
+    showToast(`تم إدراج عنوان البند "${title}" في هيكل العقد الحالي`);
   };
 
   const handleInsertSmartTagAtCaret = (varKey: string) => {
@@ -2412,15 +2513,17 @@ export default function NotaryEditorApp() {
             </span>
           </button>
 
-          {/* Snapshots & Diff Modal */}
+          {/* Snapshots & Diff Modal (filtered for current contract) */}
           <button
             type="button"
             onClick={handleOpenSnapshotsHistoryModal}
             className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
-            title="عرض سجل اللقطات الزمنية والمقارنة"
+            title="عرض سجل اللقطات الزمنية والمقارنة الخاصة بهذا العقد"
           >
             <History className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden lg:inline">اللقطات ({revisions.length})</span>
+            <span className="hidden lg:inline">
+              اللقطات ({revisions.filter((r) => r.documentId === docId).length})
+            </span>
           </button>
 
           {/* Print */}
@@ -2692,6 +2795,12 @@ export default function NotaryEditorApp() {
                 setSidebarTab(tab);
                 setIsSidebarOpen(true);
               }}
+            liveContractClauses={outlineClauses}
+            onScrollToLiveClause={handleScrollToLiveClause}
+            onMoveLiveClauseInDoc={handleMoveLiveClauseInDoc}
+            onDeleteLiveClauseFromDoc={handleDeleteLiveClauseFromDoc}
+            onRenameLiveClauseInDoc={handleRenameLiveClauseInDoc}
+            onInsertNewClauseHeadingInDoc={handleInsertNewClauseHeadingAtCaret}
             clauses={clauses}
             activeClauseIdsInDoc={activeClauseIdsInDoc}
             onToggleClauseInDoc={handleToggleClauseInDoc}
@@ -2709,6 +2818,7 @@ export default function NotaryEditorApp() {
             clauseGroups={clauseGroups}
             unfilledCount={unfilledCount}
             fieldValues={fieldValues}
+            fieldInputTypes={fieldInputTypes}
             onOpenSmartVariablesModal={(focusKey) => {
               decorateEditorZonesPreservingSelection();
               setFocusedVarKey(focusKey || null);
@@ -2816,11 +2926,12 @@ export default function NotaryEditorApp() {
                 if (footerEditorRef.current)
                   footerEditorRef.current.innerHTML = tpl.footerHtml;
               }
-              syncPlaceholdersAndDraft();
+              const nextVals = { ...(tpl.defaultFieldValues || {}) };
+              fieldValuesRef.current = nextVals;
+              setFieldValues(nextVals);
+              syncPlaceholdersAndDraft(nextVals);
               showToast(
-                `تم استبدال المحتوى بالقالب "${tpl.name}"${
-                  clearPreviousClauses ? ' وتفريغ البنود السابقة' : ''
-                }`
+                `تم استبدال المحتوى بالقالب "${tpl.name}" وضبط متغيراته المعزولة`
               );
             }}
             onInsertTemplateAtCaret={(tpl) => {
@@ -3305,6 +3416,7 @@ export default function NotaryEditorApp() {
         clauseGroups={clauseGroups}
         partyFields={partyFields}
         fieldValues={fieldValues}
+        fieldInputTypes={fieldInputTypes}
         estates={estates}
         selectedEstateId={selectedEstateId}
         selectedLotNumber={selectedLotNumber}
@@ -3333,11 +3445,15 @@ export default function NotaryEditorApp() {
           setShowVersionDiffModal(false);
           setDiffComparisonRevision(null);
         }}
-        revisions={
-          diffComparisonRevision
-            ? [diffComparisonRevision, ...revisions.filter((r) => r.id !== diffComparisonRevision.id)]
-            : revisions
-        }
+        revisions={(() => {
+          const contractRevs = revisions.filter((r) => r.documentId === docId);
+          return diffComparisonRevision
+            ? [
+                diffComparisonRevision,
+                ...contractRevs.filter((r) => r.id !== diffComparisonRevision.id),
+              ]
+            : contractRevs;
+        })()}
         currentBodyHtml={modalActiveBodyHtml}
         currentTitle={docTitle}
         onRestoreRevision={handleRestoreSnapshot}
@@ -3365,7 +3481,7 @@ export default function NotaryEditorApp() {
       <SnapshotsHistoryModal
         isOpen={showSnapshotsHistoryModal}
         onClose={() => setShowSnapshotsHistoryModal(false)}
-        revisions={revisions}
+        revisions={revisions.filter((r) => r.documentId === docId)}
         currentBodyHtml={modalActiveBodyHtml}
         currentTitle={docTitle}
         onTakeManualSnapshot={handleTakeManualSnapshot}
@@ -3393,26 +3509,32 @@ export default function NotaryEditorApp() {
         downloads={downloads}
         onStartBlank={(clearPreviousClauses = true) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot('قبل فتح عقد جديد فارغ');
-          setDocId(`doc_${Date.now()}`);
+          setUndoStack([]);
+          setRedoStack([]);
+          const newId = `doc_${Date.now()}`;
+          setDocId(newId);
           setDocTitle('عقد توثيقي جديد');
+          setActiveDocument(null);
+          activeDocumentRef.current = null;
+          fieldValuesRef.current = {};
+          fieldInputTypesRef.current = {};
+          setFieldValues({});
+          setFieldInputTypes({});
+          setSelectedEstateId('');
+          setSelectedLotNumber('');
           bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
           if (headerEditorRef.current) headerEditorRef.current.innerHTML = '';
           if (footerEditorRef.current) footerEditorRef.current.innerHTML = '';
           if (clearPreviousClauses) {
             setActiveClauseIdsInDoc([]);
           }
-          syncPlaceholdersAndDraft();
-          showToast('تم فتح ورقة عقد توثيقي جديد بمعايير المكتب');
+          syncPlaceholdersAndDraft({}, {});
+          showToast('تم فتح ورقة عقد توثيقي جديد معزول تماماً');
         }}
         onSelectTemplate={(tpl, mode, clearPreviousClauses) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot(
-            mode === 'insert'
-              ? `قبل إدراج القالب "${tpl.name}" عند المؤشر`
-              : `قبل استبدال المحتوى بالقالب "${tpl.name}"`
-          );
           if (mode === 'insert') {
+            recordHistorySnapshot(`قبل إدراج القالب "${tpl.name}" عند المؤشر`);
             insertHtmlAtSelection(
               bodyEditorRef.current,
               tpl.bodyHtml,
@@ -3422,8 +3544,12 @@ export default function NotaryEditorApp() {
             showToast(`تم إدراج القالب "${tpl.name}" عند موضع المؤشر`);
             return;
           }
+          setUndoStack([]);
+          setRedoStack([]);
           setDocId(`doc_${Date.now()}`);
           setDocTitle(tpl.name);
+          setActiveDocument(null);
+          activeDocumentRef.current = null;
           let nextHtml = tpl.bodyHtml;
           if (clearPreviousClauses) {
             const temp = document.createElement('div');
@@ -3439,45 +3565,39 @@ export default function NotaryEditorApp() {
           }
           bodyEditorRef.current.innerHTML = nextHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          if (tpl.defaultFieldValues && Object.keys(tpl.defaultFieldValues).length > 0) {
-            const nextVals = { ...fieldValuesRef.current, ...tpl.defaultFieldValues };
-            fieldValuesRef.current = nextVals;
-            setFieldValues(nextVals);
-            syncPlaceholdersAndDraft(nextVals);
-          } else {
-            syncPlaceholdersAndDraft();
-          }
+          const nextVals = { ...(tpl.defaultFieldValues || {}) };
+          fieldValuesRef.current = nextVals;
+          fieldInputTypesRef.current = {};
+          setFieldValues(nextVals);
+          setFieldInputTypes({});
+          setSelectedEstateId('');
+          setSelectedLotNumber('');
+          syncPlaceholdersAndDraft(nextVals, {});
           showToast(
-            `تم استبدال المحتوى بالقالب "${tpl.name}"${
-              clearPreviousClauses ? ' مع حذف البنود السابقة' : ''
-            }`
+            `تم فتح عقد جديد من القالب "${tpl.name}" بمتغيرات وبنود معزولة`
           );
         }}
         onSelectSavedDoc={(doc) => {
-          if (!bodyEditorRef.current) return;
-          recordHistorySnapshot(`قبل فتح المسودة "${doc.title}"`);
-          setDocId(doc.id);
-          setDocTitle(doc.title);
-          bodyEditorRef.current.innerHTML = doc.bodyHtml;
-          normalizeNotaryContainerDOM(bodyEditorRef.current);
-          const nextVals = doc.fieldValues || {};
-          fieldValuesRef.current = nextVals;
-          setFieldValues(nextVals);
-          syncPlaceholdersAndDraft(nextVals);
-          showToast(`تم فتح العقد "${doc.title}"`);
+          handleSelectDocument(doc);
+          showToast(`تم فتح العقد "${doc.title}" بجميع خصائصه ومتغيراته المحفوظة`);
         }}
         onImportDocxFile={handleImportDocxDirectlyToEditor}
         onSelectDownloadArchiveItem={(item) => {
           if (!bodyEditorRef.current) return;
-          recordHistorySnapshot(`قبل استيراد وثيقة "${item.docTypeLabel}" من الأرشيف`);
+          setUndoStack([]);
+          setRedoStack([]);
           setDocId(`doc_${Date.now()}`);
           setDocTitle(`${item.documentTitle} (${item.docTypeLabel})`);
+          setActiveDocument(null);
+          activeDocumentRef.current = null;
           bodyEditorRef.current.innerHTML = item.bodyHtml;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          const nextVals = item.fieldValues || {};
+          const nextVals = { ...(item.fieldValues || {}) };
           fieldValuesRef.current = nextVals;
+          fieldInputTypesRef.current = {};
           setFieldValues(nextVals);
-          syncPlaceholdersAndDraft(nextVals);
+          setFieldInputTypes({});
+          syncPlaceholdersAndDraft(nextVals, {});
           showToast(`تم استيراد "${item.docTypeLabel}" من أرشيف التحميلات للمحرر`);
         }}
       />
@@ -3500,8 +3620,16 @@ export default function NotaryEditorApp() {
           officeName: activeClerk.name,
           officeAddr: 'مكتب التوثيق الرسمي',
           typeActe: docTitle,
-          client1: fieldValues['الطرف_الأول_الاسم'] || '',
-          client2: fieldValues['الطرف_الثاني_الاسم'] || '',
+          client1:
+            fieldValues['الطرف_الأول_الاسم'] ||
+            fieldValues['البائع'] ||
+            fieldValues['الموكل'] ||
+            '',
+          client2:
+            fieldValues['الطرف_الثاني_الاسم'] ||
+            fieldValues['المشتري'] ||
+            fieldValues['الوكيل'] ||
+            '',
           dateActe: fieldValues['تاريخ_العقد'] || new Date().toLocaleDateString('ar-DZ'),
           clauses: (() => {
             const parsedFromSheet = parseContractIntoClauses(
@@ -3514,10 +3642,15 @@ export default function NotaryEditorApp() {
                 contentHtml: c.bodyHtml,
               }));
             }
-            return clauses
-              .filter((cl) => activeClauseIdsInDoc.includes(cl.id))
-              .map((cl) => ({ title: cl.title, contentHtml: cl.contentHtml }));
+            if (outlineClauses.length > 0) {
+              return outlineClauses.map((c) => ({
+                title: c.title,
+                contentHtml: c.contentHtml,
+              }));
+            }
+            return [];
           })(),
+          rawContractBodyHtml: modalActiveBodyHtml,
           fieldValues,
         }}
       />

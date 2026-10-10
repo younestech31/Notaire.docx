@@ -1,5 +1,6 @@
 import {
   ClauseVariableGroup,
+  ContractOutlineClause,
   SerializedSelectionPath,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
@@ -782,9 +783,9 @@ export function insertOrWrapNewClauseAtSelection(
   const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
 
-  const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">${escapeHtml(
+  const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
     title
-  )}:</span> </p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات {{...}} هنا.</p>`;
+  )}</span></p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات [اسم_المتغير] هنا.</p>`;
 
   const wrapperHtml = `<div class="clause-container" data-clause-id="${clauseId}" data-clause-title="${escapeHtml(
     title
@@ -792,6 +793,258 @@ export function insertOrWrapNewClauseAtSelection(
 
   insertHtmlAtSelection(editorEl, wrapperHtml, savedRange);
   return { clauseId, title, contentHtml: innerContentHtml };
+}
+
+/**
+ * Helper to segment rootEl.children into logical contract clauses based on:
+ * 1. Explicit .clause-container[data-clause-id] elements
+ * 2. Paragraphs starting with `#` (Notaire Local Layer 2 syntax: `# عنوان البند`)
+ */
+interface DomClauseSegment {
+  id: string;
+  title: string;
+  domIndex: number;
+  isContainer: boolean;
+  elements: HTMLElement[];
+}
+
+function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
+  const children = Array.from(rootEl.children) as HTMLElement[];
+  const segments: DomClauseSegment[] = [];
+
+  let currentHashSegment: DomClauseSegment | null = null;
+
+  const flushHashSegment = () => {
+    if (currentHashSegment) {
+      segments.push(currentHashSegment);
+      currentHashSegment = null;
+    }
+  };
+
+  children.forEach((child, idx) => {
+    if (child.classList.contains('page-break')) {
+      if (currentHashSegment) {
+        currentHashSegment.elements.push(child);
+      }
+      return;
+    }
+
+    if (
+      child.classList.contains('clause-container') ||
+      child.hasAttribute('data-clause-id')
+    ) {
+      flushHashSegment();
+      const rawTitle =
+        child.getAttribute('data-clause-title') ||
+        child.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
+        `بند رقم ${segments.length + 1}`;
+      const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+      const cId =
+        child.getAttribute('data-clause-id') || `dom_clause_${idx}`;
+      segments.push({
+        id: cId,
+        title: cleanTitle || `بند رقم ${segments.length + 1}`,
+        domIndex: idx,
+        isContainer: true,
+        elements: [child],
+      });
+      return;
+    }
+
+    const plainText = (child.textContent || '').trim();
+    if (plainText.startsWith('#')) {
+      flushHashSegment();
+      const cleanTitle =
+        plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim() ||
+        `بند رقم ${segments.length + 1}`;
+      currentHashSegment = {
+        id: `hash_clause_${idx}`,
+        title: cleanTitle,
+        domIndex: idx,
+        isContainer: false,
+        elements: [child],
+      };
+    } else if (currentHashSegment) {
+      currentHashSegment.elements.push(child);
+    }
+  });
+
+  flushHashSegment();
+  return segments;
+}
+
+/**
+ * Extracts live contract clauses directly from the open A4 editor DOM.
+ */
+export function extractLiveContractClausesFromDOM(
+  rootEl: HTMLElement | null
+): ContractOutlineClause[] {
+  if (!rootEl) return [];
+  const segments = collectDomClauseSegments(rootEl);
+
+  return segments.map((seg, i) => {
+    const tempDiv = document.createElement('div');
+    seg.elements.forEach((el) => tempDiv.appendChild(el.cloneNode(true)));
+
+    const vars = extractPlaceholdersFromHtml(tempDiv.innerHTML);
+
+    // Build preview text excluding the heading line itself
+    let previewSource = '';
+    if (seg.isContainer) {
+      const containerClone = tempDiv.firstElementChild as HTMLElement | null;
+      if (containerClone) {
+        const cloneChildren = Array.from(containerClone.children);
+        if (cloneChildren.length > 1) {
+          previewSource = cloneChildren
+            .slice(1)
+            .map((c) => c.textContent || '')
+            .join(' ');
+        } else {
+          previewSource = containerClone.textContent || '';
+        }
+      }
+    } else {
+      if (seg.elements.length > 1) {
+        previewSource = seg.elements
+          .slice(1)
+          .map((e) => e.textContent || '')
+          .join(' ');
+      } else {
+        previewSource = (seg.elements[0]?.textContent || '').replace(/^#+\s*/, '');
+      }
+    }
+
+    const cleanPreview = previewSource
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 110);
+
+    return {
+      id: seg.id,
+      index: i + 1,
+      title: seg.title,
+      previewText: cleanPreview,
+      variables: vars,
+      contentHtml: tempDiv.innerHTML,
+      domIndex: seg.domIndex,
+      isContainer: seg.isContainer,
+    };
+  });
+}
+
+/**
+ * Scrolls smoothly to a specific clause inside the A4 editor and highlights/focuses it.
+ */
+export function scrollToContractClauseInDOM(
+  rootEl: HTMLElement | null,
+  domIndex: number
+): void {
+  if (!rootEl) return;
+  const target = rootEl.children[domIndex] as HTMLElement | undefined;
+  if (!target) return;
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const prevTransition = target.style.transition;
+  const prevBg = target.style.backgroundColor;
+  target.style.transition = 'background-color 0.25s ease';
+  target.style.backgroundColor = '#dbeafe';
+  setTimeout(() => {
+    target.style.backgroundColor = prevBg;
+    setTimeout(() => {
+      target.style.transition = prevTransition;
+    }, 250);
+  }, 900);
+}
+
+/**
+ * Moves a live clause (either a .clause-container or a `# heading` + its body paragraphs)
+ * up or down relative to the adjacent clause inside the current contract DOM.
+ */
+export function moveContractClauseInDOM(
+  rootEl: HTMLElement | null,
+  domIndex: number,
+  direction: 'up' | 'down'
+): boolean {
+  if (!rootEl) return false;
+  const segments = collectDomClauseSegments(rootEl);
+  const segIdx = segments.findIndex((s) => s.domIndex === domIndex);
+  if (segIdx < 0) return false;
+
+  const swapIdx = direction === 'up' ? segIdx - 1 : segIdx + 1;
+  if (swapIdx < 0 || swapIdx >= segments.length) return false;
+
+  const currentSeg = segments[segIdx];
+  const targetSeg = segments[swapIdx];
+
+  if (direction === 'up') {
+    const anchor = targetSeg.elements[0];
+    if (!anchor || !anchor.parentNode) return false;
+    for (const el of currentSeg.elements) {
+      anchor.parentNode.insertBefore(el, anchor);
+    }
+  } else {
+    const lastTargetEl = targetSeg.elements[targetSeg.elements.length - 1];
+    if (!lastTargetEl || !lastTargetEl.parentNode) return false;
+    const afterAnchor = lastTargetEl.nextSibling;
+    for (const el of currentSeg.elements) {
+      lastTargetEl.parentNode.insertBefore(el, afterAnchor);
+    }
+  }
+
+  normalizeNotaryContainerDOM(rootEl, false);
+  return true;
+}
+
+/**
+ * Deletes a live clause (container or `#` heading + its body paragraphs) from the open contract DOM.
+ */
+export function deleteContractClauseFromDOM(
+  rootEl: HTMLElement | null,
+  domIndex: number
+): boolean {
+  if (!rootEl) return false;
+  const segments = collectDomClauseSegments(rootEl);
+  const seg = segments.find((s) => s.domIndex === domIndex);
+  if (!seg) return false;
+
+  for (const el of seg.elements) {
+    el.remove();
+  }
+  normalizeNotaryContainerDOM(rootEl, false);
+  return true;
+}
+
+/**
+ * Renames a clause heading directly inside the open contract DOM.
+ */
+export function renameContractClauseInDOM(
+  rootEl: HTMLElement | null,
+  domIndex: number,
+  newTitle: string
+): boolean {
+  if (!rootEl || !newTitle.trim()) return false;
+  const cleanTitle = newTitle.replace(/^#+\s*/, '').trim();
+  if (!cleanTitle) return false;
+
+  const segments = collectDomClauseSegments(rootEl);
+  const seg = segments.find((s) => s.domIndex === domIndex);
+  if (!seg) return false;
+
+  const firstEl = seg.elements[0];
+  if (!firstEl) return false;
+
+  if (seg.isContainer) {
+    firstEl.setAttribute('data-clause-title', cleanTitle);
+    const strongEl = firstEl.querySelector('strong, b, span[style*="bold"]');
+    if (strongEl) {
+      strongEl.textContent = `# ${cleanTitle}`;
+    }
+  } else {
+    firstEl.innerHTML = `<span style="font-weight:bold;"># ${escapeHtml(cleanTitle)}</span>`;
+  }
+
+  normalizeNotaryContainerDOM(rootEl, false);
+  return true;
 }
 
 /**

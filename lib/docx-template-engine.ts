@@ -181,6 +181,7 @@ export function renderTemplateWithContractData(
     fiscal4?: string;
     fiscal5?: string;
     clauses?: { title: string; contentHtml: string }[];
+    rawContractBodyHtml?: string;
     fieldValues?: Record<string, string>;
   }
 ): { bodyHtml: string; headerHtml: string; footerHtml: string } {
@@ -225,18 +226,18 @@ export function renderTemplateWithContractData(
     bodyHtml = bodyHtml.replace(regex, val);
   }
 
-  // Handle ${block} ... ${/block} clause loops
+  // Handle ${block} ... ${/block} clause loops strictly using the current contract's clauses or actual text
   const blockRegex = /\$\{\s*block\s*\}([\s\S]*?)\$\{\s*\/block\s*\}/g;
   bodyHtml = bodyHtml.replace(blockRegex, (_match, blockTemplate) => {
     const clausesList = contractData.clauses || [];
     if (clausesList.length === 0) {
-      // Fallback if no structured clauses, use default sample clauses
-      return `
-        <p style="font-weight:bold;">البند الأول: التعيين والتعرف</p>
-        <p style="text-align:justify;">${fiscal2}</p>
-        <p style="font-weight:bold; margin-top:8px;">البند الثاني: الثمن والشروط المالية</p>
-        <p style="text-align:justify;">${fiscal4}</p>
-      `;
+      if (contractData.rawContractBodyHtml && contractData.rawContractBodyHtml.trim()) {
+        return mergePlaceholdersIntoHtml(
+          contractData.rawContractBodyHtml,
+          contractData.fieldValues || {}
+        );
+      }
+      return '';
     }
 
     return clausesList
@@ -246,7 +247,7 @@ export function renderTemplateWithContractData(
           cl.contentHtml || '',
           contractData.fieldValues || {}
         );
-        itemHtml = itemHtml.replace(/\$\{\s*titre\s*\}/g, cl.title || 'بند قانوني');
+        itemHtml = itemHtml.replace(/\$\{\s*titre\s*\}/g, cl.title || 'بند تعاقدي');
         itemHtml = itemHtml.replace(/\$\{\s*clause\s*\}/g, mergedClauseHtml);
         return itemHtml;
       })
