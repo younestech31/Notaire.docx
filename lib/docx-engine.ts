@@ -109,8 +109,9 @@ export function lookupPlaceholderValue(
   const cleaned = normalizePlaceholderKey(rawKey);
   if (!cleaned) return undefined;
 
-  const withUnderscores = cleaned.replace(/\s+/g, '_');
-  const withSpaces = cleaned.replace(/_/g, ' ');
+  const withUnderscores = cleaned.replace(/[\s.]+/g, '_');
+  const withDots = cleaned.replace(/[\s_]+/g, '.');
+  const withSpaces = cleaned.replace(/[_.]+/g, ' ');
 
   if (fieldValues[cleaned] !== undefined && fieldValues[cleaned].trim() !== '') {
     return fieldValues[cleaned];
@@ -121,6 +122,9 @@ export function lookupPlaceholderValue(
   ) {
     return fieldValues[withUnderscores];
   }
+  if (fieldValues[withDots] !== undefined && fieldValues[withDots].trim() !== '') {
+    return fieldValues[withDots];
+  }
   if (fieldValues[withSpaces] !== undefined && fieldValues[withSpaces].trim() !== '') {
     return fieldValues[withSpaces];
   }
@@ -128,7 +132,7 @@ export function lookupPlaceholderValue(
   const canonicalTarget = withUnderscores.toLowerCase();
   for (const [k, v] of Object.entries(fieldValues)) {
     if (v === undefined || v.trim() === '') continue;
-    const canonicalK = normalizePlaceholderKey(k).replace(/\s+/g, '_').toLowerCase();
+    const canonicalK = normalizePlaceholderKey(k).replace(/[\s.]+/g, '_').toLowerCase();
     if (canonicalK === canonicalTarget) {
       return v;
     }

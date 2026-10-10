@@ -181,6 +181,18 @@
   text-overflow: ellipsis;
 }
 
+.notary-editor-zone .clause-container[data-locked="true"] {
+  border-right: 2px solid #f59e0b;
+  background-color: rgba(254, 243, 199, 0.2);
+}
+
+.notary-editor-zone .clause-container[data-locked="true"]::before {
+  content: "🔒 " attr(data-clause-title);
+  color: #92400e;
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
 .notary-editor-zone mark.search-highlight {
   background-color: #fde047;
   color: #000000;

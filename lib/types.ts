@@ -181,13 +181,33 @@ export interface SavedContractDerivedDoc {
   updatedAt: string;
 }
 
+export type NotaryPartyRole = 'بائع' | 'مشتري' | 'موكل' | 'وكيل' | 'واهب' | 'موهوب' | 'أخرى';
+
+export interface ContractPartyCard {
+  id: string;
+  role: NotaryPartyRole;
+  customRoleLabel?: string; // عند اختيار 'أخرى' (مثل: شريك، مقاسم، مؤجر)
+  index: number; // 1, 2, 3... للسماح بـ بائع 1، بائع 2
+  fullName: string;
+  birthDate: string;
+  birthPlace: string;
+  filiation: string; // ابن فلان وفلانة
+  nationalIdNin: string; // رقم التعريف الوطني NIN
+  idCardDetails: string; // رقم وتاريخ وجهة صدور بطاقة الهوية
+  address: string;
+  legalRepresentative?: string;
+}
+
 export interface ContractOutlineClause {
   id: string;
   index: number;
+  order: number;
   title: string;
   previewText: string;
   variables: string[];
   contentHtml: string;
+  enabled: boolean;
+  locked: boolean;
   domIndex: number;
   isContainer: boolean;
 }
@@ -203,6 +223,7 @@ export interface SavedDocument {
   fieldValues: Record<string, string>;
   fieldInputTypes?: Record<string, VariableInputType>;
   outlineClauses?: ContractOutlineClause[];
+  partyCards?: ContractPartyCard[];
   selectedEstateId?: string;
   selectedLotNumber?: string;
   folderId?: string | null;

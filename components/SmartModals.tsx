@@ -24,6 +24,11 @@ import {
   Trash2,
   UserCheck,
   X,
+  Columns2,
+  Merge,
+  Scissors,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   ClauseVariableGroup,
@@ -38,7 +43,13 @@ import {
   VariableInputType,
   WordTemplateDefinition,
 } from '@/lib/types';
-import { computeDocumentMetrics, computeTextDiff } from '@/lib/editor-utils';
+import {
+  CandidateImportedClause,
+  compileCandidateClausesToHtml,
+  computeDocumentMetrics,
+  computeTextDiff,
+  segmentHtmlIntoCandidateClauses,
+} from '@/lib/editor-utils';
 import { DocxImportResult } from '@/lib/docx-engine';
 import { exportTemplateAsDocx, renderTemplateWithContractData } from '@/lib/docx-template-engine';
 
@@ -568,6 +579,7 @@ export function VersionDiffModal({
 }: VersionDiffModalProps) {
   const [selectedLeftRevId, setSelectedLeftRevId] = useState<string>('');
   const [rightRevId, setRightRevId] = useState<string>('CURRENT');
+  const [diffViewMode, setDiffViewMode] = useState<'side-by-side' | 'unified'>('side-by-side');
 
   if (!isOpen) return null;
 
@@ -587,7 +599,7 @@ export function VersionDiffModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 select-none">
-      <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col overflow-hidden">
         <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GitCompare className="w-4 h-4 text-blue-900" />
@@ -595,19 +607,50 @@ export function VersionDiffModal({
               نظام مقارنة النسخ والتعديلات (Diff) — {currentTitle}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* View Mode Switcher: Side-by-Side vs Unified */}
+            <div className="inline-flex items-center bg-slate-200/80 rounded p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setDiffViewMode('side-by-side')}
+                className={`px-2.5 py-1 rounded inline-flex items-center gap-1 transition-colors ${
+                  diffViewMode === 'side-by-side'
+                    ? 'bg-white text-blue-950 font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Columns2 className="w-3.5 h-3.5" />
+                <span>جنباً إلى جنب (Side-by-Side)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiffViewMode('unified')}
+                className={`px-2.5 py-1 rounded inline-flex items-center gap-1 transition-colors ${
+                  diffViewMode === 'unified'
+                    ? 'bg-white text-blue-950 font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>عرض مدمج موحد</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 border-b border-slate-200 bg-slate-50/50 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-              النسخة المرجعية (الأقدم):
+              النسخة المرجعية (الأقدم — العمود الأيمن):
             </label>
             <select
               value={leftRev?.id || ''}
@@ -628,7 +671,7 @@ export function VersionDiffModal({
 
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-              المقارنة مع النسخة (الأحدث):
+              المقارنة مع النسخة (الأحدث — العمود الأيسر):
             </label>
             <select
               value={rightRevId}
@@ -679,35 +722,99 @@ export function VersionDiffModal({
                 )}
               </div>
 
-              <div
-                dir="rtl"
-                className="p-4 bg-slate-50 border border-slate-200 rounded-md text-sm leading-relaxed whitespace-pre-wrap"
-                style={{ fontFamily: 'Arial, sans-serif' }}
-              >
-                {diffSegments.map((seg, idx) => {
-                  if (seg.type === 'added') {
-                    return (
-                      <span
-                        key={idx}
-                        className="bg-emerald-100 text-emerald-950 font-semibold px-0.5 rounded"
-                      >
-                        {seg.text}
+              {diffViewMode === 'side-by-side' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Right Column: Reference / Older Version */}
+                  <div className="border border-slate-200 rounded-md overflow-hidden flex flex-col bg-white">
+                    <div className="px-3 py-2 bg-red-50/60 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800">
+                      <span>النسخة المرجعية (قبل التعديل)</span>
+                      <span className="text-[11px] font-normal text-red-800">
+                        المحذوفات: {removedCount}
                       </span>
-                    );
-                  }
-                  if (seg.type === 'removed') {
-                    return (
-                      <span
-                        key={idx}
-                        className="bg-red-100 text-red-900 line-through px-0.5 rounded"
-                      >
-                        {seg.text}
+                    </div>
+                    <div
+                      dir="rtl"
+                      className="p-4 text-sm leading-relaxed whitespace-pre-wrap flex-1 bg-slate-50/30"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {diffSegments
+                        .filter((seg) => seg.type !== 'added')
+                        .map((seg, idx) =>
+                          seg.type === 'removed' ? (
+                            <span
+                              key={idx}
+                              className="bg-red-100 text-red-900 line-through px-0.5 rounded font-semibold"
+                            >
+                              {seg.text}
+                            </span>
+                          ) : (
+                            <span key={idx}>{seg.text}</span>
+                          )
+                        )}
+                    </div>
+                  </div>
+
+                  {/* Left Column: Current / Newer Version */}
+                  <div className="border border-slate-200 rounded-md overflow-hidden flex flex-col bg-white">
+                    <div className="px-3 py-2 bg-emerald-50/60 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800">
+                      <span>النسخة المقارنة (بعد التعديل)</span>
+                      <span className="text-[11px] font-normal text-emerald-800">
+                        الإضافات: {addedCount}
                       </span>
-                    );
-                  }
-                  return <span key={idx}>{seg.text}</span>;
-                })}
-              </div>
+                    </div>
+                    <div
+                      dir="rtl"
+                      className="p-4 text-sm leading-relaxed whitespace-pre-wrap flex-1 bg-slate-50/30"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {diffSegments
+                        .filter((seg) => seg.type !== 'removed')
+                        .map((seg, idx) =>
+                          seg.type === 'added' ? (
+                            <span
+                              key={idx}
+                              className="bg-emerald-100 text-emerald-950 font-semibold px-0.5 rounded"
+                            >
+                              {seg.text}
+                            </span>
+                          ) : (
+                            <span key={idx}>{seg.text}</span>
+                          )
+                        )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  dir="rtl"
+                  className="p-4 bg-slate-50 border border-slate-200 rounded-md text-sm leading-relaxed whitespace-pre-wrap"
+                  style={{ fontFamily: 'Arial, sans-serif' }}
+                >
+                  {diffSegments.map((seg, idx) => {
+                    if (seg.type === 'added') {
+                      return (
+                        <span
+                          key={idx}
+                          className="bg-emerald-100 text-emerald-950 font-semibold px-0.5 rounded"
+                        >
+                          {seg.text}
+                        </span>
+                      );
+                    }
+                    if (seg.type === 'removed') {
+                      return (
+                        <span
+                          key={idx}
+                          className="bg-red-100 text-red-900 line-through px-0.5 rounded"
+                        >
+                          {seg.text}
+                        </span>
+                      );
+                    }
+                    return <span key={idx}>{seg.text}</span>;
+                  })}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1024,7 +1131,7 @@ interface DocxImportPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   importResult: DocxImportResult | null;
-  onConfirmApply: (mode: 'replace' | 'insert') => void;
+  onConfirmApply: (mode: 'replace' | 'insert', compiledBodyHtml?: string) => void;
 }
 
 export function DocxImportPreviewModal({
@@ -1034,6 +1141,18 @@ export function DocxImportPreviewModal({
   onConfirmApply,
 }: DocxImportPreviewModalProps) {
   const [importMode, setImportMode] = useState<'replace' | 'insert'>('replace');
+  const [segmentIntoClauses, setSegmentIntoClauses] = useState<boolean>(true);
+  const [candidateClauses, setCandidateClauses] = useState<CandidateImportedClause[]>([]);
+  const [expandedClauseId, setExpandedClauseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && importResult) {
+      const detected = segmentHtmlIntoCandidateClauses(importResult.bodyHtml);
+      setCandidateClauses(detected);
+      setSegmentIntoClauses(detected.length > 0);
+      setExpandedClauseId(detected[0]?.id || null);
+    }
+  }, [isOpen, importResult]);
 
   if (!isOpen || !importResult) return null;
 
@@ -1044,9 +1163,80 @@ export function DocxImportPreviewModal({
     .trim()
     .slice(0, 480);
 
+  const handleRenameClause = (clauseId: string, newTitle: string) => {
+    setCandidateClauses((prev) =>
+      prev.map((c) => (c.id === clauseId ? { ...c, title: newTitle } : c))
+    );
+  };
+
+  const handleMergeWithPrevious = (idx: number) => {
+    if (idx <= 0) return;
+    setCandidateClauses((prev) => {
+      const next = [...prev];
+      const prevClause = next[idx - 1];
+      const currClause = next[idx];
+      const mergedParagraphs = [
+        ...prevClause.paragraphsHtml,
+        ...currClause.paragraphsHtml,
+      ];
+      const tmp = document.createElement('div');
+      tmp.innerHTML = mergedParagraphs.join(' ');
+      next[idx - 1] = {
+        ...prevClause,
+        paragraphsHtml: mergedParagraphs,
+        previewText: (tmp.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      };
+      next.splice(idx, 1);
+      return next;
+    });
+  };
+
+  const handleSplitAtParagraph = (clauseIdx: number, paraIdx: number) => {
+    if (paraIdx <= 0) return;
+    setCandidateClauses((prev) => {
+      const next = [...prev];
+      const target = next[clauseIdx];
+      if (!target || paraIdx >= target.paragraphsHtml.length) return prev;
+
+      const firstParas = target.paragraphsHtml.slice(0, paraIdx);
+      const secondParas = target.paragraphsHtml.slice(paraIdx);
+
+      const tmp1 = document.createElement('div');
+      tmp1.innerHTML = firstParas.join(' ');
+      const tmp2 = document.createElement('div');
+      tmp2.innerHTML = secondParas.join(' ');
+
+      const firstParaText = (secondParas[0] || '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const suggestedTitle =
+        firstParaText.length >= 3 && firstParaText.length <= 65
+          ? firstParaText.replace(/^#+\s*/, '').replace(/:$/, '').trim()
+          : `بند مستخرج ${clauseIdx + 2}`;
+
+      const updatedFirst: CandidateImportedClause = {
+        ...target,
+        paragraphsHtml: firstParas,
+        previewText: (tmp1.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      };
+
+      const newSecond: CandidateImportedClause = {
+        id: `imp_split_${Date.now()}_${clauseIdx}_${paraIdx}`,
+        title: suggestedTitle,
+        paragraphsHtml: secondParas,
+        previewText: (tmp2.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      };
+
+      next.splice(clauseIdx, 1, updatedFirst, newSecond);
+      setExpandedClauseId(newSecond.id);
+      return next;
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4 select-none">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in-50 duration-200">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in-50 duration-200">
         {/* Header */}
         <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1055,7 +1245,7 @@ export function DocxImportPreviewModal({
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                معاينة ملف Word (.docx) قبل التطبيق
+                معاينة ملف Word (.docx) ومراجعة تقسيم البنود قبل التطبيق
               </h2>
               <div className="text-[11px] text-slate-500 font-mono">
                 {importResult.fileName}
@@ -1087,18 +1277,134 @@ export function DocxImportPreviewModal({
                 {importResult.stats.wordCount}
               </div>
             </div>
-            <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 text-center">
-              <div className="text-[11px] text-slate-500 font-medium">الجداول</div>
-              <div className="text-base font-bold text-slate-900 tabular-nums">
-                {importResult.stats.tableCount}
+            <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/50 text-center">
+              <div className="text-[11px] text-blue-900 font-medium">البنود المكتشفة</div>
+              <div className="text-base font-bold text-blue-900 tabular-nums">
+                {candidateClauses.length}
               </div>
             </div>
-            <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/50 text-center">
-              <div className="text-[11px] text-blue-900 font-medium">الوسوم الذكية</div>
-              <div className="text-base font-bold text-blue-900 tabular-nums">
+            <div className="p-2.5 rounded-lg border border-pink-200 bg-pink-50/50 text-center">
+              <div className="text-[11px] text-pink-900 font-medium">الوسوم الذكية</div>
+              <div className="text-base font-bold text-pink-900 tabular-nums">
                 {importResult.extractedPlaceholders.length}
               </div>
             </div>
+          </div>
+
+          {/* PHASE 2: INTERACTIVE CLAUSE SEGMENTATION REVIEW */}
+          <div className="border border-blue-200 rounded-lg p-3.5 bg-blue-50/30 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={segmentIntoClauses}
+                  onChange={(e) => setSegmentIntoClauses(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-900"
+                />
+                <span className="text-xs font-bold text-slate-900">
+                  هيكلة العقد المستورد إلى بنود حية قابلة للتفعيل والتعطيل والسحب ({candidateClauses.length} بند)
+                </span>
+              </label>
+              <span className="text-[11px] text-blue-900">
+                يمكنك تعديل عنوان أي بند أو دمجه أو فصله يدوياً قبل الإدراج
+              </span>
+            </div>
+
+            {segmentIntoClauses && candidateClauses.length > 0 && (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {candidateClauses.map((clause, idx) => {
+                  const isExpanded = expandedClauseId === clause.id;
+                  return (
+                    <div
+                      key={clause.id}
+                      className="bg-white border border-slate-200 rounded-md p-2.5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-blue-900 text-white rounded shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={clause.title}
+                            onChange={(e) => handleRenameClause(clause.id, e.target.value)}
+                            className="flex-1 px-2 py-1 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-900 focus:outline-none"
+                            placeholder="عنوان البند..."
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleMergeWithPrevious(idx)}
+                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold rounded inline-flex items-center gap-1"
+                              title="دمج هذا البند مع البند السابق إذا لم يكن بنداً مستقلاً"
+                            >
+                              <Merge className="w-3 h-3" />
+                              <span>دمج مع السابق</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedClauseId(isExpanded ? null : clause.id)
+                            }
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 text-[10px] font-semibold rounded inline-flex items-center gap-1"
+                          >
+                            <span>فقرات ({clause.paragraphsHtml.length})</span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-3 h-3" />
+                            ) : (
+                              <ChevronDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {!isExpanded && clause.previewText && (
+                        <p className="text-[11px] text-slate-500 line-clamp-1 pr-6">
+                          {clause.previewText}
+                        </p>
+                      )}
+
+                      {isExpanded && (
+                        <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                          {clause.paragraphsHtml.map((pHtml, pIdx) => {
+                            const pText = pHtml
+                              .replace(/<[^>]+>/g, ' ')
+                              .replace(/&nbsp;/g, ' ')
+                              .replace(/\s+/g, ' ')
+                              .trim();
+                            return (
+                              <div
+                                key={pIdx}
+                                className="flex items-start justify-between gap-2 p-1.5 rounded bg-slate-50 border border-slate-200/70 text-[11px]"
+                              >
+                                <span className="text-slate-700 line-clamp-2 flex-1">
+                                  {pText || '(فقرة فارغة / فاصل)'}
+                                </span>
+                                {pIdx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSplitAtParagraph(idx, pIdx)}
+                                    className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded text-[10px] font-semibold shrink-0 inline-flex items-center gap-1"
+                                    title="فصل المستند ابتداءً من هذه الفقرة كبند جديد مستقل"
+                                  >
+                                    <Scissors className="w-2.5 h-2.5" />
+                                    <span>فصل كبند جديد</span>
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Extracted Smart Tags */}
@@ -1124,16 +1430,18 @@ export function DocxImportPreviewModal({
           )}
 
           {/* Content Snippet Preview */}
-          <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-1.5">
-            <div className="text-xs font-bold text-slate-700">مقتطف من نص الوثيقة:</div>
-            <p
-              dir="rtl"
-              className="text-xs text-slate-600 leading-relaxed font-arabic line-clamp-4 bg-white p-2.5 rounded border border-slate-200/80"
-            >
-              {plainSnippet || 'وثيقة وورد خالية من النصوص المباشرة.'}
-              {plainSnippet.length >= 480 ? '...' : ''}
-            </p>
-          </div>
+          {!segmentIntoClauses && (
+            <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-1.5">
+              <div className="text-xs font-bold text-slate-700">مقتطف من نص الوثيقة:</div>
+              <p
+                dir="rtl"
+                className="text-xs text-slate-600 leading-relaxed font-arabic line-clamp-4 bg-white p-2.5 rounded border border-slate-200/80"
+              >
+                {plainSnippet || 'وثيقة وورد خالية من النصوص المباشرة.'}
+                {plainSnippet.length >= 480 ? '...' : ''}
+              </p>
+            </div>
+          )}
 
           {/* Import Destination Options */}
           <div className="border border-slate-200 rounded-lg p-3.5 bg-white space-y-2.5">
@@ -1141,9 +1449,9 @@ export function DocxImportPreviewModal({
               طريقة تطبيق المحتوى المستورد على ورقة المحرر:
             </div>
 
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label
-                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                   importMode === 'replace'
                     ? 'border-blue-800 bg-blue-50/40'
                     : 'border-slate-200 hover:bg-slate-50'
@@ -1159,16 +1467,16 @@ export function DocxImportPreviewModal({
                 />
                 <div>
                   <div className="text-xs font-bold text-slate-900">
-                    استبدال محتوى الورقة الحالية بالكامل (الافتراضي الموصى به)
+                    استبدال محتوى الورقة الحالية بالكامل
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    يتم أخذ لقطة زمنية تلقائية (Snapshot) من العقد الحالي لحمايته من الفقدان، وتوحيد العقد المستورد إلى خط Arial 13pt وهوامش 7/2/1/6 سم.
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    فتح العقد المستورد مع توحيده لخط Arial 13pt وهوامش التوثيق.
                   </div>
                 </div>
               </label>
 
               <label
-                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                   importMode === 'insert'
                     ? 'border-blue-800 bg-blue-50/40'
                     : 'border-slate-200 hover:bg-slate-50'
@@ -1186,8 +1494,8 @@ export function DocxImportPreviewModal({
                   <div className="text-xs font-bold text-slate-900">
                     إدراج المحتوى عند موضع المؤشر الحالي
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    يُبقي على محتوى العقد المفتوح ويدمج فقرات وجداول الملف المستورد في الموضع الذي يقف عنده المؤشر.
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    دمج فقرات وبنود الملف المستورد في موضع المؤشر.
                   </div>
                 </div>
               </label>
@@ -1207,7 +1515,11 @@ export function DocxImportPreviewModal({
           <button
             type="button"
             onClick={() => {
-              onConfirmApply(importMode);
+              const finalHtml =
+                segmentIntoClauses && candidateClauses.length > 0
+                  ? compileCandidateClausesToHtml(candidateClauses)
+                  : undefined;
+              onConfirmApply(importMode, finalHtml);
               onClose();
             }}
             className="px-4 py-2 bg-blue-900 text-white text-xs font-bold rounded-lg hover:bg-blue-800 transition-colors shadow-2xs inline-flex items-center gap-1.5"
@@ -1215,8 +1527,8 @@ export function DocxImportPreviewModal({
             <Check className="w-4 h-4" />
             <span>
               {importMode === 'replace'
-                ? 'استبدال وفتح العقد بالمحرر'
-                : 'إدراج المستورد عند المؤشر'}
+                ? 'اعتماد البنود وفتح العقد بالمحرر'
+                : 'إدراج البنود المعتمدة عند المؤشر'}
             </span>
           </button>
         </div>

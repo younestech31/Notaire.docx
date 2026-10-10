@@ -20,29 +20,36 @@ import {
   FolderArchive,
   FormInput,
   GitCompare,
+  GripVertical,
   Hash,
   History,
   ListChecks,
+  Lock,
   PanelRightClose,
   Plus,
   RotateCcw,
   Save,
+  Sparkles,
   Square,
   Trash2,
+  Unlock,
   Upload,
   UserCheck,
+  Users,
   X,
 } from 'lucide-react';
 import {
   ClauseVariableGroup,
   ContractFolder,
   ContractOutlineClause,
+  ContractPartyCard,
   CustomTemplate,
   DerivedDocTemplate,
   DocumentRevision,
   DownloadArchiveItem,
   NotaryClerk,
   NotaryClause,
+  NotaryPartyRole,
   PartyField,
   SavedContractDerivedDoc,
   SavedDocument,
@@ -59,13 +66,17 @@ export type SidebarTab = 'clauses' | 'parties' | 'templates' | 'documents';
 interface SidebarWorkspaceProps {
   activeTab: SidebarTab;
   onSelectTab: (tab: SidebarTab) => void;
-  // 1. Live Contract Clauses (from # headings in sheet) + Optional Ready Clauses Library
+  // 1. Live Contract Clauses (Single Source of Truth) + Optional Ready Clauses Library
   liveContractClauses: ContractOutlineClause[];
-  onScrollToLiveClause: (domIndex: number) => void;
+  onScrollToLiveClause: (domIndexOrId: number | string) => void;
   onMoveLiveClauseInDoc: (domIndex: number, direction: 'up' | 'down') => void;
-  onDeleteLiveClauseFromDoc: (domIndex: number) => void;
-  onRenameLiveClauseInDoc: (domIndex: number, newTitle: string) => void;
+  onToggleLiveClauseEnabled?: (clauseId: string) => void;
+  onToggleLiveClauseLocked?: (clauseId: string) => void;
+  onReorderLiveClauses?: (sourceClauseId: string, targetClauseId: string) => void;
+  onDeleteLiveClauseFromDoc: (domIndexOrId: number | string) => void;
+  onRenameLiveClauseInDoc: (domIndexOrId: number | string, newTitle: string) => void;
   onInsertNewClauseHeadingInDoc: (title?: string) => void;
+  onImportStandardClausesPack?: () => Promise<void>;
   clauses: NotaryClause[];
   activeClauseIdsInDoc: string[];
   onToggleClauseInDoc: (clause: NotaryClause) => void;
@@ -75,7 +86,10 @@ interface SidebarWorkspaceProps {
   onSaveSelectionAsClause: (title: string, category: string) => Promise<void>;
   onEditClauseInEditor: (clause: NotaryClause) => void;
   onDeleteClause: (id: string) => Promise<void>;
-  // 2. Parties & Designations + Subdivision Table
+  // 2. Parties & Designations + Structured Party Cards + Subdivision Table
+  partyCards?: ContractPartyCard[];
+  onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
+  onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
   partyFields: PartyField[];
   extractedPlaceholders: string[];
   clauseGroups: ClauseVariableGroup[];
@@ -166,9 +180,13 @@ export default function SidebarWorkspace({
   liveContractClauses,
   onScrollToLiveClause,
   onMoveLiveClauseInDoc,
+  onToggleLiveClauseEnabled,
+  onToggleLiveClauseLocked,
+  onReorderLiveClauses,
   onDeleteLiveClauseFromDoc,
   onRenameLiveClauseInDoc,
   onInsertNewClauseHeadingInDoc,
+  onImportStandardClausesPack,
   clauses,
   activeClauseIdsInDoc,
   onToggleClauseInDoc,
@@ -178,6 +196,9 @@ export default function SidebarWorkspace({
   onSaveSelectionAsClause,
   onEditClauseInEditor,
   onDeleteClause,
+  partyCards = [],
+  onUpdatePartyCards,
+  onSavePartyCardToDirectory,
   partyFields,
   extractedPlaceholders,
   clauseGroups,
@@ -264,14 +285,18 @@ export default function SidebarWorkspace({
   const [newClauseText, setNewClauseText] = useState('');
   const [clauseSearch, setClauseSearch] = useState('');
   const [quickDocClauseTitle, setQuickDocClauseTitle] = useState('');
-  const [renamingDomIndex, setRenamingDomIndex] = useState<number | null>(null);
+  const [renamingClauseId, setRenamingClauseId] = useState<string | null>(null);
   const [renamingClauseVal, setRenamingClauseVal] = useState('');
+  const [draggedClauseId, setDraggedClauseId] = useState<string | null>(null);
+  const [dragOverClauseId, setDragOverClauseId] = useState<string | null>(null);
   const [showSuggestionsLibrary, setShowSuggestionsLibrary] = useState<boolean>(true);
   const [showAddLibraryForm, setShowAddLibraryForm] = useState<boolean>(false);
 
   // Parties sub-view: 'fields' vs 'subdivision'
   const [partiesSubTab, setPartiesSubTab] = useState<'fields' | 'subdivision'>('fields');
   const [newFieldKey, setNewFieldKey] = useState('');
+  const [newPartyRole, setNewPartyRole] = useState<NotaryPartyRole>('بائع');
+  const [expandedPartyCardId, setExpandedPartyCardId] = useState<string | null>(null);
 
   // Subdivision Estate form state
   const [editingEstate, setEditingEstate] = useState<SubdivisionEstate | null>(null);
@@ -524,19 +549,93 @@ export default function SidebarWorkspace({
                     لا توجد بنود مقسّمة بعلامة `#` في هذا العقد بعد
                   </div>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    اكتب <code className="font-mono font-bold text-blue-900"># عنوان البند</code> في بداية أي سطر داخل الورقة أو اضغط زر <strong>«# بند بالعقد»</strong> أعلاه لتقسيم هذا العقد إلى بنود مستقلة خاصة به.
+                    اكتب <code className="font-mono font-bold text-blue-900"># عنوان البند</code> في بداية أي سطر داخل الورقة أو اضغط زر <strong>«# بند بالعقد»</strong> أعلاه لتقسيم هذا العقد إلى بنود مستقلة قابلة للتفعيل والتعطيل والسحب.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
                   {liveContractClauses.map((c, idx) => {
-                    const isRenaming = renamingDomIndex === c.domIndex;
+                    const isRenaming = renamingClauseId === c.id;
+                    const isEnabled = c.enabled !== false;
+                    const isLocked = !!c.locked;
+                    const isDragOver = dragOverClauseId === c.id;
                     return (
                       <div
                         key={c.id}
-                        className="border border-slate-200 bg-white rounded-md p-2.5 space-y-1.5 hover:border-blue-400 transition-colors"
+                        draggable={!isRenaming}
+                        onDragStart={(e) => {
+                          setDraggedClauseId(c.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', c.id);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (draggedClauseId && draggedClauseId !== c.id) {
+                            setDragOverClauseId(c.id);
+                          }
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverClauseId === c.id) {
+                            setDragOverClauseId(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const srcId = draggedClauseId || e.dataTransfer.getData('text/plain');
+                          setDraggedClauseId(null);
+                          setDragOverClauseId(null);
+                          if (srcId && srcId !== c.id && onReorderLiveClauses) {
+                            onReorderLiveClauses(srcId, c.id);
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedClauseId(null);
+                          setDragOverClauseId(null);
+                        }}
+                        className={`border rounded-md p-2.5 space-y-1.5 transition-all ${
+                          isDragOver
+                            ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20'
+                            : !isEnabled
+                            ? 'border-slate-200 bg-slate-100/80 opacity-75'
+                            : isLocked
+                            ? 'border-amber-300 bg-amber-50/20'
+                            : 'border-slate-200 bg-white hover:border-blue-400'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-1.5">
+                          {/* Drag Handle + Checkbox Toggle */}
+                          <div className="flex items-center gap-1 pt-0.5 shrink-0">
+                            <span
+                              className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-700"
+                              title="اسحب لإعادة ترتيب هذا البند في العقد"
+                            >
+                              <GripVertical className="w-3.5 h-3.5" />
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onToggleLiveClauseEnabled && onToggleLiveClauseEnabled(c.id)
+                              }
+                              className={`p-0.5 rounded transition-colors ${
+                                isEnabled
+                                  ? 'text-blue-900 hover:text-blue-700'
+                                  : 'text-slate-400 hover:text-slate-700'
+                              }`}
+                              title={
+                                isEnabled
+                                  ? 'البند مفعل وظاهر في ورقة A4 والتصدير — انقر لإخفائه مؤقتاً مع حفظ نصه وموضعه'
+                                  : 'البند معطل ومخفي من ورقة A4 — انقر لإعادته فوراً إلى موضعه الأصلي'
+                              }
+                            >
+                              {isEnabled ? (
+                                <CheckSquare className="w-4 h-4" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+
                           {isRenaming ? (
                             <div className="flex items-center gap-1 flex-1">
                               <input
@@ -546,27 +645,27 @@ export default function SidebarWorkspace({
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter' && renamingClauseVal.trim()) {
                                     onRenameLiveClauseInDoc(
-                                      c.domIndex,
+                                      c.id,
                                       renamingClauseVal.trim()
                                     );
-                                    setRenamingDomIndex(null);
+                                    setRenamingClauseId(null);
                                   } else if (e.key === 'Escape') {
-                                    setRenamingDomIndex(null);
+                                    setRenamingClauseId(null);
                                   }
                                 }}
                                 autoFocus
-                                className="flex-1 px-2 py-0.5 text-xs border border-blue-800 rounded focus:outline-none"
+                                className="flex-1 px-2 py-0.5 text-xs border border-blue-800 rounded focus:outline-none bg-white"
                               />
                               <button
                                 type="button"
                                 onClick={() => {
                                   if (renamingClauseVal.trim()) {
                                     onRenameLiveClauseInDoc(
-                                      c.domIndex,
+                                      c.id,
                                       renamingClauseVal.trim()
                                     );
                                   }
-                                  setRenamingDomIndex(null);
+                                  setRenamingClauseId(null);
                                 }}
                                 className="p-1 text-emerald-700 hover:bg-emerald-50 rounded"
                               >
@@ -574,7 +673,7 @@ export default function SidebarWorkspace({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setRenamingDomIndex(null)}
+                                onClick={() => setRenamingClauseId(null)}
                                 className="p-1 text-slate-400 hover:bg-slate-100 rounded"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -583,15 +682,41 @@ export default function SidebarWorkspace({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => onScrollToLiveClause(c.domIndex)}
-                              className="text-right flex-1 group"
-                              title="انقر للانتقال إلى موضع هذا البند داخل ورقة العقد"
+                              onClick={() => {
+                                if (isEnabled) {
+                                  onScrollToLiveClause(c.id);
+                                } else if (onToggleLiveClauseEnabled) {
+                                  onToggleLiveClauseEnabled(c.id);
+                                }
+                              }}
+                              className="text-right flex-1 group min-w-0"
+                              title={
+                                isEnabled
+                                  ? 'انقر للقفز المباشر إلى موضع هذا البند داخل ورقة العقد'
+                                  : 'هذا البند معطل ومخفي — انقر لإعادة تفعيله في موضعه'
+                              }
                             >
                               <div className="text-xs font-bold text-slate-900 group-hover:text-blue-900 flex items-center gap-1">
-                                <span className="text-blue-900 font-mono tabular-nums">
+                                <span className="text-blue-900 font-mono tabular-nums shrink-0">
                                   #{c.index}
                                 </span>
-                                <span className="truncate">{c.title}</span>
+                                <span
+                                  className={`truncate ${
+                                    !isEnabled ? 'line-through text-slate-500' : ''
+                                  }`}
+                                >
+                                  {c.title}
+                                </span>
+                                {!isEnabled && (
+                                  <span className="text-[9px] font-normal bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
+                                    مخفي
+                                  </span>
+                                )}
+                                {isLocked && isEnabled && (
+                                  <span className="text-[9px] font-normal bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded shrink-0">
+                                    مقفل
+                                  </span>
+                                )}
                               </div>
                               {c.previewText && (
                                 <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
@@ -605,7 +730,35 @@ export default function SidebarWorkspace({
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               type="button"
-                              onClick={() => onMoveLiveClauseInDoc(c.domIndex, 'up')}
+                              onClick={() =>
+                                onToggleLiveClauseLocked && onToggleLiveClauseLocked(c.id)
+                              }
+                              className={`p-1 rounded ${
+                                isLocked
+                                  ? 'text-amber-700 bg-amber-100/80 hover:bg-amber-200/70'
+                                  : 'text-slate-400 hover:text-amber-700'
+                              }`}
+                              title={
+                                isLocked
+                                  ? 'البند مقفل ضد التعديل بالخطأ — انقر لفك القفل'
+                                  : 'قفل البند لمنع تعديله بالخطأ في الورقة'
+                              }
+                            >
+                              {isLocked ? (
+                                <Lock className="w-3.5 h-3.5" />
+                              ) : (
+                                <Unlock className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (idx > 0 && onReorderLiveClauses) {
+                                  onReorderLiveClauses(c.id, liveContractClauses[idx - 1].id);
+                                } else {
+                                  onMoveLiveClauseInDoc(c.domIndex, 'up');
+                                }
+                              }}
                               disabled={idx === 0}
                               className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-30"
                               title="تحريك البند لأعلى داخل هذا العقد"
@@ -614,7 +767,16 @@ export default function SidebarWorkspace({
                             </button>
                             <button
                               type="button"
-                              onClick={() => onMoveLiveClauseInDoc(c.domIndex, 'down')}
+                              onClick={() => {
+                                if (
+                                  idx < liveContractClauses.length - 1 &&
+                                  onReorderLiveClauses
+                                ) {
+                                  onReorderLiveClauses(c.id, liveContractClauses[idx + 1].id);
+                                } else {
+                                  onMoveLiveClauseInDoc(c.domIndex, 'down');
+                                }
+                              }}
                               disabled={idx === liveContractClauses.length - 1}
                               className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-30"
                               title="تحريك البند لأسفل داخل هذا العقد"
@@ -624,7 +786,7 @@ export default function SidebarWorkspace({
                             <button
                               type="button"
                               onClick={() => {
-                                setRenamingDomIndex(c.domIndex);
+                                setRenamingClauseId(c.id);
                                 setRenamingClauseVal(c.title);
                               }}
                               className="p-1 text-slate-400 hover:text-blue-900"
@@ -638,15 +800,15 @@ export default function SidebarWorkspace({
                                 onSaveNewClause(c.title, 'بنود مستخرجة', c.contentHtml)
                               }
                               className="p-1 text-slate-400 hover:text-emerald-700"
-                              title="حفظ نسخة من هذا البند في مكتبة البنود المقترحة"
+                              title="حفظ نسخة من هذا البند في مكتبة المكتب لإعادة استخدامه في عقود أخرى"
                             >
                               <BookmarkPlus className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
-                              onClick={() => onDeleteLiveClauseFromDoc(c.domIndex)}
+                              onClick={() => onDeleteLiveClauseFromDoc(c.id)}
                               className="p-1 text-slate-400 hover:text-red-600"
-                              title="حذف هذا البند من العقد الحالي"
+                              title="حذف هذا البند نهائياً من العقد الحالي"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -691,7 +853,7 @@ export default function SidebarWorkspace({
                     مكتبة البنود المقترحة للإدراج ({clauses.length})
                   </div>
                   <div className="text-[10px] text-slate-500">
-                    مكتبة مساعدة منفصلة — لا تدخل في العقد إلا عند ضغط «+ إدراج في العقد»
+                    مكتبة مساعدة فارغة افتراضياً — لا تدخل في العقد إلا عند ضغط «+ إدراج في العقد»
                   </div>
                 </div>
                 {showSuggestionsLibrary ? (
@@ -719,6 +881,18 @@ export default function SidebarWorkspace({
                       {showAddLibraryForm ? 'إغلاق' : '+ بند للمكتبة'}
                     </button>
                   </div>
+
+                  {onImportStandardClausesPack && (
+                    <button
+                      type="button"
+                      onClick={() => onImportStandardClausesPack()}
+                      className="w-full py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-950 text-[11px] font-semibold rounded inline-flex items-center justify-center gap-1.5 transition-colors"
+                      title="تحميل حزمة البنود التوثيقية القياسية (التعيين، أصل الملكية، الثمن، التصاريح الجبائية، الوكالة، الهبة) عند الطلب"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-blue-800" />
+                      <span>استيراد الحزمة القياسية الاختيارية للمكتب</span>
+                    </button>
+                  )}
 
                   {showAddLibraryForm && (
                     <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-md space-y-2">
@@ -801,8 +975,10 @@ export default function SidebarWorkspace({
                   )}
 
                   {clauses.length === 0 ? (
-                    <div className="border border-dashed border-slate-200 rounded p-4 text-center text-xs text-slate-500">
-                      مكتبة البنود المقترحة فارغة. يمكنك حفظ أي بند من العقد بالضغط على أيقونة الحفظ بجانب البند.
+                    <div className="border border-dashed border-slate-200 rounded p-4 text-center text-xs text-slate-500 space-y-2">
+                      <p>
+                        مكتبة البنود المقترحة فارغة افتراضياً للحفاظ على خفة النظام. يمكنك حفظ أي بند من العقد بالضغط على أيقونة الحفظ بجانب البند، أو استيراد الحزمة القياسية أعلاه.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
@@ -931,6 +1107,422 @@ export default function SidebarWorkspace({
                     <span>فتح استمارة المتغيرات الكاملة</span>
                   </button>
                 </div>
+
+                {/* PHASE 4: STRUCTURED MULTI-PARTY CARDS (بطاقات الأطراف المهيكلة بالصفة والرقم) */}
+                {onUpdatePartyCards && (
+                  <div className="border border-blue-200 bg-blue-50/25 rounded-md p-3 space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-blue-900" />
+                        <span className="text-xs font-bold text-slate-900">
+                          بطاقات أطراف العقد ({partyCards.length})
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-blue-900 font-medium">
+                        ربط تلقائي بالوسوم [...]
+                      </span>
+                    </div>
+
+                    {/* Add New Party Card Bar */}
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={newPartyRole}
+                        onChange={(e) => setNewPartyRole(e.target.value as NotaryPartyRole)}
+                        className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
+                      >
+                        <option value="بائع">صفة الطرف: بائع</option>
+                        <option value="مشتري">صفة الطرف: مشتري</option>
+                        <option value="موكل">صفة الطرف: موكل</option>
+                        <option value="وكيل">صفة الطرف: وكيل</option>
+                        <option value="واهب">صفة الطرف: واهب</option>
+                        <option value="موهوب">صفة الطرف: موهوب له</option>
+                        <option value="أخرى">صفة أخرى مخصصة...</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sameRoleCount = partyCards.filter(
+                            (p) => p.role === newPartyRole
+                          ).length;
+                          const newCard: ContractPartyCard = {
+                            id: `pcard_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                            role: newPartyRole,
+                            customRoleLabel: newPartyRole === 'أخرى' ? 'شريك' : undefined,
+                            index: sameRoleCount + 1,
+                            fullName: '',
+                            birthDate: '',
+                            birthPlace: '',
+                            filiation: '',
+                            nationalIdNin: '',
+                            idCardDetails: '',
+                            address: '',
+                            legalRepresentative: '',
+                          };
+                          onUpdatePartyCards([...partyCards, newCard]);
+                          setExpandedPartyCardId(newCard.id);
+                        }}
+                        className="px-2.5 py-1.5 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800 inline-flex items-center gap-1 shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ إضافة طرف</span>
+                      </button>
+                    </div>
+
+                    {partyCards.length === 0 ? (
+                      <div className="text-[11px] text-slate-500 bg-white/80 border border-dashed border-blue-200 rounded p-2.5 text-center">
+                        أضف بطاقات الأطراف (بائع 1، بائع 2، مشتري 1...) لترتبط تلقائياً بجميع الوسوم مثل <code className="font-mono text-blue-900">[البائع_1_الاسم]</code> و<code className="font-mono text-blue-900">[البائع.الاسم]</code>.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {partyCards.map((card) => {
+                          const isExpanded = expandedPartyCardId === card.id;
+                          const roleLabel =
+                            card.role === 'أخرى'
+                              ? card.customRoleLabel || 'طرف'
+                              : card.role;
+                          const defRole = roleLabel.startsWith('ال')
+                            ? roleLabel
+                            : `ال${roleLabel}`;
+                          const tagPrefix = `${defRole}_${card.index}`;
+
+                          const updateThisCard = (patch: Partial<ContractPartyCard>) => {
+                            const updated = partyCards.map((c) =>
+                              c.id === card.id ? { ...c, ...patch } : c
+                            );
+                            // Recompute sequential index per role
+                            const roleCounters: Record<string, number> = {};
+                            const reindexed = updated.map((c) => {
+                              const rKey =
+                                c.role === 'أخرى' ? c.customRoleLabel || 'أخرى' : c.role;
+                              roleCounters[rKey] = (roleCounters[rKey] || 0) + 1;
+                              return { ...c, index: roleCounters[rKey] };
+                            });
+                            onUpdatePartyCards(reindexed);
+                          };
+
+                          return (
+                            <div
+                              key={card.id}
+                              className="bg-white border border-slate-200 rounded-md overflow-hidden"
+                            >
+                              <div className="px-2.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedPartyCardId(isExpanded ? null : card.id)
+                                  }
+                                  className="flex items-center gap-1.5 text-right flex-1 min-w-0"
+                                >
+                                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-900 text-white rounded shrink-0">
+                                    {roleLabel} {card.index}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-900 truncate">
+                                    {card.fullName || 'بدون اسم بعد...'}
+                                  </span>
+                                </button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {onSavePartyCardToDirectory && card.fullName.trim() && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSavePartyCardToDirectory(card)}
+                                      className="p-1 text-slate-500 hover:text-blue-900"
+                                      title="حفظ هذا الطرف في دفتر الأطراف المحفوظين"
+                                    >
+                                      <Save className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const filtered = partyCards.filter(
+                                        (c) => c.id !== card.id
+                                      );
+                                      const roleCounters: Record<string, number> = {};
+                                      const reindexed = filtered.map((c) => {
+                                        const rKey =
+                                          c.role === 'أخرى'
+                                            ? c.customRoleLabel || 'أخرى'
+                                            : c.role;
+                                        roleCounters[rKey] = (roleCounters[rKey] || 0) + 1;
+                                        return { ...c, index: roleCounters[rKey] };
+                                      });
+                                      onUpdatePartyCards(reindexed);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-red-600"
+                                    title="حذف بطاقة هذا الطرف"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedPartyCardId(isExpanded ? null : card.id)
+                                    }
+                                    className="p-1 text-slate-500"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isExpanded && (
+                                <div className="p-2.5 space-y-2 text-xs">
+                                  {/* Recall from Saved Parties directly into this card */}
+                                  {savedParties.length > 0 && (
+                                    <div className="flex items-center gap-1 pb-1.5 border-b border-slate-100">
+                                      <select
+                                        value={
+                                          savedParties.find(
+                                            (p) => p.id === selectedPartyIdSidebar
+                                          )?.id ||
+                                          savedParties[0]?.id ||
+                                          ''
+                                        }
+                                        onChange={(e) =>
+                                          setSelectedPartyIdSidebar(e.target.value)
+                                        }
+                                        className="flex-1 px-2 py-1 text-[11px] bg-slate-50 border border-slate-300 rounded"
+                                      >
+                                        {savedParties.map((p) => (
+                                          <option key={p.id} value={p.id}>
+                                            {p.fullName}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const sp =
+                                            savedParties.find(
+                                              (p) => p.id === selectedPartyIdSidebar
+                                            ) || savedParties[0];
+                                          if (!sp) return;
+                                          updateThisCard({
+                                            fullName: sp.fullName,
+                                            birthDate: sp.birthDate,
+                                            birthPlace: sp.birthPlace,
+                                            filiation: sp.parentage,
+                                            idCardDetails: sp.idCardRef,
+                                            address: sp.address,
+                                          });
+                                        }}
+                                        className="px-2 py-1 bg-slate-800 text-white text-[10px] font-semibold rounded hover:bg-slate-700 shrink-0"
+                                      >
+                                        تعبئة من الدفتر
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div>
+                                      <label className="text-[10px] text-slate-500 block mb-0.5">
+                                        الصفة في العقد
+                                      </label>
+                                      <select
+                                        value={card.role}
+                                        onChange={(e) =>
+                                          updateThisCard({
+                                            role: e.target.value as NotaryPartyRole,
+                                          })
+                                        }
+                                        className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                      >
+                                        <option value="بائع">بائع</option>
+                                        <option value="مشتري">مشتري</option>
+                                        <option value="موكل">موكل</option>
+                                        <option value="وكيل">وكيل</option>
+                                        <option value="واهب">واهب</option>
+                                        <option value="موهوب">موهوب له</option>
+                                        <option value="أخرى">أخرى</option>
+                                      </select>
+                                    </div>
+                                    {card.role === 'أخرى' && (
+                                      <div>
+                                        <label className="text-[10px] text-slate-500 block mb-0.5">
+                                          تسمية الصفة
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={card.customRoleLabel || ''}
+                                          onChange={(e) =>
+                                            updateThisCard({
+                                              customRoleLabel: e.target.value,
+                                            })
+                                          }
+                                          placeholder="مثال: شريك / مؤجر"
+                                          className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-slate-600 font-semibold block mb-0.5">
+                                      الاسم واللقب الكامل [{tagPrefix}_الاسم]
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={card.fullName}
+                                      onChange={(e) =>
+                                        updateThisCard({ fullName: e.target.value })
+                                      }
+                                      placeholder="الاسم واللقب الكامل..."
+                                      className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-900 focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div>
+                                      <label className="text-[10px] text-slate-500 block mb-0.5">
+                                        تاريخ الميلاد
+                                      </label>
+                                      <input
+                                        type="date"
+                                        value={card.birthDate}
+                                        onChange={(e) =>
+                                          updateThisCard({ birthDate: e.target.value })
+                                        }
+                                        className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-slate-500 block mb-0.5">
+                                        مكان الميلاد
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={card.birthPlace}
+                                        onChange={(e) =>
+                                          updateThisCard({ birthPlace: e.target.value })
+                                        }
+                                        placeholder="البلدية والولاية..."
+                                        className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-slate-500 block mb-0.5">
+                                      النسب (ابن / ابنة فلان وفلانة)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={card.filiation}
+                                      onChange={(e) =>
+                                        updateThisCard({ filiation: e.target.value })
+                                      }
+                                      placeholder="بن ... وأمه ..."
+                                      className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                    />
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    <div>
+                                      <label className="text-[10px] text-slate-500 block mb-0.5">
+                                        الرقم الوطني (NIN)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={card.nationalIdNin}
+                                        onChange={(e) =>
+                                          updateThisCard({
+                                            nationalIdNin: e.target.value,
+                                          })
+                                        }
+                                        placeholder="18 رقماً..."
+                                        className="w-full px-2 py-1 text-xs font-mono bg-slate-50 border border-slate-300 rounded"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-slate-500 block mb-0.5">
+                                        بطاقة الهوية / ر.س
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={card.idCardDetails}
+                                        onChange={(e) =>
+                                          updateThisCard({
+                                            idCardDetails: e.target.value,
+                                          })
+                                        }
+                                        placeholder="رقم وتاريخ الصدور..."
+                                        className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] text-slate-500 block mb-0.5">
+                                      عنوان الإقامة الكامل
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={card.address}
+                                      onChange={(e) =>
+                                        updateThisCard({ address: e.target.value })
+                                      }
+                                      placeholder="الحي، البلدية، الولاية..."
+                                      className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                    />
+                                  </div>
+
+                                  {/* Quick insert party tags at caret */}
+                                  <div className="pt-1 border-t border-slate-100 flex items-center gap-1 flex-wrap">
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        onSaveSelectionBookmark();
+                                      }}
+                                      onClick={() =>
+                                        onInsertPlaceholderAtCaret(`${tagPrefix}_الاسم`)
+                                      }
+                                      className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                                    >
+                                      + [{tagPrefix}_الاسم]
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        onSaveSelectionBookmark();
+                                      }}
+                                      onClick={() =>
+                                        onInsertPlaceholderAtCaret(
+                                          `${tagPrefix}_الرقم_الوطني`
+                                        )
+                                      }
+                                      className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                                    >
+                                      + [{tagPrefix}_الرقم_الوطني]
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        onSaveSelectionBookmark();
+                                      }}
+                                      onClick={() =>
+                                        onInsertPlaceholderAtCaret(`${tagPrefix}_العنوان`)
+                                      }
+                                      className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                                    >
+                                      + [{tagPrefix}_العنوان]
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Saved Parties & Properties Directory (دفتر الأطراف والعقارات القابل للاستدعاء) */}
                 <div className="border border-slate-200 rounded-md p-3 bg-white space-y-2.5">
