@@ -32,24 +32,10 @@ import {
   uint8ArrayToBase64,
 } from './office-store';
 
-let cachedDesktopDataDirectory: string | null = null;
-let cachedPartyFields: PartyField[] | null = null;
-let cachedActiveDraft: SavedDocument | null = null;
-
 function requireBridge(): DesktopOfficeBridge {
   const bridge = getDesktopBridge();
   if (!bridge) {
     throw new Error('جسر سطح المكتب غير متوفر');
-  }
-  if (cachedDesktopDataDirectory === null) {
-    bridge
-      .getDataDirectory()
-      .then((dir) => {
-        cachedDesktopDataDirectory = dir;
-      })
-      .catch(() => {
-        // Keep null until resolved
-      });
   }
   return bridge;
 }
@@ -75,19 +61,15 @@ async function desktopClear(collection: string): Promise<void> {
   await bridge.invoke<void>('storage_clear', { collection });
 }
 
-export function getRuntimeInfo(): OfficeStoreRuntimeInfo {
-  const bridge = getDesktopBridge();
-  if (bridge && cachedDesktopDataDirectory === null) {
-    bridge
-      .getDataDirectory()
-      .then((dir) => {
-        cachedDesktopDataDirectory = dir;
-      })
-      .catch(() => {});
+export async function getRuntimeInfo(): Promise<OfficeStoreRuntimeInfo> {
+  const bridge = requireBridge();
+  const dir = await bridge.getDataDirectory();
+  if (!dir || typeof dir !== 'string' || !dir.trim()) {
+    throw new Error('تعذر الحصول على مسار مجلد بيانات المكتب من جسر سطح المكتب');
   }
   return {
     mode: 'desktop',
-    dataDirectory: cachedDesktopDataDirectory,
+    dataDirectory: dir.trim(),
   };
 }
 
@@ -372,40 +354,62 @@ export async function deleteContractFolder(id: string): Promise<void> {
   await desktopDelete('folders', id);
 }
 
-// 8. Party Fields
-export function loadPartyFields(): PartyField[] {
+// 8. Party Fields (Async from Disk / SQLite)
+export async function loadPartyFields(): Promise<PartyField[]> {
   const bridge = requireBridge();
-  if (cachedPartyFields) return cachedPartyFields;
-  bridge
-    .invoke<PartyField[] | null>('storage_load', { collection: 'party_fields' })
-    .then((res) => {
-      if (Array.isArray(res) && res.length > 0) {
-        cachedPartyFields = res;
-      }
-    })
-    .catch(() => {});
-  return cachedPartyFields || DEFAULT_PARTY_FIELDS;
+  const res = await bridge.invoke<
+    PartyField[] | Array<{ id: string; fields?: PartyField[] }> | null
+  >('storage_load', { collection: 'party_fields' });
+
+  let parsed: PartyField[] = [];
+  if (Array.isArray(res) && res.length > 0) {
+    const first = res[0] as { fields?: PartyField[]; key?: string };
+    if (Array.isArray(first.fields)) {
+      parsed = first.fields;
+    } else if (typeof first.key === 'string') {
+      parsed = res as PartyField[];
+    }
+  }
+
+  if (parsed.length === 0) return DEFAULT_PARTY_FIELDS;
+  const existingKeys = new Set(parsed.map((f) => f.key));
+  const merged = [...parsed];
+  for (const defField of DEFAULT_PARTY_FIELDS) {
+    if (!existingKeys.has(defField.key)) {
+      merged.push(defField);
+    }
+  }
+  return merged;
 }
 
-export function savePartyFields(fields: PartyField[]): void {
+export async function savePartyFields(fields: PartyField[]): Promise<void> {
   const bridge = requireBridge();
-  cachedPartyFields = fields;
-  void bridge.invoke('storage_save', {
+  await bridge.invoke<void>('storage_save', {
     collection: 'party_fields',
     item: { id: 'default_party_fields', fields },
   });
 }
 
-// 9. Active Draft Session
-export function loadActiveDraftSession(): SavedDocument | null {
-  requireBridge();
-  return cachedActiveDraft;
+// 9. Active Draft Session (Async from Disk / SQLite)
+export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
+  const bridge = requireBridge();
+  const res = await bridge.invoke<SavedDocument[] | SavedDocument | null>(
+    'storage_load',
+    { collection: 'active_draft' }
+  );
+  if (!res) return null;
+  if (Array.isArray(res)) {
+    return res.length > 0 ? res[0] : null;
+  }
+  if (typeof res === 'object' && 'id' in res) {
+    return res as SavedDocument;
+  }
+  return null;
 }
 
-export function saveActiveDraftSession(doc: SavedDocument): void {
+export async function saveActiveDraftSession(doc: SavedDocument): Promise<void> {
   const bridge = requireBridge();
-  cachedActiveDraft = doc;
-  void bridge.invoke('storage_save', {
+  await bridge.invoke<void>('storage_save', {
     collection: 'active_draft',
     item: doc,
   });
@@ -431,6 +435,7 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     clerks,
     folders,
     sealedOriginals,
+    defaultFields,
   ] = await Promise.all([
     loadCustomTemplates(),
     loadSavedDocuments(),
@@ -444,8 +449,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadNotaryClerks(),
     loadContractFolders(),
     desktopLoad<SerializedSealedOriginal>('sealed_originals'),
+    loadPartyFields(),
   ]);
-  const defaultFields = loadPartyFields();
 
   return {
     version: '2.6.0',
@@ -561,7 +566,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
     }
   }
   if (Array.isArray(bundle.defaultFields) && bundle.defaultFields.length > 0) {
-    savePartyFields(bundle.defaultFields);
+    await savePartyFields(bundle.defaultFields);
   }
 
   return { templatesCount, documentsCount, estatesCount, clausesCount };

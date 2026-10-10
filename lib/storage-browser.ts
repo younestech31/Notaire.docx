@@ -50,7 +50,6 @@ const STORE_SEALED_ORIGINALS = 'sealed_originals';
 
 const LS_FIELDS_KEY = 'notary_default_party_fields_v2';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
-const LS_SEALED_ORIGINALS_KEY = 'notary_sealed_originals_v1';
 
 interface StoredSealedOriginalRecord extends SealedContractOriginal {
   bytes?: Uint8Array;
@@ -245,7 +244,7 @@ async function deleteFromStore(
   }
 }
 
-export function getRuntimeInfo(): OfficeStoreRuntimeInfo {
+export async function getRuntimeInfo(): Promise<OfficeStoreRuntimeInfo> {
   return {
     mode: 'browser',
     dataDirectory: null,
@@ -253,87 +252,62 @@ export function getRuntimeInfo(): OfficeStoreRuntimeInfo {
 }
 
 // =========================================================
-// SEALED ORIGINALS (الأصول المعتمدة ببصمة SHA-256)
+// SEALED ORIGINALS (الأصول المعتمدة ببصمة SHA-256 — في IndexedDB حصراً دون localStorage)
 // =========================================================
 async function getAllSealedOriginals(): Promise<StoredSealedOriginalRecord[]> {
   const db = await openDatabase();
-  if (db && db.objectStoreNames.contains(STORE_SEALED_ORIGINALS)) {
-    return await new Promise<StoredSealedOriginalRecord[]>((resolve, reject) => {
-      try {
-        const tx = db.transaction(STORE_SEALED_ORIGINALS, 'readonly');
-        const store = tx.objectStore(STORE_SEALED_ORIGINALS);
-        const req = store.getAll();
-        req.onsuccess = () =>
-          resolve((req.result as StoredSealedOriginalRecord[]) || []);
-        req.onerror = () =>
-          reject(
-            new Error(
-              `فشل قراءة مخزن الأصول المعتمدة: ${req.error?.message || ''}`
-            )
-          );
-      } catch (err) {
+  if (!db || !db.objectStoreNames.contains(STORE_SEALED_ORIGINALS)) {
+    return [];
+  }
+  return await new Promise<StoredSealedOriginalRecord[]>((resolve, reject) => {
+    try {
+      const tx = db.transaction(STORE_SEALED_ORIGINALS, 'readonly');
+      const store = tx.objectStore(STORE_SEALED_ORIGINALS);
+      const req = store.getAll();
+      req.onsuccess = () =>
+        resolve((req.result as StoredSealedOriginalRecord[]) || []);
+      req.onerror = () =>
         reject(
-          err instanceof Error ? err : new Error('فشل قراءة مخزن الأصول المعتمدة')
+          new Error(
+            `فشل قراءة مخزن الأصول المعتمدة: ${req.error?.message || ''}`
+          )
         );
-      }
-    });
-  }
-  if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem(LS_SEALED_ORIGINALS_KEY);
-    return raw ? (JSON.parse(raw) as StoredSealedOriginalRecord[]) : [];
-  }
-  return [];
+    } catch (err) {
+      reject(
+        err instanceof Error ? err : new Error('فشل قراءة مخزن الأصول المعتمدة')
+      );
+    }
+  });
 }
 
 async function putSealedOriginalRecord(
   record: StoredSealedOriginalRecord
 ): Promise<void> {
   const db = await openDatabase();
-  if (db && db.objectStoreNames.contains(STORE_SEALED_ORIGINALS)) {
-    await new Promise<void>((resolve, reject) => {
-      try {
-        const tx = db.transaction(STORE_SEALED_ORIGINALS, 'readwrite');
-        tx.objectStore(STORE_SEALED_ORIGINALS).put(record);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () =>
-          reject(
-            new Error(
-              `فشل حفظ الأصل المعتمد: ${tx.error?.message || 'خطأ في المعاملة'}`
-            )
-          );
-        tx.onabort = () =>
-          reject(
-            new Error(
-              `تم إحباط حفظ الأصل المعتمد: ${tx.error?.message || ''}`
-            )
-          );
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error('فشل حفظ الأصل المعتمد'));
-      }
-    });
+  if (!db || !db.objectStoreNames.contains(STORE_SEALED_ORIGINALS)) {
+    throw new Error('مخزن الأصول المعتمدة غير متاح في قاعدة بيانات المتصفح');
   }
-  if (typeof window !== 'undefined') {
+  await new Promise<void>((resolve, reject) => {
     try {
-      const serialized: SerializedSealedOriginal = {
-        documentId: record.documentId,
-        relativePath: record.relativePath,
-        sha256: record.sha256,
-        sealedAt: record.sealedAt,
-        byteLength: record.byteLength,
-        base64Data:
-          record.base64Data ||
-          (record.bytes ? uint8ArrayToBase64(record.bytes) : undefined),
-      };
-      const raw = localStorage.getItem(LS_SEALED_ORIGINALS_KEY);
-      const list: SerializedSealedOriginal[] = raw ? JSON.parse(raw) : [];
-      const idx = list.findIndex((x) => x.documentId === record.documentId);
-      if (idx >= 0) list[idx] = serialized;
-      else list.unshift(serialized);
-      localStorage.setItem(LS_SEALED_ORIGINALS_KEY, JSON.stringify(list));
-    } catch {
-      // Ignore secondary localStorage quota if bytes are large
+      const tx = db.transaction(STORE_SEALED_ORIGINALS, 'readwrite');
+      tx.objectStore(STORE_SEALED_ORIGINALS).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () =>
+        reject(
+          new Error(
+            `فشل حفظ الأصل المعتمد: ${tx.error?.message || 'خطأ في المعاملة'}`
+          )
+        );
+      tx.onabort = () =>
+        reject(
+          new Error(
+            `تم إحباط حفظ الأصل المعتمد: ${tx.error?.message || ''}`
+          )
+        );
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error('فشل حفظ الأصل المعتمد'));
     }
-  }
+  });
 }
 
 export async function sealContractOriginal(
@@ -640,7 +614,7 @@ export async function deleteContractFolder(id: string): Promise<void> {
 }
 
 // 8. Default / Custom Party Fields
-export function loadPartyFields(): PartyField[] {
+export async function loadPartyFields(): Promise<PartyField[]> {
   if (typeof window === 'undefined') return DEFAULT_PARTY_FIELDS;
   try {
     const raw = localStorage.getItem(LS_FIELDS_KEY);
@@ -665,13 +639,13 @@ export function loadPartyFields(): PartyField[] {
   }
 }
 
-export function savePartyFields(fields: PartyField[]): void {
+export async function savePartyFields(fields: PartyField[]): Promise<void> {
   if (typeof window === 'undefined') return;
   localStorage.setItem(LS_FIELDS_KEY, JSON.stringify(fields));
 }
 
 // 9. Active Draft Session
-export function loadActiveDraftSession(): SavedDocument | null {
+export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(LS_ACTIVE_DOC_KEY);
@@ -681,7 +655,7 @@ export function loadActiveDraftSession(): SavedDocument | null {
   }
 }
 
-export function saveActiveDraftSession(doc: SavedDocument): void {
+export async function saveActiveDraftSession(doc: SavedDocument): Promise<void> {
   if (typeof window === 'undefined') return;
   localStorage.setItem(LS_ACTIVE_DOC_KEY, JSON.stringify(doc));
 }
@@ -701,6 +675,7 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     clerks,
     folders,
     rawSealedOriginals,
+    defaultFields,
   ] = await Promise.all([
     loadCustomTemplates(),
     loadSavedDocuments(),
@@ -714,8 +689,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadNotaryClerks(),
     loadContractFolders(),
     getAllSealedOriginals(),
+    loadPartyFields(),
   ]);
-  const defaultFields = loadPartyFields();
   const sealedOriginals: SerializedSealedOriginal[] = rawSealedOriginals.map((item) => ({
     documentId: item.documentId,
     relativePath: item.relativePath,
@@ -866,7 +841,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   }
 
   if (Array.isArray(bundle.defaultFields) && bundle.defaultFields.length > 0) {
-    savePartyFields(bundle.defaultFields);
+    await savePartyFields(bundle.defaultFields);
   }
 
   return { templatesCount, documentsCount, estatesCount, clausesCount };

@@ -87,6 +87,7 @@ import {
   deleteWordTemplate,
   exportCustomTemplatesJson,
   exportFullBackupBundle,
+  getRuntimeInfo,
   importCustomTemplatesJson,
   importFullBackupBundle,
   loadActiveDraftSession,
@@ -444,12 +445,11 @@ export default function NotaryEditorApp() {
         updatedAt: nowIso,
         createdAt: existingDoc?.createdAt || nowIso,
       };
-      saveActiveDraftSession(draft);
-
       setAutoSaveState('saving');
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
         try {
+          await saveActiveDraftSession(draft);
           await saveDocumentRecord(draft);
           const updatedDocs = await loadSavedDocuments();
           setDocuments(updatedDocs);
@@ -787,6 +787,19 @@ export default function NotaryEditorApp() {
   useEffect(() => {
     let mounted = true;
     async function initWorkspace() {
+      try {
+        await getRuntimeInfo();
+      } catch (err) {
+        if (mounted) {
+          setAutoSaveState('error');
+          showToast(
+            err instanceof Error
+              ? err.message
+              : 'تعذر التحقق من مجلد بيانات المكتب'
+          );
+        }
+      }
+
       const [
         loadedTemplates,
         loadedDocs,
@@ -800,6 +813,8 @@ export default function NotaryEditorApp() {
         loadedClerks,
         loadedFolders,
         loadedWordTpls,
+        loadedFields,
+        activeDraft,
       ] = await Promise.all([
         loadCustomTemplates(),
         loadSavedDocuments(),
@@ -813,10 +828,11 @@ export default function NotaryEditorApp() {
         loadNotaryClerks(),
         loadContractFolders(),
         loadWordTemplates(),
+        loadPartyFields(),
+        loadActiveDraftSession(),
       ]);
       if (!mounted) return;
 
-      const loadedFields = loadPartyFields();
       setPartyFields(loadedFields);
       setTemplates(loadedTemplates);
       setDocuments(loadedDocs);
@@ -836,7 +852,6 @@ export default function NotaryEditorApp() {
         setSelectedEstateId(loadedEstates[0].id);
       }
 
-      const activeDraft = loadActiveDraftSession();
       if (activeDraft && bodyEditorRef.current) {
         setDocId(activeDraft.id || `doc_${Date.now()}`);
         setDocTitle(activeDraft.title || 'عقد توثيقي جديد');
@@ -2706,7 +2721,12 @@ export default function NotaryEditorApp() {
         },
       ];
       setPartyFields(updated);
-      savePartyFields(updated);
+      savePartyFields(updated).catch((err) => {
+        setAutoSaveState('error');
+        showToast(
+          err instanceof Error ? err.message : 'تعذر حفظ حقول الأطراف'
+        );
+      });
     }
     const tagHtml = `<span class="smart-tag" data-var="${escapeHtml(
       cleanKey
@@ -2913,7 +2933,7 @@ export default function NotaryEditorApp() {
             setDerivedTemplates(await loadDerivedDocTemplates());
             setRevisions(await loadDocumentRevisions());
             setDownloads(await loadDownloadArchive());
-            setPartyFields(loadPartyFields());
+            setPartyFields(await loadPartyFields());
             const nowIso = new Date().toISOString();
             setLastBackupAt(nowIso);
             if (typeof window !== 'undefined') {
@@ -3217,7 +3237,12 @@ export default function NotaryEditorApp() {
                 { key, label, value: '', category: 'custom' },
               ];
               setPartyFields(updated);
-              savePartyFields(updated);
+              savePartyFields(updated).catch((err) => {
+                setAutoSaveState('error');
+                showToast(
+                  err instanceof Error ? err.message : 'تعذر حفظ حقول الأطراف'
+                );
+              });
               showToast(`تمت إضافة الحقل [${key}]`);
             }}
             onInsertPlaceholderAtCaret={(key) => {
@@ -3472,7 +3497,7 @@ export default function NotaryEditorApp() {
                 setDerivedTemplates(await loadDerivedDocTemplates());
                 setRevisions(await loadDocumentRevisions());
                 setDownloads(await loadDownloadArchive());
-                setPartyFields(loadPartyFields());
+                setPartyFields(await loadPartyFields());
                 showToast(
                   `تم استعادة (${counts.templatesCount}) قالب و (${counts.clausesCount}) بند و (${counts.documentsCount}) عقد`
                 );

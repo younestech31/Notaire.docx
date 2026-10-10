@@ -38,7 +38,7 @@ export function getActiveOfficeStore(): OfficeStore {
   return getDesktopBridge() ? desktopOfficeStore : browserOfficeStore;
 }
 
-export function getRuntimeInfo(): OfficeStoreRuntimeInfo {
+export function getRuntimeInfo(): Promise<OfficeStoreRuntimeInfo> {
   return getActiveOfficeStore().getRuntimeInfo();
 }
 
@@ -221,21 +221,21 @@ export function deleteContractFolder(id: string): Promise<void> {
 }
 
 // 8. Party Fields
-export function loadPartyFields(): PartyField[] {
+export function loadPartyFields(): Promise<PartyField[]> {
   return getActiveOfficeStore().loadPartyFields();
 }
 
-export function savePartyFields(fields: PartyField[]): void {
-  getActiveOfficeStore().savePartyFields(fields);
+export function savePartyFields(fields: PartyField[]): Promise<void> {
+  return getActiveOfficeStore().savePartyFields(fields);
 }
 
 // 9. Active Draft Session
-export function loadActiveDraftSession(): SavedDocument | null {
+export function loadActiveDraftSession(): Promise<SavedDocument | null> {
   return getActiveOfficeStore().loadActiveDraftSession();
 }
 
-export function saveActiveDraftSession(doc: SavedDocument): void {
-  getActiveOfficeStore().saveActiveDraftSession(doc);
+export function saveActiveDraftSession(doc: SavedDocument): Promise<void> {
+  return getActiveOfficeStore().saveActiveDraftSession(doc);
 }
 
 // 10. Full Backup Export & Import

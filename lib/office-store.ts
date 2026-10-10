@@ -41,7 +41,7 @@ export interface OfficeStoreRuntimeInfo {
 }
 
 export interface OfficeStore {
-  getRuntimeInfo(): OfficeStoreRuntimeInfo;
+  getRuntimeInfo(): Promise<OfficeStoreRuntimeInfo>;
   sealContractOriginal(
     input: SealContractOriginalInput
   ): Promise<SealContractOriginalResult>;
@@ -109,12 +109,12 @@ export interface OfficeStore {
   deleteContractFolder(id: string): Promise<void>;
 
   // 8. Party Fields
-  loadPartyFields(): PartyField[];
-  savePartyFields(fields: PartyField[]): void;
+  loadPartyFields(): Promise<PartyField[]>;
+  savePartyFields(fields: PartyField[]): Promise<void>;
 
   // 9. Active Draft Session
-  loadActiveDraftSession(): SavedDocument | null;
-  saveActiveDraftSession(doc: SavedDocument): void;
+  loadActiveDraftSession(): Promise<SavedDocument | null>;
+  saveActiveDraftSession(doc: SavedDocument): Promise<void>;
 
   // 10. Full Backup Export & Import
   exportFullBackupBundle(): Promise<BackupBundle>;
