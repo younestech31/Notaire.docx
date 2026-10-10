@@ -582,6 +582,7 @@ export function extractPlaceholdersGroupedByClause(
   let currentGeneralTitle = 'ديباجة العقد والفقرات التمهيدية';
   let currentGeneralId = 'clause_preamble';
   let currentGeneralVars: string[] = [];
+  let currentGeneralTexts: string[] = [];
 
   const flushGeneralGroup = () => {
     if (currentGeneralVars.length > 0) {
@@ -589,8 +590,10 @@ export function extractPlaceholdersGroupedByClause(
         clauseId: `${currentGeneralId}_${groups.length + 1}`,
         clauseTitle: `${groups.length + 1}. ${currentGeneralTitle}`,
         variables: [...currentGeneralVars],
+        clauseReferenceText: currentGeneralTexts.join(' ').replace(/\s+/g, ' ').trim(),
       });
       currentGeneralVars = [];
+      currentGeneralTexts = [];
     }
   };
 
@@ -608,10 +611,15 @@ export function extractPlaceholdersGroupedByClause(
       const cVars = extractVarsFromElement(child);
       if (cVars.length > 0) {
         cVars.forEach((v) => assignedVars.add(v));
+        const refText = (child.textContent || '')
+          .replace(/^#+\s*/, '')
+          .replace(/\s+/g, ' ')
+          .trim();
         groups.push({
           clauseId: cId,
           clauseTitle: `${groups.length + 1}. ${cTitle}`,
           variables: cVars,
+          clauseReferenceText: refText,
         });
       }
     } else {
@@ -631,6 +639,8 @@ export function extractPlaceholdersGroupedByClause(
         flushGeneralGroup();
         currentGeneralTitle = plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim();
         currentGeneralId = `heading_${groups.length + 1}`;
+      } else if (plainText) {
+        currentGeneralTexts.push(plainText);
       }
 
       const pVars = extractVarsFromElement(child);

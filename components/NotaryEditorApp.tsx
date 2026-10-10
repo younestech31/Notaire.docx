@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
+import EditorTopBar from './EditorTopBar';
 import InlineVariablePopover, {
   InlineVariablePopoverState,
 } from './InlineVariablePopover';
@@ -46,6 +47,7 @@ import {
   WordTemplatesModal,
 } from './SmartModals';
 import {
+  ClauseCondition,
   ClauseVariableGroup,
   ContractFolder,
   ContractOutlineClause,
@@ -207,6 +209,14 @@ export default function NotaryEditorApp() {
   useEffect(() => {
     outlineClausesRef.current = outlineClauses;
   }, [outlineClauses]);
+  const [contractConditions, setContractConditions] = useState<
+    Record<string, string | boolean>
+  >({});
+  const contractConditionsRef = useRef<Record<string, string | boolean>>({});
+  useEffect(() => {
+    contractConditionsRef.current = contractConditions;
+  }, [contractConditions]);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [partyCards, setPartyCards] = useState<ContractPartyCard[]>([]);
   const partyCardsRef = useRef<ContractPartyCard[]>([]);
   useEffect(() => {
@@ -415,6 +425,7 @@ export default function NotaryEditorApp() {
         fieldValues: activeValues,
         fieldInputTypes: activeInputTypes,
         outlineClauses: liveOutline,
+        contractConditions: contractConditionsRef.current,
         partyCards: activeCards,
         selectedEstateId,
         selectedLotNumber,
@@ -495,7 +506,7 @@ export default function NotaryEditorApp() {
           id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           documentId: docId,
           documentTitle: docTitle || 'عقد توثيقي',
-          author: 'النظام التوثيقي',
+          author: activeClerk?.name || 'كاتب المكتب',
           bodyHtml,
           fieldValues: { ...fieldValuesRef.current },
           createdAt: new Date().toISOString(),
@@ -506,7 +517,7 @@ export default function NotaryEditorApp() {
         });
       }
     },
-    [docId, docTitle, getEditorZonesHtml]
+    [activeClerk?.name, docId, docTitle, getEditorZonesHtml]
   );
 
   const handleCreateFolder = useCallback(
@@ -647,14 +658,17 @@ export default function NotaryEditorApp() {
       const isolatedValues = { ...(doc.fieldValues || {}) };
       const isolatedInputTypes = { ...(doc.fieldInputTypes || {}) };
       const isolatedOutline = [...(doc.outlineClauses || [])];
+      const isolatedConditions = { ...(doc.contractConditions || {}) };
       const isolatedPartyCards = [...(doc.partyCards || [])];
       fieldValuesRef.current = isolatedValues;
       fieldInputTypesRef.current = isolatedInputTypes;
       outlineClausesRef.current = isolatedOutline;
+      contractConditionsRef.current = isolatedConditions;
       partyCardsRef.current = isolatedPartyCards;
       setFieldValues(isolatedValues);
       setFieldInputTypes(isolatedInputTypes);
       setOutlineClauses(isolatedOutline);
+      setContractConditions(isolatedConditions);
       setPartyCards(isolatedPartyCards);
       setInlinePopover(null);
       setSelectedEstateId(doc.selectedEstateId || '');
@@ -815,14 +829,17 @@ export default function NotaryEditorApp() {
         const initialVals = activeDraft.fieldValues || {};
         const initialTypes = activeDraft.fieldInputTypes || {};
         const initialOutline = activeDraft.outlineClauses || [];
+        const initialConditions = activeDraft.contractConditions || {};
         const initialPartyCards = activeDraft.partyCards || [];
         fieldValuesRef.current = initialVals;
         fieldInputTypesRef.current = initialTypes;
         outlineClausesRef.current = initialOutline;
+        contractConditionsRef.current = initialConditions;
         partyCardsRef.current = initialPartyCards;
         setFieldValues(initialVals);
         setFieldInputTypes(initialTypes);
         setOutlineClauses(initialOutline);
+        setContractConditions(initialConditions);
         setPartyCards(initialPartyCards);
         setSelectedEstateId(activeDraft.selectedEstateId || '');
         setSelectedLotNumber(activeDraft.selectedLotNumber || '');
@@ -864,6 +881,8 @@ export default function NotaryEditorApp() {
       }
 
       if (typeof window !== 'undefined') {
+        const storedBackup = localStorage.getItem('notary_last_backup_at_v1');
+        if (storedBackup) setLastBackupAt(storedBackup);
         const tourDone = localStorage.getItem('notary_editor_tour_v27');
         if (!tourDone) {
           setShowOnboardingTour(true);
@@ -1452,7 +1471,6 @@ export default function NotaryEditorApp() {
 
   const handleToggleLiveClauseEnabled = (clauseId: string) => {
     if (!bodyEditorRef.current) return;
-    recordHistorySnapshot();
     upgradeTopLevelHashSegmentsToContainers(
       bodyEditorRef.current,
       outlineClausesRef.current
@@ -1466,6 +1484,11 @@ export default function NotaryEditorApp() {
       showToast('هذا البند مقفول لحمايته من التعطيل أو الحذف — افتح القفل أولاً');
       return;
     }
+    recordHistorySnapshot(
+      targetClause
+        ? `${targetClause.enabled ? 'تعطيل' : 'تفعيل'} البند: ${targetClause.title}`
+        : 'تغيير حالة تفعيل بند'
+    );
     const updatedOutline = toggleContractClauseEnabledInDOM(
       bodyEditorRef.current,
       currentOutline,
@@ -1482,6 +1505,104 @@ export default function NotaryEditorApp() {
           : `تم إخفاء البند "${afterClause.title}" من ورقة العقد والتصدير مؤقتاً`
       );
     }
+  };
+
+  const handleUpdateContractCondition = (
+    key: string,
+    value: string | boolean | null | undefined
+  ) => {
+    const nextConds = { ...contractConditionsRef.current };
+    if (value === null || value === undefined) {
+      delete nextConds[key];
+    } else {
+      nextConds[key] = value;
+    }
+    contractConditionsRef.current = nextConds;
+    setContractConditions(nextConds);
+
+    if (!bodyEditorRef.current) return;
+    upgradeTopLevelHashSegmentsToContainers(
+      bodyEditorRef.current,
+      outlineClausesRef.current
+    );
+    let workingOutline = extractLiveContractClausesFromDOM(
+      bodyEditorRef.current,
+      outlineClausesRef.current
+    );
+
+    let toggledCount = 0;
+    if (value !== null && value !== undefined) {
+      for (const clause of workingOutline) {
+        if (clause.condition && clause.condition.field === key && !clause.locked) {
+          const condMatch =
+            String(clause.condition.value).trim() === String(value).trim() ||
+            (clause.condition.value === true && (value === true || value === 'نعم')) ||
+            (clause.condition.value === false && (value === false || value === 'لا'));
+          if (clause.enabled !== condMatch) {
+            workingOutline = toggleContractClauseEnabledInDOM(
+              bodyEditorRef.current,
+              workingOutline,
+              clause.id
+            );
+            toggledCount++;
+          }
+        }
+      }
+    }
+
+    outlineClausesRef.current = workingOutline;
+    setOutlineClauses(workingOutline);
+    if (toggledCount > 0) {
+      recordHistorySnapshot(
+        `تحديث الشرط "${key}" وتبديل (${toggledCount}) بند مرتبط تلقائياً`
+      );
+      showToast(
+        `تم تحديث الشرط "${key}" وتفعيل/إخفاء (${toggledCount}) بند مرتبط تلقائياً`
+      );
+    }
+    syncPlaceholdersAndDraft(undefined, undefined, workingOutline);
+  };
+
+  const handleSetClauseCondition = (
+    clauseId: string,
+    condition?: ClauseCondition
+  ) => {
+    if (!bodyEditorRef.current) return;
+    upgradeTopLevelHashSegmentsToContainers(
+      bodyEditorRef.current,
+      outlineClausesRef.current
+    );
+    let workingOutline = extractLiveContractClausesFromDOM(
+      bodyEditorRef.current,
+      outlineClausesRef.current
+    ).map((c) => (c.id === clauseId ? { ...c, condition } : c));
+
+    if (condition && condition.field in contractConditionsRef.current) {
+      const currentVal = contractConditionsRef.current[condition.field];
+      const target = workingOutline.find((c) => c.id === clauseId);
+      if (target && !target.locked) {
+        const condMatch =
+          String(condition.value).trim() === String(currentVal).trim() ||
+          (condition.value === true && (currentVal === true || currentVal === 'نعم')) ||
+          (condition.value === false && (currentVal === false || currentVal === 'لا'));
+        if (target.enabled !== condMatch) {
+          workingOutline = toggleContractClauseEnabledInDOM(
+            bodyEditorRef.current,
+            workingOutline,
+            clauseId
+          );
+        }
+      }
+    }
+
+    outlineClausesRef.current = workingOutline;
+    setOutlineClauses(workingOutline);
+    syncPlaceholdersAndDraft(undefined, undefined, workingOutline);
+    showToast(
+      condition
+        ? `تم ربط البند بالشرط "${condition.field}"`
+        : 'تم إلغاء الشرط المرتبط بالبند'
+    );
   };
 
   const handleToggleLiveClauseLocked = (clauseId: string) => {
@@ -2692,151 +2813,85 @@ export default function NotaryEditorApp() {
 
   return (
     <div className="h-screen print:h-auto overflow-hidden print:overflow-visible flex flex-col bg-slate-100 text-slate-900">
-      {/* TOP HEADER BAR: BRAND & CONTRACT TITLE (RIGHT) | FILE & EXPORT ACTIONS (LEFT) */}
-      <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-slate-200 shrink-0 no-print select-none">
-        {/* Right: Brand & Editable Contract Title Input with Auto-Save Badge */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
-              م
-            </div>
-            <span className="text-sm font-bold tracking-tight text-slate-900 hidden sm:inline">
-              الموثق الرقمي
-            </span>
-          </div>
-
-          <div className="h-5 w-px bg-slate-200 hidden sm:block" />
-
-          <div className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100/90 border border-slate-200 focus-within:border-blue-900 focus-within:bg-white rounded-lg px-2.5 py-1 transition-all">
-            <FileEdit className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={docTitle}
-              onChange={(e) => setDocTitle(e.target.value)}
-              title="انقر لتعديل عنوان العقد مباشرة"
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-36 sm:w-52 md:w-64 truncate"
-              placeholder="عنوان العقد..."
-            />
-            <span className="text-[10px] shrink-0">
-              {autoSaveState === 'saving' ? (
-                <span className="text-amber-600 font-medium">جاري الحفظ...</span>
-              ) : (
-                <span className="text-emerald-600 font-medium">محفوظ ✓</span>
-              )}
-            </span>
-          </div>
-        </div>
-
-        {/* Left: Document File & Export Commands */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* New Contract Modal */}
-          <button
-            type="button"
-            onClick={() => setShowMultiSourceModal(true)}
-            className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
-            title="بدء عقد جديد من قالب أو مسودة أو ملف وورد أو أرشيف التحميلات"
-          >
-            <FilePlus2 className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden md:inline">عقد جديد</span>
-          </button>
-
-          {/* Import Word (.docx) */}
-          <label className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors">
-            <FileUp className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden md:inline">فتح Word</span>
-            <input
-              type="file"
-              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  handleImportDocxDirectlyToEditor(file);
-                  e.target.value = '';
-                }
-              }}
-            />
-          </label>
-
-          {/* Side-by-Side Merged Preview Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !previewMergedMode;
-              if (next) {
-                const currentHtml =
-                  bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
-                const activeVals = fieldValuesRef.current || fieldValues;
-                setMergedPreviewHtml(mergePlaceholdersIntoHtml(currentHtml, activeVals));
-                setPreviewMergedMode(true);
-                setSidebarTab('parties');
-                setIsSidebarOpen(true);
-                showToast(
-                  'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
-                );
-              } else {
-                setPreviewMergedMode(false);
-              }
-            }}
-            className={`px-2.5 py-1.5 border rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
-              previewMergedMode
-                ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold'
-                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-            }`}
-            title="معاينة دمج الحقول جنباً إلى جنب مع الاستمارة قبل التصدير"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">
-              {previewMergedMode ? 'وضع التحرير' : 'معاينة'}
-            </span>
-          </button>
-
-          {/* Snapshots & Diff Modal (filtered for current contract) */}
-          <button
-            type="button"
-            onClick={handleOpenSnapshotsHistoryModal}
-            className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
-            title="عرض سجل اللقطات الزمنية والمقارنة الخاصة بهذا العقد"
-          >
-            <History className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden lg:inline">
-              اللقطات ({revisions.filter((r) => r.documentId === docId).length})
-            </span>
-          </button>
-
-          {/* Print */}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
-            title="طباعة العقد A4"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">طباعة</span>
-          </button>
-
-          {/* Export Word (.docx) - Primary CTA */}
-          <button
-            type="button"
-            onClick={handleExportCurrentToWord}
-            className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
-            title="تصدير العقد التوثيقي كاملاً إلى ملف Word (.docx)"
-          >
-            <Download className="w-4 h-4" />
-            <span>تصدير Word</span>
-          </button>
-
-          {/* Editor Tour Guide */}
-          <button
-            type="button"
-            onClick={() => setShowOnboardingTour(true)}
-            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-            title="فتح الجولة الإرشادية التفاعلية للمحرر"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+      {/* TOP HEADER BAR: BRAND & CONTRACT TITLE (RIGHT) | GROUP 1: ملف & OFFICE BACKUP (LEFT) */}
+      <EditorTopBar
+        docTitle={docTitle}
+        onChangeDocTitle={setDocTitle}
+        autoSaveState={autoSaveState}
+        previewMergedMode={previewMergedMode}
+        revisionsCount={revisions.filter((r) => r.documentId === docId).length}
+        lastBackupAt={lastBackupAt}
+        onOpenNewContractModal={() => setShowMultiSourceModal(true)}
+        onImportWordFile={handleImportDocxDirectlyToEditor}
+        onTogglePreviewMergedMode={() => {
+          const next = !previewMergedMode;
+          if (next) {
+            const currentHtml =
+              bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+            const activeVals = fieldValuesRef.current || fieldValues;
+            setMergedPreviewHtml(mergePlaceholdersIntoHtml(currentHtml, activeVals));
+            setPreviewMergedMode(true);
+            setSidebarTab('parties');
+            setIsSidebarOpen(true);
+            showToast(
+              'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
+            );
+          } else {
+            setPreviewMergedMode(false);
+          }
+        }}
+        onOpenSnapshotsHistoryModal={handleOpenSnapshotsHistoryModal}
+        onPrint={() => window.print()}
+        onExportCurrentToWord={handleExportCurrentToWord}
+        onExportBackupJson={async () => {
+          const bundle = await exportFullBackupBundle();
+          const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+            type: 'application/json',
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `نسخة_احتياطية_الموثق_${new Date()
+            .toISOString()
+            .slice(0, 10)}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          const nowIso = new Date().toISOString();
+          setLastBackupAt(nowIso);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('notary_last_backup_at_v1', nowIso);
+          }
+          showToast('تم تصدير النسخة الاحتياطية الشاملة للمكتب (JSON)');
+        }}
+        onImportBackupJson={async (file) => {
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            const counts = await importFullBackupBundle(parsed);
+            setTemplates(await loadCustomTemplates());
+            setDocuments(await loadSavedDocuments());
+            setEstates(await loadSubdivisionEstates());
+            setClauses(await loadNotaryClauses());
+            setDerivedTemplates(await loadDerivedDocTemplates());
+            setRevisions(await loadDocumentRevisions());
+            setDownloads(await loadDownloadArchive());
+            setPartyFields(loadPartyFields());
+            const nowIso = new Date().toISOString();
+            setLastBackupAt(nowIso);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('notary_last_backup_at_v1', nowIso);
+            }
+            showToast(
+              `تم استعادة (${counts.templatesCount}) قالب و (${counts.clausesCount}) بند و (${counts.documentsCount}) عقد`
+            );
+          } catch {
+            showToast('تعذر قراءة ملف النسخة الاحتياطية');
+          }
+        }}
+        onOpenOnboardingTour={() => setShowOnboardingTour(true)}
+      />
 
       {/* Two-Row Word Formatting & Notary Productivity Ribbon */}
       <EditorRibbon
@@ -3074,6 +3129,9 @@ export default function NotaryEditorApp() {
                 setIsSidebarOpen(true);
               }}
             liveContractClauses={outlineClauses}
+            contractConditions={contractConditions}
+            onUpdateContractCondition={handleUpdateContractCondition}
+            onSetClauseCondition={handleSetClauseCondition}
             onScrollToLiveClause={handleScrollToLiveClause}
             onToggleLiveClauseEnabled={handleToggleLiveClauseEnabled}
             onToggleLiveClauseLocked={handleToggleLiveClauseLocked}
