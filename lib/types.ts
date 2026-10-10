@@ -37,7 +37,7 @@ export interface PartyField {
   key: string; // e.g., "الطرف_الأول_الاسم"
   label: string;
   value: string;
-  category: 'party1' | 'party2' | 'property' | 'financial' | 'custom';
+  category: 'party1' | 'party2' | 'property' | 'financial' | 'fiscal' | 'index' | 'custom';
   inputType?: VariableInputType;
   options?: string[];
 }
@@ -198,6 +198,11 @@ export interface ContractPartyCard {
   legalRepresentative?: string;
 }
 
+export interface ClauseCondition {
+  field: string; // اسم الشرط الذي يحدده المكتب (يترك فارغاً ليملأ حسب شروط المكتب)
+  value: string | boolean;
+}
+
 export interface ContractOutlineClause {
   id: string;
   index: number;
@@ -210,6 +215,7 @@ export interface ContractOutlineClause {
   locked: boolean;
   domIndex: number;
   isContainer: boolean;
+  condition?: ClauseCondition;
 }
 
 export interface SavedDocument {
@@ -223,6 +229,7 @@ export interface SavedDocument {
   fieldValues: Record<string, string>;
   fieldInputTypes?: Record<string, VariableInputType>;
   outlineClauses?: ContractOutlineClause[];
+  contractConditions?: Record<string, string | boolean>;
   partyCards?: ContractPartyCard[];
   selectedEstateId?: string;
   selectedLotNumber?: string;
@@ -298,6 +305,7 @@ export interface ClauseVariableGroup {
   clauseId: string;
   clauseTitle: string;
   variables: string[];
+  clauseReferenceText?: string;
 }
 
 export interface BackupBundle {

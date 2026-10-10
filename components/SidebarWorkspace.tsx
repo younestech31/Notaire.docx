@@ -1524,6 +1524,16 @@ export default function SidebarWorkspace({
                   </div>
                 )}
 
+                {/* Conditional Clauses Management (إدارة شروط البنود) */}
+                <div className="border border-slate-200 rounded-md p-3 bg-white space-y-2.5">
+                  <span className="text-xs font-bold text-slate-900">
+                    شروط البنود والخصائص (تُضاف حسب الحاجة)
+                  </span>
+                  <div className="text-[11px] text-slate-500 italic">
+                    لم يتم تعريف أي شروط بعد. أضف شروطاً خاصة بعقود مكتبك هنا.
+                  </div>
+                </div>
+
                 {/* Saved Parties & Properties Directory (دفتر الأطراف والعقارات القابل للاستدعاء) */}
                 <div className="border border-slate-200 rounded-md p-3 bg-white space-y-2.5">
                   <div className="flex items-center justify-between">

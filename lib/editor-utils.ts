@@ -1032,6 +1032,7 @@ export function extractLiveContractClausesFromDOM(
       locked: prevMatch?.locked ?? seg.locked ?? false,
       domIndex: seg.domIndex,
       isContainer: seg.isContainer,
+      condition: prevMatch?.condition,
     };
   });
 

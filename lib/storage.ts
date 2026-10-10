@@ -37,6 +37,7 @@ const LS_FIELDS_KEY = 'notary_default_party_fields_v2';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
 
 export const DEFAULT_PARTY_FIELDS: PartyField[] = [
+  // 1. الأطراف (party1 & party2)
   { key: 'الطرف_الأول_الاسم', label: 'الطرف الأول (الاسم واللقب)', value: '', category: 'party1', inputType: 'text' },
   { key: 'الطرف_الأول_تاريخ_الميلاد', label: 'تاريخ ميلاد الطرف الأول', value: '', category: 'party1', inputType: 'date' },
   { key: 'الطرف_الأول_مكان_الميلاد', label: 'مكان ميلاد الطرف الأول', value: '', category: 'party1', inputType: 'text' },
@@ -49,6 +50,7 @@ export const DEFAULT_PARTY_FIELDS: PartyField[] = [
   { key: 'الطرف_الثاني_النسب', label: 'اسم الأب والأم (بن/بنت)', value: '', category: 'party2', inputType: 'text' },
   { key: 'الطرف_الثاني_الهوية', label: 'رقم ونوع وثيقة الهوية (ط.ت.و / ر.س)', value: '', category: 'party2', inputType: 'text' },
   { key: 'الطرف_الثاني_الإقامة', label: 'عنوان إقامة الطرف الثاني', value: '', category: 'party2', inputType: 'text' },
+  // 2. العقار (property)
   { key: 'رقم_الحصة', label: 'رقم الحصة العقارية', value: '', category: 'property', inputType: 'number' },
   { key: 'طبيعة_الحصة', label: 'طبيعة الحصة (شقة/محل/مرآب)', value: '', category: 'property', inputType: 'select', options: ['شقة سكنية', 'محل تجاري', 'مرآب', 'قطعة أرضية', 'مسكن فردي'] },
   { key: 'الطابق', label: 'الطابق والعمارة', value: '', category: 'property', inputType: 'text' },
@@ -56,10 +58,21 @@ export const DEFAULT_PARTY_FIELDS: PartyField[] = [
   { key: 'الأجزاء_المشتركة', label: 'الحصة في الأجزاء المشتركة', value: '', category: 'property', inputType: 'text' },
   { key: 'تعيين_الحصة_الكامل', label: 'التعيين الكامل للحصة (من جدول الوصف)', value: '', category: 'property', inputType: 'text' },
   { key: 'مراجع_الوصف_التقسيمي', label: 'مراجع عقد الوصف التقسيمي', value: '', category: 'property', inputType: 'text' },
+  // 3. الثمن والمالية (financial)
   { key: 'الثمن_بالأحرف', label: 'الثمن الإجمالي بالأحرف', value: '', category: 'financial', inputType: 'text' },
   { key: 'الثمن_بالأرقام', label: 'الثمن الإجمالي بالأرقام', value: '', category: 'financial', inputType: 'number' },
-  { key: 'تاريخ_العقد', label: 'تاريخ تحرير العقد', value: '', category: 'custom', inputType: 'date' },
-  { key: 'رقم_الفهرس', label: 'رقم الفهرس السنوي', value: '', category: 'custom', inputType: 'text' },
+  { key: 'طريقة_الدفع', label: 'طريقة الدفع والقبض (نقداً / صك / خارج المكتب)', value: '', category: 'financial', inputType: 'text' },
+  // 4. الوضعية الجبائية المنفصلة (fiscal)
+  { key: 'تعيين_المبيع_الجبائي', label: 'تعيين المبيع (للوضعية الجبائية)', value: '', category: 'fiscal', inputType: 'text' },
+  { key: 'أصل_الملكية_وثمن_الشراء_السابق', label: 'أصل الملكية وثمن الشراء السابق', value: '', category: 'fiscal', inputType: 'text' },
+  { key: 'بيانات_البائع_الجبائية', label: 'بيانات البائع الجبائية (رقم التعريف الجبائي / المهنة)', value: '', category: 'fiscal', inputType: 'text' },
+  { key: 'بيانات_المشتري_الجبائية', label: 'بيانات المشتري الجبائية (رقم التعريف الجبائي / المهنة)', value: '', category: 'fiscal', inputType: 'text' },
+  { key: 'تكملة_خلف_الصفحة', label: 'تكملة خلف الصفحة (ملاحظات وتفاصيل جبائية إضافية)', value: '', category: 'fiscal', inputType: 'text' },
+  // 5. الفهرس والتسجيل (index)
+  { key: 'تاريخ_العقد', label: 'تاريخ تحرير العقد', value: '', category: 'index', inputType: 'date' },
+  { key: 'رقم_الفهرس', label: 'رقم الفهرس السنوي', value: '', category: 'index', inputType: 'text' },
+  { key: 'مفتشية_التسجيل', label: 'مفتشية التسجيل والطابع المختصة', value: '', category: 'index', inputType: 'text' },
+  { key: 'المحافظة_العقارية', label: 'المحافظة العقارية المختصة', value: '', category: 'index', inputType: 'text' },
 ];
 
 const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
@@ -568,7 +581,20 @@ export function loadPartyFields(): PartyField[] {
     const raw = localStorage.getItem(LS_FIELDS_KEY);
     if (!raw) return DEFAULT_PARTY_FIELDS;
     const parsed = JSON.parse(raw) as PartyField[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PARTY_FIELDS;
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_PARTY_FIELDS;
+    const existingKeys = new Set(parsed.map((f) => f.key));
+    const merged = parsed.map((f) => {
+      if ((f.key === 'تاريخ_العقد' || f.key === 'رقم_الفهرس') && f.category === 'custom') {
+        return { ...f, category: 'index' as const };
+      }
+      return f;
+    });
+    for (const defField of DEFAULT_PARTY_FIELDS) {
+      if (!existingKeys.has(defField.key)) {
+        merged.push(defField);
+      }
+    }
+    return merged;
   } catch {
     return DEFAULT_PARTY_FIELDS;
   }
