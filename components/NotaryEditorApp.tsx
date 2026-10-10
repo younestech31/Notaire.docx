@@ -440,28 +440,59 @@ export default function NotaryEditorApp() {
 
   const handleDeleteFolder = useCallback(
     async (folderId: string) => {
+      const targetFolder = folders.find((f) => f.id === folderId);
+      const fallbackParentId = targetFolder?.parentId ?? null;
       await deleteContractFolder(folderId);
+
+      // Promote child folders to parent level
+      const childFolders = folders.filter((f) => f.parentId === folderId);
+      for (const cf of childFolders) {
+        await saveContractFolder({
+          ...cf,
+          parentId: fallbackParentId,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      // Move documents in this folder to parent level
       const docsInFolder = documents.filter((d) => d.folderId === folderId);
       for (const d of docsInFolder) {
-        await saveDocumentRecord({ ...d, folderId: null, updatedAt: new Date().toISOString() });
+        const updatedDoc = {
+          ...d,
+          folderId: fallbackParentId,
+          updatedAt: new Date().toISOString(),
+        };
+        await saveDocumentRecord(updatedDoc);
+        if (activeDocument?.id === d.id) {
+          setActiveDocument(updatedDoc);
+        }
       }
       setFolders(await loadContractFolders());
       setDocuments(await loadSavedDocuments());
-      showToast('تم حذف المجلد ونقل محتوياته');
+      showToast('تم حذف المجلد ونقل محتوياته بأمان');
     },
-    [documents, showToast]
+    [activeDocument?.id, documents, folders, showToast]
   );
 
   const handleMoveDocument = useCallback(
-    async (docId: string, targetFolderId: string | null) => {
-      const d = documents.find((x) => x.id === docId);
+    async (targetDocId: string, targetFolderId: string | null) => {
+      const d = documents.find((x) => x.id === targetDocId);
       if (!d) return;
-      const updated: SavedDocument = { ...d, folderId: targetFolderId, updatedAt: new Date().toISOString() };
+      if ((d.folderId ?? null) === (targetFolderId ?? null)) return;
+      const updated: SavedDocument = {
+        ...d,
+        folderId: targetFolderId,
+        updatedAt: new Date().toISOString(),
+      };
       await saveDocumentRecord(updated);
       setDocuments(await loadSavedDocuments());
-      showToast('تم نقل العقد بنجاح');
+      setActiveDocument((prev) => (prev?.id === targetDocId ? updated : prev));
+      const folderName = targetFolderId
+        ? folders.find((f) => f.id === targetFolderId)?.name || 'المجلد المختار'
+        : 'الجذر الرئيسي';
+      showToast(`تم نقل العقد "${d.title}" إلى "${folderName}"`);
     },
-    [documents, showToast]
+    [documents, folders, showToast]
   );
 
   const handleMoveFolder = useCallback(
@@ -469,10 +500,30 @@ export default function NotaryEditorApp() {
       if (folderId === targetParentId) return;
       const f = folders.find((x) => x.id === folderId);
       if (!f) return;
-      const updated: ContractFolder = { ...f, parentId: targetParentId, updatedAt: new Date().toISOString() };
+      if ((f.parentId ?? null) === (targetParentId ?? null)) return;
+
+      // Prevent moving a folder inside one of its own descendants
+      let cursor = targetParentId;
+      while (cursor) {
+        if (cursor === folderId) {
+          showToast('لا يمكن نقل المجلد داخل نفسه أو داخل أحد مجلداته الفرعية');
+          return;
+        }
+        const parentNode = folders.find((x) => x.id === cursor);
+        cursor = parentNode?.parentId ?? null;
+      }
+
+      const updated: ContractFolder = {
+        ...f,
+        parentId: targetParentId,
+        updatedAt: new Date().toISOString(),
+      };
       await saveContractFolder(updated);
       setFolders(await loadContractFolders());
-      showToast('تم نقل المجلد بنجاح');
+      const targetName = targetParentId
+        ? folders.find((x) => x.id === targetParentId)?.name || 'المجلد المختار'
+        : 'الجذر الرئيسي';
+      showToast(`تم نقل المجلد "${f.name}" إلى "${targetName}"`);
     },
     [folders, showToast]
   );
@@ -525,9 +576,12 @@ export default function NotaryEditorApp() {
       await saveDocumentRecord(newDoc);
       setDocuments(await loadSavedDocuments());
       handleSelectDocument(newDoc);
-      showToast('تم إنشاء عقد جديد داخل المجلد');
+      const folderName = folderId
+        ? folders.find((f) => f.id === folderId)?.name || 'المجلد المختار'
+        : 'الجذر الرئيسي';
+      showToast(`تم إنشاء عقد جديد داخل "${folderName}"`);
     },
-    [activeClerk, handleSelectDocument, showToast]
+    [activeClerk, folders, handleSelectDocument, showToast]
   );
 
   const handleSelectDerivedDoc = useCallback(
@@ -650,6 +704,10 @@ export default function NotaryEditorApp() {
         setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
         refreshActiveClausesInDOM();
         syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
+        const matchingSaved = loadedDocs.find((d) => d.id === activeDraft.id);
+        if (matchingSaved) {
+          setActiveDocument(matchingSaved);
+        }
       } else if (bodyEditorRef.current) {
         bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
       }
@@ -1788,9 +1846,29 @@ export default function NotaryEditorApp() {
     }
   };
 
-  const handleSaveCurrentDocumentAndRevision = async (summaryLabel?: string) => {
+  const handleSaveCurrentDocumentAndRevision = async (
+    summaryLabel?: string,
+    explicitFolderId?: string | null
+  ) => {
     const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
     const nowIso = new Date().toISOString();
+    const existingDoc =
+      documents.find((d) => d.id === docId) ||
+      (activeDocument?.id === docId ? activeDocument : undefined);
+    const resolvedFolderId =
+      explicitFolderId !== undefined
+        ? explicitFolderId
+        : existingDoc?.folderId ?? activeDocument?.folderId ?? null;
+
+    const inferredClient =
+      existingDoc?.clientName ||
+      activeDocument?.clientName ||
+      fieldValues['الطرف_الأول_الاسم'] ||
+      fieldValues['البائع'] ||
+      fieldValues['المؤجر'] ||
+      fieldValues['الموكل'] ||
+      '';
+
     const docRecord: SavedDocument = {
       id: docId,
       title: docTitle || 'عقد بدون عنوان',
@@ -1802,17 +1880,34 @@ export default function NotaryEditorApp() {
       fieldValues,
       selectedEstateId,
       selectedLotNumber,
+      folderId: resolvedFolderId,
+      clerkId: existingDoc?.clerkId || activeDocument?.clerkId || activeClerk.id,
+      clerkName: existingDoc?.clerkName || activeDocument?.clerkName || activeClerk.name,
+      contractNumber:
+        existingDoc?.contractNumber ||
+        activeDocument?.contractNumber ||
+        fieldValues['رقم_الفهرس'] ||
+        `2026/${Math.floor(100 + Math.random() * 900)}`,
+      year: existingDoc?.year || activeDocument?.year || new Date().getFullYear(),
+      clientName: inferredClient,
+      modelId: existingDoc?.modelId || activeDocument?.modelId,
+      modelTitle: existingDoc?.modelTitle || activeDocument?.modelTitle,
+      status: existingDoc?.status || activeDocument?.status || 'editing',
+      derivedDocuments:
+        existingDoc?.derivedDocuments || activeDocument?.derivedDocuments || [],
       updatedAt: nowIso,
-      createdAt: nowIso,
+      createdAt: existingDoc?.createdAt || activeDocument?.createdAt || nowIso,
     };
     await saveDocumentRecord(docRecord);
-    setDocuments(await loadSavedDocuments());
+    const refreshedDocs = await loadSavedDocuments();
+    setDocuments(refreshedDocs);
+    setActiveDocument(docRecord);
 
     const rev: DocumentRevision = {
       id: `rev_${Date.now()}`,
       documentId: docId,
       documentTitle: docTitle || 'عقد توثيقي',
-      author: 'كاتب المكتب',
+      author: activeClerk?.name || 'كاتب المكتب',
       bodyHtml,
       fieldValues: { ...fieldValues },
       createdAt: nowIso,
@@ -1820,7 +1915,15 @@ export default function NotaryEditorApp() {
     };
     await saveDocumentRevision(rev);
     setRevisions(await loadDocumentRevisions());
-    showToast(summaryLabel || 'تم حفظ العقد وتسجيل نسخة مرجعية في سجل التعديلات (Diff)');
+
+    if (explicitFolderId !== undefined) {
+      const folderName = explicitFolderId
+        ? folders.find((f) => f.id === explicitFolderId)?.name || 'المجلد المختار'
+        : 'الجذر الرئيسي';
+      showToast(`تم حفظ العقد "${docRecord.title}" داخل "${folderName}" بنجاح`);
+    } else {
+      showToast(summaryLabel || 'تم حفظ العقد في شجرة المكتب وتسجيل نسخة مرجعية');
+    }
   };
 
   const handleTakeManualSnapshot = async (label: string) => {
@@ -2791,12 +2894,18 @@ export default function NotaryEditorApp() {
             revisions={revisions}
             downloads={downloads}
             activeDocumentId={docId}
+            currentEditorTitle={docTitle}
             onOpenDocument={handleSelectDocument}
             onOpenMultiSourceNewModal={() => setShowMultiSourceModal(true)}
-            onSaveCurrentDocument={() => handleSaveCurrentDocumentAndRevision()}
+            onSaveCurrentDocument={(targetFolderId?: string | null) =>
+              handleSaveCurrentDocumentAndRevision(undefined, targetFolderId)
+            }
             onDeleteDocument={async (id) => {
               await deleteDocumentRecord(id);
               setDocuments(await loadSavedDocuments());
+              if (activeDocument?.id === id) {
+                setActiveDocument(null);
+              }
               showToast('تم حذف المستند المحفوظ');
             }}
             onExportDocumentDocx={async (doc) => {

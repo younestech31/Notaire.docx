@@ -113,9 +113,10 @@ interface SidebarWorkspaceProps {
   revisions: DocumentRevision[];
   downloads: DownloadArchiveItem[];
   activeDocumentId: string;
+  currentEditorTitle?: string;
   onOpenDocument: (doc: SavedDocument) => void;
   onOpenMultiSourceNewModal: () => void;
-  onSaveCurrentDocument: () => Promise<void>;
+  onSaveCurrentDocument: (targetFolderId?: string | null) => Promise<void>;
   onDeleteDocument: (id: string) => Promise<void>;
   onExportDocumentDocx: (doc: SavedDocument) => Promise<void>;
   onOpenVersionDiffModal: () => void;
@@ -204,6 +205,7 @@ export default function SidebarWorkspace({
   revisions,
   downloads,
   activeDocumentId,
+  currentEditorTitle,
   onOpenDocument,
   onOpenMultiSourceNewModal,
   onSaveCurrentDocument,
@@ -1572,7 +1574,11 @@ export default function SidebarWorkspace({
             clerks={clerks}
             activeClerk={activeClerk}
             activeDocument={activeDocument}
+            activeDocumentId={activeDocumentId}
+            currentEditorTitle={currentEditorTitle || 'عقد توثيقي جديد'}
             onSelectDocument={onOpenDocument}
+            onSaveCurrentToFolder={(targetFolderId) => onSaveCurrentDocument(targetFolderId)}
+            onExportDocumentDocx={onExportDocumentDocx}
             onCreateFolder={onCreateFolder}
             onRenameFolder={onRenameFolder}
             onDeleteFolder={onDeleteFolder}
@@ -1582,8 +1588,8 @@ export default function SidebarWorkspace({
             onDeleteDocument={onDeleteDocument}
             onUpdateDocumentMeta={onUpdateDocumentMeta}
             derivedTemplates={derivedTemplates}
-            onOpenDerivedModal={onOpenMultiSourceNewModal}
-            onSelectDerivedDoc={() => {}}
+            onOpenDerivedModal={onOpenDerivedModal}
+            onSelectDerivedDoc={onSelectDerivedDoc}
             activeDerivedDocId={activeDerivedDocId}
           />
         )}
