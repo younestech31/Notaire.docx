@@ -1371,7 +1371,7 @@ export function SaveAsTemplateModal({
                 حفظ العقد الحالي كقالب في مكتبة المكتب
               </h2>
               <div className="text-[11px] text-slate-500">
-                يُخزن محلياً في IndexedDB للرجوع إليه وتطبيقه على أي عقد جديد
+                يُخزن محلياً في قاعدة بيانات المكتب للرجوع إليه وتطبيقه على أي عقد جديد
               </div>
             </div>
           </div>

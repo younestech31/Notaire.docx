@@ -308,6 +308,18 @@ export interface ClauseVariableGroup {
   clauseReferenceText?: string;
 }
 
+export interface SealedContractOriginal {
+  documentId: string;
+  relativePath: string; // مثال: archive/2026/0142.docx — مسار نسبي داخل مجلد المكتب، ليس مساراً مطلقاً
+  sha256: string;
+  sealedAt: string;
+  byteLength: number;
+}
+
+export interface SerializedSealedOriginal extends SealedContractOriginal {
+  base64Data?: string;
+}
+
 export interface BackupBundle {
   version: string;
   exportedAt: string;
@@ -323,5 +335,7 @@ export interface BackupBundle {
   savedParties?: SavedPartyRecord[];
   savedProperties?: SavedPropertyRecord[];
   defaultFields: PartyField[];
+  sealedOriginals?: SerializedSealedOriginal[];
 }
+
 

@@ -17,7 +17,7 @@ import {
 interface EditorTopBarProps {
   docTitle: string;
   onChangeDocTitle: (title: string) => void;
-  autoSaveState: 'saved' | 'saving';
+  autoSaveState: 'saved' | 'saving' | 'error';
   previewMergedMode: boolean;
   revisionsCount: number;
   lastBackupAt: string | null;
@@ -86,6 +86,8 @@ export default function EditorTopBar({
           <span className="text-[10px] shrink-0">
             {autoSaveState === 'saving' ? (
               <span className="text-amber-600 font-medium">جاري الحفظ...</span>
+            ) : autoSaveState === 'error' ? (
+              <span className="text-red-600 font-bold">تعذر الحفظ !</span>
             ) : (
               <span className="text-emerald-600 font-medium">محفوظ ✓</span>
             )}

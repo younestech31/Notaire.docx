@@ -1103,8 +1103,9 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
 /**
  * Triggers instant download (or Web Share if requested) of the generated .docx file.
  */
-export async function downloadNotaryDocx(options: DocxExportOptions): Promise<void> {
+export async function downloadNotaryDocx(options: DocxExportOptions): Promise<Uint8Array> {
   const blob = await generateNotaryDocxBlob(options);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   const safeName = (options.title || 'عقد_توثيقي')
     .trim()
     .replace(/[\\/:*?"<>|]/g, '_')
@@ -1119,6 +1120,7 @@ export async function downloadNotaryDocx(options: DocxExportOptions): Promise<vo
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return bytes;
 }
 
 /**

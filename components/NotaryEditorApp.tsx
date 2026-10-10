@@ -117,6 +117,7 @@ import {
   savePropertyRecord,
   saveSubdivisionEstate,
   saveWordTemplate,
+  sealContractOriginal,
   deleteContractFolder,
 } from '@/lib/storage';
 import {
@@ -285,7 +286,7 @@ export default function NotaryEditorApp() {
   const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
 
   // Auto-save & Status Bar metrics
-  const [autoSaveState, setAutoSaveState] = useState<'saved' | 'saving'>('saved');
+  const [autoSaveState, setAutoSaveState] = useState<'saved' | 'saving' | 'error'>('saved');
   const [docMetrics, setDocMetrics] = useState<{
     wordCount: number;
     charCount: number;
@@ -448,11 +449,20 @@ export default function NotaryEditorApp() {
       setAutoSaveState('saving');
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
-        await saveDocumentRecord(draft);
-        const updatedDocs = await loadSavedDocuments();
-        setDocuments(updatedDocs);
-        setActiveDocument((prev) => (prev?.id === draft.id ? draft : prev));
-        setAutoSaveState('saved');
+        try {
+          await saveDocumentRecord(draft);
+          const updatedDocs = await loadSavedDocuments();
+          setDocuments(updatedDocs);
+          setActiveDocument((prev) => (prev?.id === draft.id ? draft : prev));
+          setAutoSaveState('saved');
+        } catch (err) {
+          setAutoSaveState('error');
+          showToast(
+            err instanceof Error
+              ? `تعذر حفظ العقد: ${err.message}`
+              : 'تعذر حفظ العقد في مخزن المكتب'
+          );
+        }
       }, 450);
     },
     [
@@ -472,6 +482,7 @@ export default function NotaryEditorApp() {
       selectedEstateId,
       selectedLotNumber,
       showHeaderFooter,
+      showToast,
     ]
   );
 
@@ -512,12 +523,21 @@ export default function NotaryEditorApp() {
           createdAt: new Date().toISOString(),
           summary: label,
         };
-        saveDocumentRevision(rev).then(() => {
-          loadDocumentRevisions().then((revs) => setRevisions(revs));
-        });
+        saveDocumentRevision(rev)
+          .then(() => {
+            loadDocumentRevisions().then((revs) => setRevisions(revs));
+          })
+          .catch((err) => {
+            setAutoSaveState('error');
+            showToast(
+              err instanceof Error
+                ? `تعذر حفظ مراجعة العقد: ${err.message}`
+                : 'تعذر حفظ مراجعة العقد'
+            );
+          });
       }
     },
-    [activeClerk?.name, docId, docTitle, getEditorZonesHtml]
+    [activeClerk?.name, docId, docTitle, getEditorZonesHtml, showToast]
   );
 
   const handleCreateFolder = useCallback(
@@ -763,7 +783,7 @@ export default function NotaryEditorApp() {
     [showToast]
   );
 
-  // Initial Load from IndexedDB / LocalStorage
+  // Initial Load from OfficeStore
   useEffect(() => {
     let mounted = true;
     async function initWorkspace() {
@@ -2117,7 +2137,7 @@ export default function NotaryEditorApp() {
       const activeValues = fieldValuesRef.current || fieldValues;
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
       const titleToUse = docTitle || 'عقد_توثيقي';
-      await downloadNotaryDocx({
+      const docxBytes = await downloadNotaryDocx({
         title: titleToUse,
         bodyHtml,
         headerHtml: showHeaderFooter ? headerHtml : '',
@@ -2126,12 +2146,25 @@ export default function NotaryEditorApp() {
         fieldValues: activeValues,
       });
 
+      const currentYear = activeDocument?.year || new Date().getFullYear();
+      const indexNumber =
+        activeValues['رقم_الفهرس'] ||
+        activeDocument?.contractNumber ||
+        docId.replace(/^doc_/, '');
+
+      const sealed = await sealContractOriginal({
+        documentId: docId,
+        year: currentYear,
+        indexNumber,
+        docxBytes,
+      });
+
       const archiveItem: DownloadArchiveItem = {
         id: `dl_${Date.now()}`,
         documentId: docId,
         documentTitle: titleToUse,
         docTypeCode: 'acte',
-        docTypeLabel: 'الأصل WORD (العقد التوثيقي)',
+        docTypeLabel: `الأصل المعتمد (${sealed.relativePath})`,
         fileName: `${titleToUse}.docx`,
         bodyHtml,
         headerHtml: showHeaderFooter ? headerHtml : '',
@@ -2142,9 +2175,12 @@ export default function NotaryEditorApp() {
       await saveDownloadArchiveItem(archiveItem);
       setDownloads(await loadDownloadArchive());
 
-      showToast('تم تصدير ملف Word (.docx) وحفظه في أرشيف التحميلات بنجاح');
+      showToast(
+        `تم تصدير وختم الأصل المعتمد (${sealed.relativePath}) ببصمة SHA-256: ${sealed.sha256.slice(0, 12)}...`
+      );
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'تعذر تصدير ملف الوورد');
+      setAutoSaveState('error');
+      showToast(err instanceof Error ? err.message : 'تعذر تصدير وختم ملف الوورد');
     }
   };
 
@@ -3714,11 +3750,17 @@ export default function NotaryEditorApp() {
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-800">
             <span
               className={`w-2 h-2 rounded-full ${
-                autoSaveState === 'saved' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                autoSaveState === 'saved'
+                  ? 'bg-emerald-500'
+                  : autoSaveState === 'error'
+                  ? 'bg-red-600'
+                  : 'bg-amber-500 animate-pulse'
               }`}
             />
             {autoSaveState === 'saved'
               ? 'تم الحفظ تلقائياً في قاعدة المكتب'
+              : autoSaveState === 'error'
+              ? 'تعذر الحفظ في مخزن المكتب — راجع التنبيه'
               : 'جارٍ الحفظ التلقائي...'}
           </span>
 
