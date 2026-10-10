@@ -183,10 +183,8 @@ export default function EditorRibbon({
   const [showListMenu, setShowListMenu] = useState(false);
   const [showDerivedMenu, setShowDerivedMenu] = useState(false);
   const [showTagInserterMenu, setShowTagInserterMenu] = useState(false);
-  const [newDerivedName, setNewDerivedName] = useState('');
   const [tagFilterQuery, setTagFilterQuery] = useState('');
-  const [isFormattingBarVisible, setIsFormattingBarVisible] = useState(true);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [newDerivedName, setNewDerivedName] = useState('');
 
   const preventFocusLoss = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -212,37 +210,11 @@ export default function EditorRibbon({
 
   return (
     <div className="bg-white border-b border-slate-200 select-none no-print">
-      {/* المستوى 1: شريط إجراءات الملف */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
-        <div className="flex items-center gap-1.5">
-          <button className="text-sm font-bold text-slate-900 px-2">الموثق الرقمي</button>
-          <button className="px-2 py-1 text-xs hover:bg-slate-100 rounded">عقد جديد</button>
-          <button className="px-2 py-1 text-xs hover:bg-slate-100 rounded">فتح Word</button>
-          <button className="px-2 py-1 text-xs hover:bg-slate-100 rounded">معاينة</button>
-          <button className="px-2 py-1 text-xs hover:bg-slate-100 rounded">طباعة</button>
-          <button className="px-2 py-1 text-xs hover:bg-slate-100 rounded">تصدير Word</button>
-        </div>
-      </div>
-
-      {/* المستوى 2: شريط التنسيق (قابل للطي) */}
-      <div className="border-b border-slate-100 bg-slate-50">
-        <button 
-            onClick={() => setIsFormattingBarVisible(!isFormattingBarVisible)}
-            className="px-3 py-1 text-[10px] text-slate-500 hover:text-slate-800"
-        >
-            {isFormattingBarVisible ? 'إخفاء التنسيق' : 'إظهار التنسيق'}
-        </button>
-        {isFormattingBarVisible && (
-            <div className="flex flex-wrap items-center gap-1 p-2">
-                {/* Formatting tools here... (B I U, Colors, Align, List, Table, etc.) */}
-            </div>
-        )}
-      </div>
-
-      {/* المستوى 3: شريط الأدوات التوثيقية */}
-      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 bg-white">
-        {/* Doc tools here... (Variables, Tags, Clauses, etc.) */}
-      </div>
+      {/* =====================================================================
+          السطر الأول: شريط التنسيق القياسي والصفحة + البحث والتكبير في اليسار
+         ===================================================================== */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-slate-100">
+        <div className="flex flex-wrap items-center gap-1">
           {/* Strict Standard Indicator (Arial 13pt, 1.0 spacing, 7/2/1/6cm margins) */}
           <div
             className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700 shrink-0"
@@ -780,7 +752,9 @@ export default function EditorRibbon({
           >
             <span>رقم الصفحة</span>
           </button>
+        </div>
 
+        {/* Far-Left Group: Find & Replace + Zoom Controls (Fixed together, never stranded) */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
@@ -817,6 +791,7 @@ export default function EditorRibbon({
             </button>
           </div>
         </div>
+      </div>
 
       {/* =====================================================================
           السطر الثاني: شريط الأوامر التوثيقية المخصص (الاستمارة · الوسوم · البنود · المشتقات · المقارنة)
