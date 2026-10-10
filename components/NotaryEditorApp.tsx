@@ -11,6 +11,7 @@ import {
   FileEdit,
   FileOutput,
   FilePlus2,
+  FileText,
   FileUp,
   FolderArchive,
   FormInput,
@@ -167,21 +168,7 @@ export default function NotaryEditorApp() {
 
   // Sidebar & Persistent Data State (Default tab = 'clauses' per v2.4 usage priority)
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('clauses');
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
-
-  const handleTopBarTabClick = useCallback(
-    (tab: SidebarTab) => {
-      if (!isSidebarOpen) {
-        setSidebarTab(tab);
-        setIsSidebarOpen(true);
-      } else if (sidebarTab === tab) {
-        setIsSidebarOpen(false);
-      } else {
-        setSidebarTab(tab);
-      }
-    },
-    [isSidebarOpen, sidebarTab]
-  );
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [clauses, setClauses] = useState<NotaryClause[]>([]);
   const [activeClauseIdsInDoc, setActiveClauseIdsInDoc] = useState<string[]>([]);
   const [partyFields, setPartyFields] = useState<PartyField[]>([]);
@@ -2034,9 +2021,9 @@ export default function NotaryEditorApp() {
 
   return (
     <div className="h-screen print:h-auto overflow-hidden print:overflow-visible flex flex-col bg-slate-100 text-slate-900">
-      {/* UNIFIED COMMAND BAR: ZONE 1 (TITLE/BRAND) | ZONE 2 (NAV TABS) | ZONE 3 (ACTIONS) */}
+      {/* TOP HEADER BAR: BRAND & CONTRACT TITLE (RIGHT) | FILE & EXPORT ACTIONS (LEFT) */}
       <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-slate-200 shrink-0 no-print select-none">
-        {/* Zone 1: Brand & Editable Contract Title Input with Auto-Save Badge */}
+        {/* Right: Brand & Editable Contract Title Input with Auto-Save Badge */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
@@ -2056,7 +2043,7 @@ export default function NotaryEditorApp() {
               value={docTitle}
               onChange={(e) => setDocTitle(e.target.value)}
               title="انقر لتعديل عنوان العقد مباشرة"
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-28 sm:w-40 md:w-52 truncate"
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-36 sm:w-52 md:w-64 truncate"
               placeholder="عنوان العقد..."
             />
             <span className="text-[10px] shrink-0">
@@ -2069,69 +2056,7 @@ export default function NotaryEditorApp() {
           </div>
         </div>
 
-        {/* Zone 2: Segmented Navigation for the Sidebar (Clauses · Parties · Templates · Documents) */}
-        <nav className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto max-w-full">
-          <button
-            type="button"
-            onClick={() => handleTopBarTabClick('clauses')}
-            title="فتح تبويب البنود الجاهزة أو طي اللوحة الجانبية"
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'clauses' && isSidebarOpen
-                ? 'bg-white text-blue-900 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ListChecks className="w-3.5 h-3.5" />
-            <span>البنود الجاهزة</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTopBarTabClick('parties')}
-            title="فتح استمارة الأطراف والتعيينات أو طي اللوحة الجانبية"
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 relative ${
-              sidebarTab === 'parties' && isSidebarOpen
-                ? 'bg-white text-blue-900 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>الأطراف والتعيين</span>
-            {unfilledCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTopBarTabClick('templates')}
-            title="فتح القوالب والوثائق المشتقة أو طي اللوحة الجانبية"
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'templates' && isSidebarOpen
-                ? 'bg-white text-blue-900 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FileOutput className="w-3.5 h-3.5" />
-            <span>القوالب والمشتقات</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTopBarTabClick('documents')}
-            title="فتح المستندات والأرشيف أو طي اللوحة الجانبية"
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'documents' && isSidebarOpen
-                ? 'bg-white text-blue-900 shadow-2xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FolderArchive className="w-3.5 h-3.5" />
-            <span>المستندات والأرشيف</span>
-          </button>
-        </nav>
-
-        {/* Zone 3: Document Actions & Collapse Toggle */}
+        {/* Left: Document File & Export Commands */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* New Contract Modal */}
           <button
@@ -2141,13 +2066,13 @@ export default function NotaryEditorApp() {
             title="بدء عقد جديد من قالب أو مسودة أو ملف وورد أو أرشيف التحميلات"
           >
             <FilePlus2 className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden xl:inline">عقد جديد</span>
+            <span className="hidden md:inline">عقد جديد</span>
           </button>
 
           {/* Import Word (.docx) */}
           <label className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors">
             <FileUp className="w-3.5 h-3.5 text-blue-900" />
-            <span className="hidden xl:inline">فتح Word</span>
+            <span className="hidden md:inline">فتح Word</span>
             <input
               type="file"
               accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -2190,8 +2115,8 @@ export default function NotaryEditorApp() {
             title="معاينة دمج الحقول جنباً إلى جنب مع الاستمارة قبل التصدير"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">
-              {previewMergedMode ? 'وضع التحرير' : 'معاينة الدمج'}
+            <span className="hidden sm:inline">
+              {previewMergedMode ? 'وضع التحرير' : 'معاينة'}
             </span>
           </button>
 
@@ -2204,6 +2129,17 @@ export default function NotaryEditorApp() {
           >
             <History className="w-3.5 h-3.5 text-blue-900" />
             <span className="hidden lg:inline">اللقطات ({revisions.length})</span>
+          </button>
+
+          {/* Print */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors"
+            title="طباعة العقد A4"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">طباعة</span>
           </button>
 
           {/* Export Word (.docx) - Primary CTA */}
@@ -2221,53 +2157,15 @@ export default function NotaryEditorApp() {
           <button
             type="button"
             onClick={() => setShowOnboardingTour(true)}
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-            title="فتح الجولة الإرشادية التفاعلية للمحرر (5 خطوات)"
+            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+            title="فتح الجولة الإرشادية التفاعلية للمحرر"
           >
             <HelpCircle className="w-4 h-4" />
-          </button>
-
-          {/* Print */}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-            title="طباعة العقد"
-          >
-            <Printer className="w-4 h-4" />
-          </button>
-
-          {/* Toggle Sidebar (Unified State across viewports) */}
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen((v) => !v)}
-            className={`px-2.5 py-1.5 border rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors shrink-0 ${
-              isSidebarOpen
-                ? 'bg-blue-50 border-blue-200 text-blue-900 font-semibold'
-                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
-            }`}
-            title={
-              isSidebarOpen
-                ? 'طي الشريط الجانبي لتوسيع مساحة ورقة العقد A4'
-                : 'فتح وتوسيع الشريط الجانبي'
-            }
-          >
-            {isSidebarOpen ? (
-              <>
-                <PanelRightClose className="w-4 h-4" />
-                <span className="hidden sm:inline">طي الجانبية</span>
-              </>
-            ) : (
-              <>
-                <PanelRightOpen className="w-4 h-4" />
-                <span className="hidden sm:inline">فتح الجانبية</span>
-              </>
-            )}
           </button>
         </div>
       </header>
 
-      {/* Word Formatting & Productivity Ribbon */}
+      {/* Two-Row Word Formatting & Notary Productivity Ribbon */}
       <EditorRibbon
         toolbarState={toolbarState}
         canUndo={undoStack.length > 0}
@@ -2282,6 +2180,7 @@ export default function NotaryEditorApp() {
         extractedPlaceholders={extractedPlaceholders}
         fieldValues={fieldValues}
         derivedTemplates={derivedTemplates}
+        activeEditingDerivedId={editingDerivedTpl?.id || null}
         onOpenSmartVariablesModal={() => {
           decorateEditorZonesPreservingSelection();
           setFocusedVarKey(null);
@@ -2293,6 +2192,28 @@ export default function NotaryEditorApp() {
         onOpenVersionDiffModal={handleOpenVersionDiffModal}
         onGenerateDerivedDoc={handleGenerateDerivedDoc}
         onEditDerivedTemplateInEditor={handleEditDerivedTemplateInEditor}
+        onSaveCurrentAsDerivedTemplate={async (name, code, description) => {
+          const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
+          const newDt: DerivedDocTemplate = {
+            id: `custom_derived_${Date.now()}`,
+            code,
+            name,
+            description,
+            bodyHtml,
+            headerHtml,
+            footerHtml,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveDerivedDocTemplate(newDt);
+          setDerivedTemplates(await loadDerivedDocTemplates());
+          showToast(`تمت إضافة "${name}" إلى قوالب الوثائق المشتقة`);
+        }}
+        onImportDocxForDerivedTemplate={handleImportDocxForDerivedTemplate}
+        onDeleteDerivedTemplate={async (id) => {
+          await deleteDerivedDocTemplate(id);
+          setDerivedTemplates(await loadDerivedDocTemplates());
+          showToast('تم حذف القالب المشتق');
+        }}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleBold={() => applyInlineCommand('bold')}
@@ -2774,89 +2695,65 @@ export default function NotaryEditorApp() {
           />
         </div>
       ) : (
-        /* SLIM ICON RAIL (عند طي اللوحة الجانبية: يتيح التوسيع السريع أو فتح أي تبويب بضغطة واحدة) */
-        <aside className="flex w-12 bg-white border-l border-slate-200 flex-col items-center py-3 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
-          {/* Quick Expand button */}
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 text-slate-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-colors mb-1"
-            title="توسيع اللوحة الجانبية"
-          >
-            <PanelRightOpen className="w-4 h-4" />
-          </button>
-
-          <div className="w-6 h-px bg-slate-200 mb-1" />
-
-          {/* Clauses Icon */}
+        /* SLIM ACTIVITY RAIL (الشريط الجانبي يبدأ مطوياً كعمود أيقونات نحيف للأقسام الأربعة ويفتح عند اختيار قسم) */
+        <aside className="flex w-14 bg-white border-l border-slate-200 flex-col items-center py-2.5 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
+          {/* 1. Clauses Section */}
           <button
             type="button"
             onClick={() => {
               setSidebarTab('clauses');
               setIsSidebarOpen(true);
             }}
-            className={`p-2 rounded-lg transition-colors relative ${
-              sidebarTab === 'clauses'
-                ? 'bg-blue-900 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title="البنود الجاهزة والصياغات"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            title="فتح قسم البنود الجاهزة"
           >
             <ListChecks className="w-4 h-4" />
+            <span className="text-[10px] font-medium">البنود</span>
           </button>
 
-          {/* Parties Icon */}
+          {/* 2. Parties Section */}
           <button
             type="button"
             onClick={() => {
               setSidebarTab('parties');
               setIsSidebarOpen(true);
             }}
-            className={`p-2 rounded-lg transition-colors relative ${
-              sidebarTab === 'parties'
-                ? 'bg-blue-900 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title="الأطراف والتعيينات والاستمارة"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900 relative"
+            title="فتح قسم الأطراف والتعيينات"
           >
             <UserCheck className="w-4 h-4" />
+            <span className="text-[10px] font-medium">الأطراف</span>
             {unfilledCount > 0 && (
-              <span className="absolute top-1 left-1 w-2 h-2 rounded-full bg-red-600" />
+              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-red-600" />
             )}
           </button>
 
-          {/* Templates Icon */}
+          {/* 3. Contract Templates Section */}
           <button
             type="button"
             onClick={() => {
               setSidebarTab('templates');
               setIsSidebarOpen(true);
             }}
-            className={`p-2 rounded-lg transition-colors relative ${
-              sidebarTab === 'templates'
-                ? 'bg-blue-900 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title="قوالب المكتب والوثائق المشتقة"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            title="فتح قسم قوالب عقود المكتب"
           >
-            <FileOutput className="w-4 h-4" />
+            <FileText className="w-4 h-4" />
+            <span className="text-[10px] font-medium">القوالب</span>
           </button>
 
-          {/* Documents Icon */}
+          {/* 4. Archive & Saved Documents Section */}
           <button
             type="button"
             onClick={() => {
               setSidebarTab('documents');
               setIsSidebarOpen(true);
             }}
-            className={`p-2 rounded-lg transition-colors relative ${
-              sidebarTab === 'documents'
-                ? 'bg-blue-900 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-            title="المستندات والأرشيف المحلي"
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-slate-600 hover:bg-blue-50 hover:text-blue-900"
+            title="فتح قسم المستندات والأرشيف"
           >
             <FolderArchive className="w-4 h-4" />
+            <span className="text-[10px] font-medium">الأرشيف</span>
           </button>
         </aside>
       )}

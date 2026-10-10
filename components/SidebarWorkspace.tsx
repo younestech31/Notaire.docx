@@ -221,14 +221,10 @@ export default function SidebarWorkspace({
   const [newLotShares, setNewLotShares] = useState('');
   const [newLotDesc, setNewLotDesc] = useState('');
 
-  // Templates sub-view: 'office' vs 'derived'
-  const [templatesSubTab, setTemplatesSubTab] = useState<'office' | 'derived'>('derived');
+  // Office Contract Templates form state
   const [newTplName, setNewTplName] = useState('');
   const [newTplCategory, setNewTplCategory] = useState('عقود المكتب');
   const [clearClausesOnReplace, setClearClausesOnReplace] = useState<boolean>(true);
-  const [newDerivedName, setNewDerivedName] = useState('');
-  const [newDerivedCode, setNewDerivedCode] = useState('');
-  const [newDerivedDesc, setNewDerivedDesc] = useState('');
   const [selectedPartyIdSidebar, setSelectedPartyIdSidebar] = useState<string>('');
   const [selectedPropIdSidebar, setSelectedPropIdSidebar] = useState<string>('');
 
@@ -305,7 +301,7 @@ export default function SidebarWorkspace({
           <h3 className="text-xs font-bold text-slate-900">
             {activeTab === 'clauses' && 'بنود وصياغات العقود'}
             {activeTab === 'parties' && 'استمارة الأطراف والتعيينات'}
-            {activeTab === 'templates' && 'قوالب المكتب والوثائق المشتقة'}
+            {activeTab === 'templates' && 'قوالب عقود المكتب'}
             {activeTab === 'documents' && 'المستندات والأرشيف المحلي'}
           </h3>
         </div>
@@ -322,12 +318,17 @@ export default function SidebarWorkspace({
         )}
       </div>
 
-      {/* Sidebar Segmented Navigation — Ordered by Daily Usage Frequency */}
+      {/* Sidebar Segmented Navigation — Single Source of Section Navigation */}
       <div className="grid grid-cols-4 gap-1 p-2 bg-slate-50 border-b border-slate-200 shrink-0">
-        {/* 1. البنود الجاهزة (الأكثر استخداماً أثناء التحرير) */}
+        {/* 1. البنود */}
         <button
           type="button"
-          onClick={() => onSelectTab('clauses')}
+          onClick={() =>
+            activeTab === 'clauses' && onToggleCollapse
+              ? onToggleCollapse()
+              : onSelectTab('clauses')
+          }
+          title="البنود الجاهزة (انقر مجدداً لطي الشريط)"
           className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'clauses'
               ? 'bg-blue-900 text-white shadow-2xs'
@@ -335,13 +336,18 @@ export default function SidebarWorkspace({
           }`}
         >
           <ListChecks className="w-3.5 h-3.5 mb-0.5" />
-          <span>البنود الجاهزة</span>
+          <span>البنود</span>
         </button>
 
         {/* 2. الأطراف والتعيينات */}
         <button
           type="button"
-          onClick={() => onSelectTab('parties')}
+          onClick={() =>
+            activeTab === 'parties' && onToggleCollapse
+              ? onToggleCollapse()
+              : onSelectTab('parties')
+          }
+          title="الأطراف والتعيينات (انقر مجدداً لطي الشريط)"
           className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap relative ${
             activeTab === 'parties'
               ? 'bg-blue-900 text-white shadow-2xs'
@@ -349,30 +355,40 @@ export default function SidebarWorkspace({
           }`}
         >
           <UserCheck className="w-3.5 h-3.5 mb-0.5" />
-          <span>الأطراف والتعيين</span>
+          <span>الأطراف</span>
           {unfilledCount > 0 && (
             <span className="absolute top-1 left-1 w-2 h-2 rounded-full bg-red-600" />
           )}
         </button>
 
-        {/* 3. قوالب المكتب والمشتقات */}
+        {/* 3. قوالب العقود (مفصولة عن الوثائق المشتقة) */}
         <button
           type="button"
-          onClick={() => onSelectTab('templates')}
+          onClick={() =>
+            activeTab === 'templates' && onToggleCollapse
+              ? onToggleCollapse()
+              : onSelectTab('templates')
+          }
+          title="قوالب عقود المكتب (انقر مجدداً لطي الشريط)"
           className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'templates'
               ? 'bg-blue-900 text-white shadow-2xs'
               : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
           }`}
         >
-          <FileOutput className="w-3.5 h-3.5 mb-0.5" />
-          <span>القوالب والمشتقات</span>
+          <FileText className="w-3.5 h-3.5 mb-0.5" />
+          <span>القوالب</span>
         </button>
 
-        {/* 4. المستندات المحفوظة والأرشيف */}
+        {/* 4. الأرشيف والمستندات */}
         <button
           type="button"
-          onClick={() => onSelectTab('documents')}
+          onClick={() =>
+            activeTab === 'documents' && onToggleCollapse
+              ? onToggleCollapse()
+              : onSelectTab('documents')
+          }
+          title="المستندات والأرشيف (انقر مجدداً لطي الشريط)"
           className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'documents'
               ? 'bg-blue-900 text-white shadow-2xs'
@@ -380,7 +396,7 @@ export default function SidebarWorkspace({
           }`}
         >
           <FolderArchive className="w-3.5 h-3.5 mb-0.5" />
-          <span>المستندات والأرشيف</span>
+          <span>الأرشيف</span>
         </button>
       </div>
 
@@ -1309,382 +1325,208 @@ export default function SidebarWorkspace({
         )}
 
         {/* =========================================================
-            TAB 3: OFFICE TEMPLATES & EDITABLE DERIVED TEMPLATES
+            TAB 3: OFFICE CONTRACT TEMPLATES ONLY (قوالب عقود المكتب فقط)
            ========================================================= */}
         {activeTab === 'templates' && (
           <div className="space-y-4">
-            {/* Sub-tab selector: Derived Templates vs Office Contract Templates */}
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded text-xs font-medium">
-              <button
-                type="button"
-                onClick={() => setTemplatesSubTab('derived')}
-                className={`py-1.5 rounded ${
-                  templatesSubTab === 'derived'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600'
-                }`}
-              >
-                قوالب الوثائق المشتقة ({derivedTemplates.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTemplatesSubTab('office')}
-                className={`py-1.5 rounded ${
-                  templatesSubTab === 'office'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600'
-                }`}
-              >
-                قوالب عقود المكتب ({templates.length})
-              </button>
+            <div className="border border-blue-200 bg-blue-50/40 rounded-md p-3 space-y-2.5">
+              <div className="text-xs font-bold text-slate-900">
+                استيراد نماذج العقود الخاصة بمكتبكم (.docx)
+              </div>
+              <label className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-blue-900 text-white rounded text-xs font-medium hover:bg-blue-800 transition-colors cursor-pointer">
+                <Upload className="w-4 h-4" />
+                <span>استيراد قالب عقد Word (.docx) من الجهاز</span>
+                <input
+                  type="file"
+                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      onImportDocxAsTemplate(e.target.files);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
             </div>
 
-            {templatesSubTab === 'derived' ? (
-              <div className="space-y-4">
-                <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-md space-y-1.5">
-                  <div className="text-xs font-bold text-blue-950">
-                    مولد وقوالب الوثائق المشتقة القابلة للتعديل الكامل
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    كل قالب وثيقة مشتقة (المستخرج، إجراء الشهر، شهادة البيع، الصيغة التنفيذية...) قابل للفتح والتعديل داخل محرر الـ A4 أو استبداله بملف <code className="font-mono">.docx</code> من جهازك، ويعتمد عند التوليد حصرياً على قيم «استمارة المتغيرات» والأطراف والتعيينات.
-                  </p>
-                </div>
-
-                {/* List of Editable Derived Document Templates */}
-                <div className="space-y-2.5">
-                  {derivedTemplates.map((dt) => {
-                    const isCurrentlyEditing = activeEditingDerivedId === dt.id;
-                    return (
-                      <div
-                        key={dt.id}
-                        className={`border rounded-md p-3 space-y-2 transition-colors ${
-                          isCurrentlyEditing
-                            ? 'border-amber-500 bg-amber-50/40'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                              <span>{dt.name}</span>
-                              {isCurrentlyEditing && (
-                                <span className="text-[10px] bg-amber-200 text-amber-950 px-1.5 py-0.5 rounded">
-                                  قيد التعديل بالمحرر
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              {dt.description}
-                            </div>
-                          </div>
-                          {!dt.id.startsWith('derived_') && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteDerivedTemplate(dt.id)}
-                              className="p-1 text-slate-400 hover:text-red-600"
-                              title="حذف القالب المشتق"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => onGenerateDerivedDoc(dt)}
-                            className="flex-1 py-1.5 px-2 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800 inline-flex items-center justify-center gap-1"
-                            title="توليد وتصدير هذه الوثيقة المشتقة فوراً من بيانات استمارة المتغيرات الحالية"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>توليد وتصدير (.docx)</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => onEditDerivedTemplateInEditor(dt)}
-                            className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center gap-1"
-                            title="فتح قالب هذه الوثيقة المشتقة داخل محرر A4 لتعديل صياغته أو جدوله أو وسومه"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            <span>تعديل القالب بالمحرر</span>
-                          </button>
-
-                          <label
-                            className="py-1.5 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] rounded cursor-pointer inline-flex items-center gap-1"
-                            title="استيراد ملف Word (.docx) من جهازك ليصبح هو القالب المعتمد لهذه الوثيقة المشتقة"
-                          >
-                            <Upload className="w-3 h-3" />
-                            <span>.docx</span>
-                            <input
-                              type="file"
-                              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  onImportDocxForDerivedTemplate(dt, file);
-                                  e.target.value = '';
-                                }
-                              }}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Add a new custom Derived Document Template from current Editor */}
-                <div className="border border-slate-200 rounded-md p-3 bg-slate-50 space-y-2">
-                  <div className="text-xs font-bold text-slate-900">
-                    إضافة قالب وثيقة مشتقة جديد من المحرر
-                  </div>
-                  <input
-                    type="text"
-                    value={newDerivedName}
-                    onChange={(e) => setNewDerivedName(e.target.value)}
-                    placeholder="اسم الوثيقة المشتقة (مثال: إشعار بالتسجيل / جدول إرسال)"
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded"
-                  />
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newDerivedCode}
-                      onChange={(e) => setNewDerivedCode(e.target.value)}
-                      placeholder="الرمز (مثال: bordereau)"
-                      className="w-28 px-2 py-1 text-xs bg-white border border-slate-300 rounded font-mono"
-                    />
-                    <input
-                      type="text"
-                      value={newDerivedDesc}
-                      onChange={(e) => setNewDerivedDesc(e.target.value)}
-                      placeholder="وصف مختصر..."
-                      className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded"
-                    />
-                  </div>
+            {/* Save Current Contract as Template Box */}
+            <div className="border border-slate-200 rounded-md p-3 space-y-2 bg-white">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">
+                  حفظ العقد الحالي كقالب مكتب
+                </span>
+                {onOpenSaveAsTemplateModal && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!newDerivedName.trim()) return;
-                      await onSaveCurrentAsDerivedTemplate(
-                        newDerivedName.trim(),
-                        newDerivedCode.trim() || `custom_${Date.now()}`,
-                        newDerivedDesc.trim() || 'قالب وثيقة مشتقة مخصص للمكتب'
-                      );
-                      setNewDerivedName('');
-                      setNewDerivedCode('');
-                      setNewDerivedDesc('');
-                    }}
-                    className="w-full py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800"
+                    onClick={onOpenSaveAsTemplateModal}
+                    className="text-[11px] text-blue-900 hover:underline font-semibold"
+                    title="فتح نافذة الخيارات المتقدمة وتفريغ القيم المعبأة"
                   >
-                    + حفظ محتوى المحرر الحالي كقالب وثيقة مشتقة
+                    خيارات متقدمة...
                   </button>
-                </div>
+                )}
               </div>
-            ) : (
-              /* Office Contract Templates Sub-tab */
-              <div className="space-y-4">
-                <div className="border border-blue-200 bg-blue-50/40 rounded-md p-3 space-y-2.5">
-                  <div className="text-xs font-bold text-slate-900">
-                    استيراد نماذج العقود الخاصة بمكتبكم (.docx)
-                  </div>
-                  <label className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-blue-900 text-white rounded text-xs font-medium hover:bg-blue-800 transition-colors cursor-pointer">
-                    <Upload className="w-4 h-4" />
-                    <span>استيراد قالب Word (.docx) من الجهاز</span>
-                    <input
-                      type="file"
-                      accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          onImportDocxAsTemplate(e.target.files);
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
 
-                {/* Save Current Contract as Template Box */}
-                <div className="border border-slate-200 rounded-md p-3 space-y-2 bg-white">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900">
-                      حفظ العقد الحالي كقالب مكتب
-                    </span>
-                    {onOpenSaveAsTemplateModal && (
+              <input
+                type="text"
+                value={newTplName}
+                onChange={(e) => setNewTplName(e.target.value)}
+                placeholder="اسم القالب (مثال: عقد بيع شقة - مكتبنا)"
+                className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newTplCategory}
+                  onChange={(e) => setNewTplCategory(e.target.value)}
+                  placeholder="التصنيف (مثال: عقود البيع)"
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-slate-300 rounded"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newTplName.trim()) return;
+                    if (onOpenSaveAsTemplateModal) {
+                      onOpenSaveAsTemplateModal();
+                    } else {
+                      await onSaveCurrentAsTemplate(
+                        newTplName.trim(),
+                        newTplCategory.trim() || 'عام'
+                      );
+                      setNewTplName('');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800 shrink-0"
+                >
+                  حفظ كقالب
+                </button>
+              </div>
+            </div>
+
+            {/* Templates JSON Export / Import Strip */}
+            <div className="flex items-center gap-2">
+              {onExportTemplatesJson && (
+                <button
+                  type="button"
+                  onClick={onExportTemplatesJson}
+                  disabled={templates.length === 0}
+                  className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 disabled:opacity-40"
+                  title="تصدير جميع قوالب مكتبكم المحفوظة إلى ملف JSON"
+                >
+                  <Download className="w-3 h-3 text-blue-900" />
+                  <span>تصدير القوالب (JSON)</span>
+                </button>
+              )}
+
+              {onImportTemplatesJson && (
+                <label
+                  className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 cursor-pointer"
+                  title="استيراد قوالب من ملف JSON تم تصديره مسبقاً"
+                >
+                  <Upload className="w-3 h-3 text-blue-900" />
+                  <span>استيراد قوالب (JSON)</span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        onImportTemplatesJson(file);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                <span className="text-xs font-bold text-slate-900">
+                  مكتبة قوالب عقود المكتب ({templates.length})
+                </span>
+              </div>
+
+              {/* Checkbox: Clear Previous Clauses when Replacing Full Content */}
+              <label className="flex items-center gap-2 p-2 bg-blue-50/60 border border-blue-200 rounded text-[11px] text-blue-950 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clearClausesOnReplace}
+                  onChange={(e) => setClearClausesOnReplace(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-900"
+                />
+                <span className="font-semibold">
+                  حذف البنود السابقة المفعّلة عند استبدال المحتوى بالقالب
+                </span>
+              </label>
+
+              {templates.length === 0 ? (
+                <div className="border border-dashed border-slate-300 rounded-md p-5 text-center space-y-2 bg-slate-50/50">
+                  <FileText className="w-7 h-7 text-slate-400 mx-auto" />
+                  <div className="text-xs font-semibold text-slate-700">
+                    مكتبة قوالب العقود فارغة حالياً
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    استوردوا ملفات Word (.docx) الخاصة بمكتبكم أو احفظوا أي عقد من المحرر. (الوثائق المشتقة متوفرة في شريط التوثيق العلوي).
+                  </p>
+                </div>
+              ) : (
+                templates.map((tpl) => (
+                  <div
+                    key={tpl.id}
+                    className="border border-slate-200 rounded-md p-2.5 bg-white space-y-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">{tpl.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {tpl.category} · {tpl.extractedPlaceholders.length} وسم ذكي
+                        </div>
+                      </div>
                       <button
                         type="button"
-                        onClick={onOpenSaveAsTemplateModal}
-                        className="text-[11px] text-blue-900 hover:underline font-semibold"
-                        title="فتح نافذة الخيارات المتقدمة وتفريغ القيم المعبأة"
+                        onClick={() => onDeleteTemplate(tpl.id)}
+                        className="p-1 text-slate-400 hover:text-red-600"
                       >
-                        خيارات متقدمة...
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    )}
-                  </div>
-
-                  <input
-                    type="text"
-                    value={newTplName}
-                    onChange={(e) => setNewTplName(e.target.value)}
-                    placeholder="اسم القالب (مثال: عقد بيع شقة - مكتبنا)"
-                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
-                  />
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newTplCategory}
-                      onChange={(e) => setNewTplCategory(e.target.value)}
-                      placeholder="التصنيف (مثال: عقود البيع)"
-                      className="flex-1 px-2.5 py-1.5 text-xs border border-slate-300 rounded"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!newTplName.trim()) return;
-                        if (onOpenSaveAsTemplateModal) {
-                          onOpenSaveAsTemplateModal();
-                        } else {
-                          await onSaveCurrentAsTemplate(
-                            newTplName.trim(),
-                            newTplCategory.trim() || 'عام'
-                          );
-                          setNewTplName('');
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800 shrink-0"
-                    >
-                      حفظ كقالب
-                    </button>
-                  </div>
-                </div>
-
-                {/* Templates JSON Export / Import Strip */}
-                <div className="flex items-center gap-2">
-                  {onExportTemplatesJson && (
-                    <button
-                      type="button"
-                      onClick={onExportTemplatesJson}
-                      disabled={templates.length === 0}
-                      className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 disabled:opacity-40"
-                      title="تصدير جميع قوالب مكتبكم المحفوظة إلى ملف JSON"
-                    >
-                      <Download className="w-3 h-3 text-blue-900" />
-                      <span>تصدير القوالب (JSON)</span>
-                    </button>
-                  )}
-
-                  {onImportTemplatesJson && (
-                    <label
-                      className="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-medium rounded inline-flex items-center justify-center gap-1 cursor-pointer"
-                      title="استيراد قوالب من ملف JSON تم تصديره مسبقاً"
-                    >
-                      <Upload className="w-3 h-3 text-blue-900" />
-                      <span>استيراد قوالب (JSON)</span>
-                      <input
-                        type="file"
-                        accept=".json,application/json"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            onImportTemplatesJson(file);
-                            e.target.value = '';
-                          }
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                    <span className="text-xs font-bold text-slate-900">
-                      مكتبة قوالب العقود المحفوظة ({templates.length})
-                    </span>
-                  </div>
-
-                  {/* Checkbox: Clear Previous Clauses when Replacing Full Content */}
-                  <label className="flex items-center gap-2 p-2 bg-blue-50/60 border border-blue-200 rounded text-[11px] text-blue-950 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={clearClausesOnReplace}
-                      onChange={(e) => setClearClausesOnReplace(e.target.checked)}
-                      className="rounded border-slate-300 text-blue-900"
-                    />
-                    <span className="font-semibold">
-                      حذف البنود السابقة المفعّلة عند استبدال المحتوى بالقالب
-                    </span>
-                  </label>
-
-                  {templates.length === 0 ? (
-                    <div className="border border-dashed border-slate-300 rounded-md p-5 text-center space-y-2 bg-slate-50/50">
-                      <FileText className="w-7 h-7 text-slate-400 mx-auto" />
-                      <div className="text-xs font-semibold text-slate-700">
-                        مكتبة قوالب العقود فارغة حالياً
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        استوردوا ملفات Word (.docx) الخاصة بمكتبكم أو احفظوا أي عقد من المحرر.
-                      </p>
                     </div>
-                  ) : (
-                    templates.map((tpl) => (
-                      <div
-                        key={tpl.id}
-                        className="border border-slate-200 rounded-md p-2.5 bg-white space-y-2"
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onLoadTemplateFull(tpl, clearClausesOnReplace)}
+                        className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
+                        title="يمسح ورقة الـ A4 ويضع القالب كاملاً"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-bold text-slate-900">{tpl.name}</div>
-                            <div className="text-[11px] text-slate-500">
-                              {tpl.category} · {tpl.extractedPlaceholders.length} وسم ذكي
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTemplate(tpl.id)}
-                            className="p-1 text-slate-400 hover:text-red-600"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onLoadTemplateFull(tpl, clearClausesOnReplace)}
-                            className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
-                            title="يمسح ورقة الـ A4 ويضع القالب كاملاً"
-                          >
-                            استبدال المحتوى الحالي
-                          </button>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              onSaveSelectionBookmark();
-                            }}
-                            onClick={() => onInsertTemplateAtCaret(tpl)}
-                            className="flex-1 py-1 px-2 bg-slate-100 text-slate-800 border border-slate-200 text-[11px] font-medium rounded hover:bg-slate-200"
-                            title="يُبقي النص الحالي ويدرج القالب عند موضع المؤشر"
-                          >
-                            إدراج عند المؤشر
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onExportTemplateDocx(tpl)}
-                            className="py-1 px-2 bg-white border border-slate-200 text-slate-700 text-[11px] rounded hover:bg-slate-50"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+                        استبدال المحتوى الحالي
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          onSaveSelectionBookmark();
+                        }}
+                        onClick={() => onInsertTemplateAtCaret(tpl)}
+                        className="flex-1 py-1 px-2 bg-slate-100 text-slate-800 border border-slate-200 text-[11px] font-medium rounded hover:bg-slate-200"
+                        title="يُبقي النص الحالي ويدرج القالب عند موضع المؤشر"
+                      >
+                        إدراج عند المؤشر
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onExportTemplateDocx(tpl)}
+                        className="py-1 px-2 bg-white border border-slate-200 text-slate-700 text-[11px] rounded hover:bg-slate-50"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 

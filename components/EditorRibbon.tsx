@@ -34,6 +34,7 @@ import {
   Trash2,
   Underline,
   Undo2,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -58,6 +59,7 @@ interface EditorRibbonProps {
   extractedPlaceholders: string[];
   fieldValues: Record<string, string>;
   derivedTemplates: DerivedDocTemplate[];
+  activeEditingDerivedId?: string | null;
   onOpenSmartVariablesModal: () => void;
   onConvertSelectionToSmartTag: () => void;
   onInsertSmartTagAtCaret: (varKey: string) => void;
@@ -65,6 +67,16 @@ interface EditorRibbonProps {
   onOpenVersionDiffModal: () => void;
   onGenerateDerivedDoc: (tpl: DerivedDocTemplate) => void;
   onEditDerivedTemplateInEditor: (tpl: DerivedDocTemplate) => void;
+  onSaveCurrentAsDerivedTemplate?: (
+    name: string,
+    code: string,
+    description: string
+  ) => Promise<void>;
+  onImportDocxForDerivedTemplate?: (
+    tpl: DerivedDocTemplate,
+    file: File
+  ) => Promise<void>;
+  onDeleteDerivedTemplate?: (id: string) => Promise<void>;
   onUndo: () => void;
   onRedo: () => void;
   onToggleBold: () => void;
@@ -129,6 +141,7 @@ export default function EditorRibbon({
   extractedPlaceholders,
   fieldValues,
   derivedTemplates,
+  activeEditingDerivedId,
   onOpenSmartVariablesModal,
   onConvertSelectionToSmartTag,
   onInsertSmartTagAtCaret,
@@ -136,6 +149,9 @@ export default function EditorRibbon({
   onOpenVersionDiffModal,
   onGenerateDerivedDoc,
   onEditDerivedTemplateInEditor,
+  onSaveCurrentAsDerivedTemplate,
+  onImportDocxForDerivedTemplate,
+  onDeleteDerivedTemplate,
   onUndo,
   onRedo,
   onToggleBold,
@@ -166,6 +182,7 @@ export default function EditorRibbon({
   const [showDerivedMenu, setShowDerivedMenu] = useState(false);
   const [showTagInserterMenu, setShowTagInserterMenu] = useState(false);
   const [tagFilterQuery, setTagFilterQuery] = useState('');
+  const [newDerivedName, setNewDerivedName] = useState('');
 
   const preventFocusLoss = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -190,513 +207,620 @@ export default function EditorRibbon({
     }`;
 
   return (
-    <div className="bg-white border-b border-slate-200 px-3 py-1.5 select-none no-print">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {/* Strict Standard Indicator (Arial 13pt, 1.0 spacing, 7/2/1/6cm margins) */}
-        <div
-          className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 shrink-0"
-          title="معيار المكتب الثابت: الخط Arial بحجم 13pt، تباعد مفرد 1.0 بدون مسافات فقرات، الهوامش 7سم يمين / 2سم يسار / 1سم أعلى / 6سم أسفل"
-        >
-          <span className="font-semibold text-slate-900">Arial · 13pt</span>
-          <span aria-hidden="true" className="text-slate-300">
-            |
-          </span>
-          <span className="tabular-nums text-slate-600">تباعد 1.0</span>
-          <span aria-hidden="true" className="text-slate-300 hidden sm:inline">
-            |
-          </span>
-          <span className="tabular-nums text-slate-500 hidden sm:inline">
-            7/2/1/6 سم
-          </span>
-        </div>
+    <div className="bg-white border-b border-slate-200 select-none no-print">
+      {/* =====================================================================
+          السطر الأول: شريط التنسيق القياسي والصفحة + البحث والتكبير في اليسار
+         ===================================================================== */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-slate-100">
+        <div className="flex flex-wrap items-center gap-1">
+          {/* Strict Standard Indicator (Arial 13pt, 1.0 spacing, 7/2/1/6cm margins) */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700 shrink-0"
+            title="معيار المكتب الثابت: الخط Arial بحجم 13pt، تباعد مفرد 1.0 بدون مسافات فقرات، الهوامش 7سم يمين / 2سم يسار / 1سم أعلى / 6سم أسفل"
+          >
+            <span className="font-semibold text-slate-900">Arial · 13pt</span>
+            <span aria-hidden="true" className="text-slate-300 hidden md:inline">
+              |
+            </span>
+            <span className="tabular-nums text-slate-500 hidden md:inline">
+              7/2/1/6 سم
+            </span>
+          </div>
 
-        <div className="h-5 w-px bg-slate-200 mx-0.5" />
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
 
-        {/* Undo / Redo */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onUndo}
-          disabled={!canUndo}
-          className={btnClass(false, !canUndo)}
-          title="تراجع (Ctrl+Z)"
-        >
-          <Undo2 className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onRedo}
-          disabled={!canRedo}
-          className={btnClass(false, !canRedo)}
-          title="إعادة (Ctrl+Y)"
-        >
-          <Redo2 className="w-4 h-4" />
-        </button>
-
-        <div className="h-5 w-px bg-slate-200 mx-0.5" />
-
-        {/* Bold / Italic / Underline */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onToggleBold}
-          className={btnClass(toolbarState.bold)}
-          title="خط عريض (Ctrl+B)"
-        >
-          <Bold className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onToggleItalic}
-          className={btnClass(toolbarState.italic)}
-          title="خط مائل (Ctrl+I)"
-        >
-          <Italic className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onToggleUnderline}
-          className={btnClass(toolbarState.underline)}
-          title="تسطير (Ctrl+U)"
-        >
-          <Underline className="w-4 h-4" />
-        </button>
-
-        {/* Text Color Picker */}
-        <div className="relative">
+          {/* Undo / Redo */}
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onSaveSelectionBookmark();
-            }}
-            onClick={() => {
-              const next = !showColorMenu;
-              closeAllMenus();
-              setShowColorMenu(next);
-            }}
-            className={btnClass(showColorMenu)}
-            title="لون النص"
+            onMouseDown={preventFocusLoss}
+            onClick={onUndo}
+            disabled={!canUndo}
+            className={btnClass(false, !canUndo)}
+            title="تراجع (Ctrl+Z)"
           >
-            <Palette className="w-4 h-4 ml-1" />
-            <span
-              className="w-2.5 h-2.5 rounded-sm border border-slate-300"
-              style={{ backgroundColor: toolbarState.textColor || '#000000' }}
-            />
+            <Undo2 className="w-4 h-4" />
           </button>
-          {showColorMenu && (
-            <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-40">
-              {TEXT_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onMouseDown={preventFocusLoss}
-                  onClick={() => {
-                    onSetTextColor(c.value);
-                    setShowColorMenu(false);
-                  }}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded text-right"
-                >
-                  <span
-                    className="w-3.5 h-3.5 rounded-sm border border-slate-300 shrink-0"
-                    style={{ backgroundColor: c.value }}
-                  />
-                  <span>{c.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Highlight Color Picker */}
-        <div className="relative">
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onSaveSelectionBookmark();
-            }}
-            onClick={() => {
-              const next = !showHighlightMenu;
-              closeAllMenus();
-              setShowHighlightMenu(next);
-            }}
-            className={btnClass(showHighlightMenu)}
-            title="تمييز خلفية النص"
+            onMouseDown={preventFocusLoss}
+            onClick={onRedo}
+            disabled={!canRedo}
+            className={btnClass(false, !canRedo)}
+            title="إعادة (Ctrl+Y)"
           >
-            <Highlighter className="w-4 h-4" />
+            <Redo2 className="w-4 h-4" />
           </button>
-          {showHighlightMenu && (
-            <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-40">
-              {HIGHLIGHT_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onMouseDown={preventFocusLoss}
-                  onClick={() => {
-                    onSetHighlightColor(c.value);
-                    setShowHighlightMenu(false);
-                  }}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded text-right"
-                >
-                  <span
-                    className="w-3.5 h-3.5 rounded-sm border border-slate-300 shrink-0"
-                    style={{
-                      backgroundColor: c.value === 'transparent' ? '#ffffff' : c.value,
+
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
+
+          {/* Bold / Italic / Underline */}
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleBold}
+            className={btnClass(toolbarState.bold)}
+            title="خط عريض (Ctrl+B)"
+          >
+            <Bold className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleItalic}
+            className={btnClass(toolbarState.italic)}
+            title="خط مائل (Ctrl+I)"
+          >
+            <Italic className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleUnderline}
+            className={btnClass(toolbarState.underline)}
+            title="تسطير (Ctrl+U)"
+          >
+            <Underline className="w-4 h-4" />
+          </button>
+
+          {/* Text Color Picker */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSaveSelectionBookmark();
+              }}
+              onClick={() => {
+                const next = !showColorMenu;
+                closeAllMenus();
+                setShowColorMenu(next);
+              }}
+              className={btnClass(showColorMenu)}
+              title="لون النص"
+            >
+              <Palette className="w-4 h-4 ml-1" />
+              <span
+                className="w-2.5 h-2.5 rounded-sm border border-slate-300"
+                style={{ backgroundColor: toolbarState.textColor || '#000000' }}
+              />
+            </button>
+            {showColorMenu && (
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-50">
+                {TEXT_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => {
+                      onSetTextColor(c.value);
+                      setShowColorMenu(false);
                     }}
-                  />
-                  <span>{c.label}</span>
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded text-right"
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-sm border border-slate-300 shrink-0"
+                      style={{ backgroundColor: c.value }}
+                    />
+                    <span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Highlight Color Picker */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSaveSelectionBookmark();
+              }}
+              onClick={() => {
+                const next = !showHighlightMenu;
+                closeAllMenus();
+                setShowHighlightMenu(next);
+              }}
+              className={btnClass(showHighlightMenu)}
+              title="تمييز خلفية النص"
+            >
+              <Highlighter className="w-4 h-4" />
+            </button>
+            {showHighlightMenu && (
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-50">
+                {HIGHLIGHT_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => {
+                      onSetHighlightColor(c.value);
+                      setShowHighlightMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded text-right"
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-sm border border-slate-300 shrink-0"
+                      style={{
+                        backgroundColor:
+                          c.value === 'transparent' ? '#ffffff' : c.value,
+                      }}
+                    />
+                    <span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
+
+          {/* Paragraph Alignments */}
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetAlign('right')}
+            className={btnClass(toolbarState.align === 'right')}
+            title="محاذاة إلى اليمين"
+          >
+            <AlignRight className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetAlign('center')}
+            className={btnClass(toolbarState.align === 'center')}
+            title="توسيط"
+          >
+            <AlignCenter className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetAlign('left')}
+            className={btnClass(toolbarState.align === 'left')}
+            title="محاذاة إلى اليسار"
+          >
+            <AlignLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetAlign('justify')}
+            className={btnClass(toolbarState.align === 'justify')}
+            title="ضبط كلي للفقرة (Justify)"
+          >
+            <AlignJustify className="w-4 h-4" />
+          </button>
+
+          {/* Paragraph Direction RTL / LTR */}
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetDirection('rtl')}
+            className={btnClass(toolbarState.dir === 'rtl')}
+            title="اتجاه الفقرة من اليمين إلى اليسار (RTL)"
+          >
+            <PilcrowLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onSetDirection('ltr')}
+            className={btnClass(toolbarState.dir === 'ltr')}
+            title="اتجاه الفقرة من اليسار إلى اليمين (LTR)"
+          >
+            <PilcrowRight className="w-4 h-4" />
+          </button>
+
+          {/* Indentation */}
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onAdjustIndent('increase')}
+            className={btnClass(false)}
+            title="زيادة المسافة البادئة"
+          >
+            <IndentIncrease className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={() => onAdjustIndent('decrease')}
+            className={btnClass(false)}
+            title="إنقاص المسافة البادئة"
+          >
+            <IndentDecrease className="w-4 h-4" />
+          </button>
+
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
+
+          {/* Lists Menu — Renamed to "قائمة" to prevent confusion with Page Numbering */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSaveSelectionBookmark();
+              }}
+              onClick={() => {
+                const next = !showListMenu;
+                closeAllMenus();
+                setShowListMenu(next);
+              }}
+              className={btnClass(toolbarState.listType !== 'none' || showListMenu)}
+              title="إدراج قائمة مرقمة أو أبجدية عربية أو نقطية"
+            >
+              <ListOrdered className="w-4 h-4 ml-1" />
+              <span>قائمة</span>
+              <ChevronDown className="w-3 h-3 mr-0.5" />
+            </button>
+            {showListMenu && (
+              <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-50">
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onToggleList('decimal');
+                    setShowListMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
+                >
+                  <span>قائمة رقمية</span>
+                  <span className="font-mono text-slate-500">1. 2. 3.</span>
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onToggleList('arabic-alpha');
+                    setShowListMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
+                >
+                  <span>أبجدي عربي</span>
+                  <span className="text-slate-500">أ- ب- ج-</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onToggleList('arabic-abjad');
+                    setShowListMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
+                >
+                  <span>ترقيم أبجد هوز</span>
+                  <span className="text-slate-500">أبجد- هوز-</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onToggleList('bullet');
+                    setShowListMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
+                >
+                  <span>قائمة نقطية</span>
+                  <span className="text-slate-500">• • •</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onToggleList('dash');
+                    setShowListMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
+                >
+                  <span>قائمة بعلامة مطة</span>
+                  <span className="text-slate-500">- - -</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Table Creator */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSaveSelectionBookmark();
+              }}
+              onClick={() => {
+                const next = !showTablePicker;
+                closeAllMenus();
+                setShowTablePicker(next);
+              }}
+              className={btnClass(toolbarState.inTable || showTablePicker)}
+              title="إدراج وإدارة الجداول"
+            >
+              <TableIcon className="w-4 h-4 ml-1" />
+              <span>جدول</span>
+            </button>
+            {showTablePicker && (
+              <div className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg p-3 z-50">
+                <div className="text-xs font-semibold text-slate-800 mb-2">
+                  إدراج جدول توثيقي (بعرض صافي 12 سم)
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-2.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      عدد الصفوف
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={tableRows}
+                      onChange={(e) =>
+                        setTableRows(Math.max(1, parseInt(e.target.value, 10) || 1))
+                      }
+                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded tabular-nums"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      عدد الأعمدة
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={tableCols}
+                      onChange={(e) =>
+                        setTableCols(Math.max(1, parseInt(e.target.value, 10) || 1))
+                      }
+                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded tabular-nums"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => {
+                    onInsertTable(tableRows, tableCols);
+                    setShowTablePicker(false);
+                  }}
+                  className="w-full py-1.5 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800 transition-colors"
+                >
+                  إدراج الجدول عند المؤشر
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Contextual Table Tools when Caret is inside a Table */}
+          {toolbarState.inTable && (
+            <div className="flex items-center gap-1 bg-blue-50/70 border border-blue-200 rounded px-1.5 py-0.5">
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('row-below')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
+                title="إضافة صف لأسفل"
+              >
+                <Rows className="w-3.5 h-3.5" />
+                <span>+صف</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('col-after')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
+                title="إضافة عمود"
+              >
+                <Columns className="w-3.5 h-3.5" />
+                <span>+عمود</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('merge-cells')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
+                title="دمج الخلايا المحددة"
+              >
+                <Merge className="w-3.5 h-3.5" />
+                <span>دمج</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('split-cell')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
+                title="فك دمج الخلية الحالية"
+              >
+                <Split className="w-3.5 h-3.5" />
+                <span>فك</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('toggle-border')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded"
+                title="إظهار/إخفاء حدود الخلية"
+              >
+                الحدود
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('shade-cell')}
+                className="px-1.5 py-0.5 text-[11px] text-blue-950 hover:bg-blue-100 rounded"
+                title="تظليل رمادي للخلية"
+              >
+                تظليل
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('delete-row')}
+                className="px-1.5 py-0.5 text-[11px] text-red-700 hover:bg-red-100 rounded inline-flex items-center gap-0.5"
+                title="حذف الصف الحالي"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>صف</span>
+              </button>
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => onTableAction('delete-col')}
+                className="px-1.5 py-0.5 text-[11px] text-red-700 hover:bg-red-100 rounded inline-flex items-center gap-0.5"
+                title="حذف العمود الحالي"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>عمود</span>
+              </button>
             </div>
           )}
-        </div>
 
-        <div className="h-5 w-px bg-slate-200 mx-0.5" />
+          <div className="h-4 w-px bg-slate-200 mx-0.5" />
 
-        {/* Paragraph Alignments */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetAlign('right')}
-          className={btnClass(toolbarState.align === 'right')}
-          title="محاذاة إلى اليمين"
-        >
-          <AlignRight className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetAlign('center')}
-          className={btnClass(toolbarState.align === 'center')}
-          title="توسيط"
-        >
-          <AlignCenter className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetAlign('left')}
-          className={btnClass(toolbarState.align === 'left')}
-          title="محاذاة إلى اليسار"
-        >
-          <AlignLeft className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetAlign('justify')}
-          className={btnClass(toolbarState.align === 'justify')}
-          title="ضبط كلي للفقرة (Justify)"
-        >
-          <AlignJustify className="w-4 h-4" />
-        </button>
-
-        {/* Paragraph Direction RTL / LTR */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetDirection('rtl')}
-          className={btnClass(toolbarState.dir === 'rtl')}
-          title="اتجاه الفقرة من اليمين إلى اليسار (RTL)"
-        >
-          <PilcrowLeft className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onSetDirection('ltr')}
-          className={btnClass(toolbarState.dir === 'ltr')}
-          title="اتجاه الفقرة من اليسار إلى اليمين (LTR)"
-        >
-          <PilcrowRight className="w-4 h-4" />
-        </button>
-
-        {/* Indentation */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onAdjustIndent('increase')}
-          className={btnClass(false)}
-          title="زيادة المسافة البادئة"
-        >
-          <IndentIncrease className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={() => onAdjustIndent('decrease')}
-          className={btnClass(false)}
-          title="إنقاص المسافة البادئة"
-        >
-          <IndentDecrease className="w-4 h-4" />
-        </button>
-
-        <div className="h-5 w-px bg-slate-200 mx-0.5" />
-
-        {/* Arabic & Numbered Lists */}
-        <div className="relative">
+          {/* Page Break, Image, Header/Footer, Page Numbering ("رقم الصفحة") */}
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onSaveSelectionBookmark();
-            }}
-            onClick={() => {
-              const next = !showListMenu;
-              closeAllMenus();
-              setShowListMenu(next);
-            }}
-            className={btnClass(toolbarState.listType !== 'none' || showListMenu)}
-            title="قوائم مرقمة وأبجدية عربية"
+            onMouseDown={preventFocusLoss}
+            onClick={onInsertPageBreak}
+            className={btnClass(false)}
+            title="إدراج فاصل صفحات"
           >
-            <ListOrdered className="w-4 h-4 ml-1" />
-            <span>ترقيم</span>
+            <SeparatorHorizontal className="w-4 h-4 ml-1" />
+            <span className="hidden xl:inline">فاصل</span>
           </button>
-          {showListMenu && (
-            <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg p-1.5 z-40">
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onToggleList('decimal');
-                  setShowListMenu(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
-              >
-                <span>ترقيم رقمي</span>
-                <span className="font-mono text-slate-500">1. 2. 3.</span>
-              </button>
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onToggleList('arabic-alpha');
-                  setShowListMenu(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
-              >
-                <span>أبجدي عربي</span>
-                <span className="text-slate-500">أ- ب- ج-</span>
-              </button>
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onToggleList('arabic-abjad');
-                  setShowListMenu(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
-              >
-                <span>ترقيم أبجد هوز</span>
-                <span className="text-slate-500">أبجد- هوز-</span>
-              </button>
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onToggleList('bullet');
-                  setShowListMenu(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
-              >
-                <span>قائمة نقطية</span>
-                <span className="text-slate-500">• • •</span>
-              </button>
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onToggleList('dash');
-                  setShowListMenu(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded"
-              >
-                <span>قائمة بعلامة مطة</span>
-                <span className="text-slate-500">- - -</span>
-              </button>
-            </div>
-          )}
-        </div>
 
-        {/* Table Creator & Table Operations */}
-        <div className="relative">
+          <label
+            className={btnClass(false) + ' cursor-pointer'}
+            title="إدراج صورة أو ختم مضمن"
+            onMouseDown={onSaveSelectionBookmark}
+          >
+            <ImageIcon className="w-4 h-4" />
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  onInsertImageFile(file);
+                  e.target.value = '';
+                }
+              }}
+            />
+          </label>
+
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              onSaveSelectionBookmark();
-            }}
-            onClick={() => {
-              const next = !showTablePicker;
-              closeAllMenus();
-              setShowTablePicker(next);
-            }}
-            className={btnClass(toolbarState.inTable || showTablePicker)}
-            title="إدراج وإدارة الجداول"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleHeaderFooter}
+            className={btnClass(showHeaderFooter)}
+            title="إظهار/إخفاء الترويسة والتذييل"
           >
-            <TableIcon className="w-4 h-4 ml-1" />
-            <span>جدول</span>
+            <PanelTopBottomDashed className="w-4 h-4 ml-1" />
+            <span className="hidden 2xl:inline">ترويسة</span>
           </button>
-          {showTablePicker && (
-            <div className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-md shadow-lg p-3 z-40">
-              <div className="text-xs font-semibold text-slate-800 mb-2">
-                إدراج جدول توثيقي (بعرض صافي 12 سم)
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-2.5">
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">عدد الصفوف</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={tableRows}
-                    onChange={(e) => setTableRows(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full px-2 py-1 text-xs border border-slate-200 rounded tabular-nums"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">عدد الأعمدة</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={tableCols}
-                    onChange={(e) => setTableCols(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full px-2 py-1 text-xs border border-slate-200 rounded tabular-nums"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onMouseDown={preventFocusLoss}
-                onClick={() => {
-                  onInsertTable(tableRows, tableCols);
-                  setShowTablePicker(false);
-                }}
-                className="w-full py-1.5 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800 transition-colors"
-              >
-                إدراج الجدول عند المؤشر
-              </button>
-            </div>
-          )}
+
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onTogglePageNumbering}
+            className={btnClass(pageNumberingEnabled)}
+            title="تفعيل أو إيقاف ترقيم الصفحات في أسفل الورقة"
+          >
+            <span>رقم الصفحة</span>
+          </button>
         </div>
 
-        {/* Contextual Table Tools when Caret is inside a Table */}
-        {toolbarState.inTable && (
-          <div className="flex items-center gap-1 bg-blue-50/70 border border-blue-200 rounded px-1.5 py-0.5">
+        {/* Far-Left Group: Find & Replace + Zoom Controls (Fixed together, never stranded) */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleFindReplace}
+            className={btnClass(showFindReplace)}
+            title="بحث واستبدال داخل العقد (Ctrl+F)"
+          >
+            <Search className="w-3.5 h-3.5 ml-1" />
+            <span className="hidden sm:inline">بحث</span>
+          </button>
+
+          <div className="flex items-center gap-0.5 border border-slate-200 rounded px-1 py-0.5 bg-slate-50">
             <button
               type="button"
               onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('row-below')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
-              title="إضافة صف لأسفل"
+              onClick={() => onChangeZoom(Math.max(60, zoom - 10))}
+              className="p-1 text-slate-600 hover:text-slate-900"
+              title="تصغير العرض"
             >
-              <Rows className="w-3.5 h-3.5" />
-              <span>+صف</span>
+              <ZoomOut className="w-3.5 h-3.5" />
             </button>
+            <span className="text-[11px] font-mono tabular-nums text-slate-700 w-9 text-center">
+              {zoom}%
+            </span>
             <button
               type="button"
               onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('col-after')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
-              title="إضافة عمود"
+              onClick={() => onChangeZoom(Math.min(140, zoom + 10))}
+              className="p-1 text-slate-600 hover:text-slate-900"
+              title="تكبير العرض"
             >
-              <Columns className="w-3.5 h-3.5" />
-              <span>+عمود</span>
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('merge-cells')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
-              title="دمج الخلايا المحددة (أو الخلية مع المجاورة)"
-            >
-              <Merge className="w-3.5 h-3.5" />
-              <span>دمج</span>
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('split-cell')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded inline-flex items-center gap-1"
-              title="فك دمج الخلية الحالية"
-            >
-              <Split className="w-3.5 h-3.5" />
-              <span>فك</span>
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('toggle-border')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded"
-              title="إظهار/إخفاء حدود الخلية"
-            >
-              الحدود
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('shade-cell')}
-              className="px-1.5 py-1 text-[11px] text-blue-950 hover:bg-blue-100 rounded"
-              title="تظليل رمادي للخلية"
-            >
-              تظليل
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('delete-row')}
-              className="px-1.5 py-1 text-[11px] text-red-700 hover:bg-red-100 rounded inline-flex items-center gap-0.5"
-              title="حذف الصف الحالي"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>صف</span>
-            </button>
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => onTableAction('delete-col')}
-              className="px-1.5 py-1 text-[11px] text-red-700 hover:bg-red-100 rounded inline-flex items-center gap-0.5"
-              title="حذف العمود الحالي"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>عمود</span>
+              <ZoomIn className="w-3.5 h-3.5" />
             </button>
           </div>
-        )}
+        </div>
+      </div>
 
-        <div className="h-5 w-px bg-slate-200 mx-0.5" />
-
+      {/* =====================================================================
+          السطر الثاني: شريط الأوامر التوثيقية المخصص (الاستمارة · الوسوم · البنود · المشتقات · المقارنة)
+         ===================================================================== */}
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-1 bg-slate-50/80">
         {/* SMART VARIABLES FORM BUTTON WITH UNFILLED COUNTER BADGE */}
         <button
           type="button"
           onMouseDown={preventFocusLoss}
           onClick={onOpenSmartVariablesModal}
-          className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
+          className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
             unfilledCount > 0
               ? 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100'
               : 'bg-emerald-50 border-emerald-300 text-emerald-950 hover:bg-emerald-100'
           }`}
           title="فتح استمارة المتغيرات الموحدة لتعبئة بيانات العقد والوثائق المشتقة"
         >
-          <FormInput className="w-4 h-4 text-pink-800" />
+          <FormInput className="w-3.5 h-3.5 text-pink-800" />
           <span>استمارة المتغيرات</span>
           {unfilledCount > 0 ? (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded tabular-nums">
-              {unfilledCount} غير معبأة !
+            <span className="px-1.5 py-0.2 text-[10px] font-bold bg-red-600 text-white rounded tabular-nums">
+              {unfilledCount} غير معبأة
             </span>
           ) : totalVariablesCount > 0 ? (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-700 text-white rounded">
+            <span className="px-1.5 py-0.2 text-[10px] font-bold bg-emerald-700 text-white rounded">
               مكتمل ✓
             </span>
           ) : null}
         </button>
 
-        {/* 1-CLICK SELECTION TO SMART TAG CONVERTER (تحويل النص المحدد إلى وسم بضغطة واحدة دون فتح نافذة) */}
+        {/* 1-CLICK SELECTION TO SMART TAG CONVERTER */}
         <button
           type="button"
           onMouseDown={(e) => {
@@ -704,14 +828,14 @@ export default function EditorRibbon({
             onSaveSelectionBookmark();
           }}
           onClick={onConvertSelectionToSmartTag}
-          className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-bold bg-pink-800 text-white hover:bg-pink-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
+          className="inline-flex items-center gap-1 h-7 px-2.5 rounded text-xs font-bold bg-pink-800 text-white hover:bg-pink-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
           title="حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم ذكي {{...}} دون فتح أي نافذة (Alt+V)"
         >
-          <span className="font-mono text-[11px] bg-pink-950/40 px-1 rounded">[ ]</span>
+          <span className="font-mono text-[10px] bg-pink-950/40 px-1 rounded">[ ]</span>
           <span>تحويل المحدد لوسم</span>
         </button>
 
-        {/* QUICK SMART TAG INSERTER DROPDOWN ({{ }} إدراج وسم / تحويل المحدد) */}
+        {/* QUICK SMART TAG INSERTER DROPDOWN */}
         <div className="relative">
           <button
             type="button"
@@ -730,8 +854,8 @@ export default function EditorRibbon({
               closeAllMenus();
               setShowTagInserterMenu(next);
             }}
-            className="inline-flex items-center gap-1 h-8 px-2 rounded text-xs font-semibold bg-pink-50 border border-pink-200 text-pink-900 hover:bg-pink-100 transition-colors whitespace-nowrap shrink-0"
-            title="إذا حددت نصاً يحوله فوراً إلى وسم {{...}}، وإذا لم تحدد نصاً يفتح قائمة الوسوم الجاهزة"
+            className="inline-flex items-center gap-1 h-7 px-2 rounded text-xs font-semibold bg-white border border-pink-200 text-pink-900 hover:bg-pink-50 transition-colors whitespace-nowrap shrink-0"
+            title="إدراج وسم متغير جاهز أو إنشاء وسم جديد عند موضع المؤشر"
           >
             <span className="font-mono font-bold text-[11px]">{`{{ }}`}</span>
             <span>إدراج وسم</span>
@@ -750,7 +874,9 @@ export default function EditorRibbon({
                 className="w-full py-1.5 px-2.5 bg-pink-800 hover:bg-pink-900 text-white text-xs font-bold rounded flex items-center justify-between"
               >
                 <span>تحويل الكلمة المحددة/الحالية إلى وسم</span>
-                <span className="font-mono text-[10px] bg-pink-950/40 px-1.5 py-0.5 rounded">[ ]</span>
+                <span className="font-mono text-[10px] bg-pink-950/40 px-1.5 py-0.5 rounded">
+                  [ ]
+                </span>
               </button>
               <div className="text-[11px] font-bold text-slate-900 pt-1 border-t border-slate-100">
                 أو أدرج وسماً جاهزاً عند موضع المؤشر:
@@ -800,10 +926,7 @@ export default function EditorRibbon({
                     if (!tagFilterQuery.trim()) return true;
                     const q = tagFilterQuery.trim();
                     const meta = partyFields.find((f) => f.key === k);
-                    return (
-                      k.includes(q) ||
-                      (meta?.label && meta.label.includes(q))
-                    );
+                    return k.includes(q) || (meta?.label && meta.label.includes(q));
                   })
                   .map((key) => {
                     const meta = partyFields.find((f) => f.key === key);
@@ -842,7 +965,7 @@ export default function EditorRibbon({
           )}
         </div>
 
-        {/* # NEW CLAUSE HEADING & CONTAINER AT CARET (زر # بند جديد) */}
+        {/* # NEW CLAUSE HEADING & CONTAINER AT CARET */}
         <button
           type="button"
           onMouseDown={(e) => {
@@ -850,14 +973,14 @@ export default function EditorRibbon({
             onSaveSelectionBookmark();
           }}
           onClick={onInsertNewClauseHeadingAtCaret}
-          className="inline-flex items-center gap-1 h-8 px-2.5 rounded text-xs font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0"
-          title="تحويل السطر/التحديد الحالي إلى عنوان بند جديد أو إدراج حاوية بند جديدة مربوطة بالقائمة الجانبية"
+          className="inline-flex items-center gap-1 h-7 px-2.5 rounded text-xs font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0"
+          title="تحويل السطر/التحديد الحالي إلى عنوان بند جديد أو إدراج حاوية بند جديدة"
         >
           <span className="font-mono font-bold text-amber-300">#</span>
           <span>بند جديد</span>
         </button>
 
-        {/* DERIVED DOCUMENTS GENERATOR DROPDOWN */}
+        {/* DERIVED DOCUMENTS GENERATOR & TEMPLATE MANAGER DROPDOWN */}
         <div className="relative">
           <button
             type="button"
@@ -867,49 +990,125 @@ export default function EditorRibbon({
               closeAllMenus();
               setShowDerivedMenu(next);
             }}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded text-xs font-semibold bg-blue-900 text-white hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0"
-            title="توليد الوثائق المشتقة من بيانات استمارة المتغيرات والأطراف والتعيينات"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-xs font-semibold bg-blue-900 text-white hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0"
+            title="توليد وإدارة الوثائق المشتقة (المستخرج، الشهر العقاري، شهادة البيع، الصيغة التنفيذية...)"
           >
             <FileOutput className="w-3.5 h-3.5" />
-            <span>توليد وثائق مشتقة ({derivedTemplates.length})</span>
+            <span>الوثائق المشتقة ({derivedTemplates.length})</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
 
           {showDerivedMenu && (
-            <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-md shadow-xl p-2 z-50 space-y-1">
-              <div className="px-2 py-1 text-[11px] font-bold text-slate-800 border-b border-slate-100">
-                توليد فوري من بيانات العقد الحالي (.docx):
+            <div className="absolute right-0 mt-1 w-96 max-w-[92vw] bg-white border border-slate-200 rounded-md shadow-xl p-2.5 z-50 space-y-2">
+              <div className="px-1.5 py-1 text-[11px] font-bold text-slate-800 border-b border-slate-100 flex items-center justify-between">
+                <span>توليد فوري (.docx) أو تعديل قوالب المشتقات:</span>
+                <span className="text-[10px] font-normal text-slate-500">
+                  تعتمد على استمارة المتغيرات
+                </span>
               </div>
-              {derivedTemplates.map((dt) => (
-                <div
-                  key={dt.id}
-                  className="flex items-center justify-between gap-1 px-2 py-1.5 hover:bg-slate-100 rounded group"
-                >
+
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                {derivedTemplates.map((dt) => {
+                  const isEditing = activeEditingDerivedId === dt.id;
+                  return (
+                    <div
+                      key={dt.id}
+                      className={`flex items-center justify-between gap-1.5 px-2 py-1.5 rounded transition-colors ${
+                        isEditing ? 'bg-amber-50' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onGenerateDerivedDoc(dt);
+                          setShowDerivedMenu(false);
+                        }}
+                        className="flex-1 text-right text-xs font-semibold text-slate-800 hover:text-blue-900 flex items-center gap-1.5 min-w-0"
+                        title={`توليد وتصدير "${dt.name}" بصيغة Word (.docx)`}
+                      >
+                        <Download className="w-3.5 h-3.5 text-blue-800 shrink-0" />
+                        <span className="truncate">{dt.name}</span>
+                      </button>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onEditDerivedTemplateInEditor(dt);
+                            setShowDerivedMenu(false);
+                          }}
+                          className="px-1.5 py-0.5 text-[10px] text-slate-600 hover:text-blue-900 bg-slate-100 hover:bg-blue-50 rounded inline-flex items-center gap-0.5"
+                          title="فتح وتعديل قالب هذه الوثيقة المشتقة داخل محرر A4"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>تعديل</span>
+                        </button>
+
+                        {onImportDocxForDerivedTemplate && (
+                          <label
+                            className="px-1.5 py-0.5 text-[10px] text-slate-600 hover:text-blue-900 bg-slate-100 hover:bg-blue-50 rounded cursor-pointer inline-flex items-center gap-0.5"
+                            title="استبدال هذا القالب المشتق بملف Word (.docx) من جهازك"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>.docx</span>
+                            <input
+                              type="file"
+                              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  onImportDocxForDerivedTemplate(dt, file);
+                                  e.target.value = '';
+                                  setShowDerivedMenu(false);
+                                }
+                              }}
+                            />
+                          </label>
+                        )}
+
+                        {onDeleteDerivedTemplate && !dt.id.startsWith('derived_') && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteDerivedTemplate(dt.id)}
+                            className="p-1 text-slate-400 hover:text-red-600"
+                            title="حذف القالب المشتق المخصص"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {onSaveCurrentAsDerivedTemplate && (
+                <div className="pt-2 border-t border-slate-200 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newDerivedName}
+                    onChange={(e) => setNewDerivedName(e.target.value)}
+                    placeholder="اسم مشتق جديد لحفظ المحرر الحالي..."
+                    className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
+                  />
                   <button
                     type="button"
-                    onClick={() => {
-                      onGenerateDerivedDoc(dt);
-                      setShowDerivedMenu(false);
+                    onClick={async () => {
+                      if (!newDerivedName.trim()) return;
+                      await onSaveCurrentAsDerivedTemplate(
+                        newDerivedName.trim(),
+                        `custom_${Date.now()}`,
+                        'قالب وثيقة مشتقة مخصص للمكتب'
+                      );
+                      setNewDerivedName('');
                     }}
-                    className="flex-1 text-right text-xs font-medium text-slate-800 hover:text-blue-900 flex items-center gap-1.5"
+                    className="px-2.5 py-1 bg-slate-900 text-white text-[11px] font-medium rounded hover:bg-slate-800 shrink-0"
                   >
-                    <Download className="w-3.5 h-3.5 text-blue-800 shrink-0" />
-                    <span className="truncate">{dt.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onEditDerivedTemplateInEditor(dt);
-                      setShowDerivedMenu(false);
-                    }}
-                    className="px-1.5 py-0.5 text-[10px] text-slate-500 hover:text-blue-900 hover:bg-blue-50 rounded inline-flex items-center gap-0.5 shrink-0"
-                    title="فتح وتعديل قالب هذه الوثيقة المشتقة داخل محرر A4"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>تعديل القالب</span>
+                    + حفظ كمشتق
                   </button>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -919,100 +1118,12 @@ export default function EditorRibbon({
           type="button"
           onMouseDown={preventFocusLoss}
           onClick={onOpenVersionDiffModal}
-          className={btnClass(false)}
+          className="inline-flex items-center gap-1 h-7 px-2 rounded text-xs font-medium text-slate-700 hover:bg-slate-200/80 transition-colors whitespace-nowrap shrink-0"
           title="مقارنة النسخ والتعديلات (Diff)"
         >
-          <GitCompare className="w-4 h-4 ml-1 text-blue-900" />
-          <span className="hidden md:inline">مقارنة النسخ</span>
+          <GitCompare className="w-3.5 h-3.5 text-blue-900" />
+          <span>مقارنة النسخ</span>
         </button>
-
-        {/* Page Break, Image, Header/Footer, Page Numbering */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onInsertPageBreak}
-          className={btnClass(false)}
-          title="إدراج فاصل صفحات"
-        >
-          <SeparatorHorizontal className="w-4 h-4 ml-1" />
-          <span className="hidden xl:inline">فاصل</span>
-        </button>
-
-        <label
-          className={btnClass(false) + ' cursor-pointer'}
-          title="إدراج صورة أو ختم مضمن"
-          onMouseDown={onSaveSelectionBookmark}
-        >
-          <ImageIcon className="w-4 h-4" />
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                onInsertImageFile(file);
-                e.target.value = '';
-              }
-            }}
-          />
-        </label>
-
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onToggleHeaderFooter}
-          className={btnClass(showHeaderFooter)}
-          title="إظهار/إخفاء الترويسة والتذييل"
-        >
-          <PanelTopBottomDashed className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onTogglePageNumbering}
-          className={btnClass(pageNumberingEnabled)}
-          title="تفعيل الترقيم التلقائي للصفحات في التذييل"
-        >
-          <span className="tabular-nums"># ترقيم</span>
-        </button>
-
-        {/* Find & Replace */}
-        <button
-          type="button"
-          onMouseDown={preventFocusLoss}
-          onClick={onToggleFindReplace}
-          className={btnClass(showFindReplace)}
-          title="بحث واستبدال داخل العقد (Ctrl+F)"
-        >
-          <Search className="w-4 h-4" />
-        </button>
-
-        {/* Zoom Controls */}
-        <div className="mr-auto flex items-center gap-1 border border-slate-200 rounded px-1.5 py-0.5 bg-slate-50">
-          <button
-            type="button"
-            onMouseDown={preventFocusLoss}
-            onClick={() => onChangeZoom(Math.max(60, zoom - 10))}
-            className="p-1 text-slate-600 hover:text-slate-900"
-            title="تصغير العرض"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-xs font-mono tabular-nums text-slate-700 w-10 text-center">
-            {zoom}%
-          </span>
-          <button
-            type="button"
-            onMouseDown={preventFocusLoss}
-            onClick={() => onChangeZoom(Math.min(140, zoom + 10))}
-            className="p-1 text-slate-600 hover:text-slate-900"
-            title="تكبير العرض"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
     </div>
   );
