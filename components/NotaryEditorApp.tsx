@@ -167,8 +167,21 @@ export default function NotaryEditorApp() {
 
   // Sidebar & Persistent Data State (Default tab = 'clauses' per v2.4 usage priority)
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('clauses');
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+
+  const handleTopBarTabClick = useCallback(
+    (tab: SidebarTab) => {
+      if (!isSidebarOpen) {
+        setSidebarTab(tab);
+        setIsSidebarOpen(true);
+      } else if (sidebarTab === tab) {
+        setIsSidebarOpen(false);
+      } else {
+        setSidebarTab(tab);
+      }
+    },
+    [isSidebarOpen, sidebarTab]
+  );
   const [clauses, setClauses] = useState<NotaryClause[]>([]);
   const [activeClauseIdsInDoc, setActiveClauseIdsInDoc] = useState<string[]>([]);
   const [partyFields, setPartyFields] = useState<PartyField[]>([]);
@@ -2020,11 +2033,11 @@ export default function NotaryEditorApp() {
   }).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100 text-slate-900">
+    <div className="h-screen print:h-auto overflow-hidden print:overflow-visible flex flex-col bg-slate-100 text-slate-900">
       {/* UNIFIED COMMAND BAR: ZONE 1 (TITLE/BRAND) | ZONE 2 (NAV TABS) | ZONE 3 (ACTIONS) */}
-      <header className="flex items-center justify-between gap-3 px-4 py-2 bg-white border-b border-slate-200 no-print select-none">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-slate-200 shrink-0 no-print select-none">
         {/* Zone 1: Brand & Editable Contract Title Input with Auto-Save Badge */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
               م
@@ -2043,7 +2056,7 @@ export default function NotaryEditorApp() {
               value={docTitle}
               onChange={(e) => setDocTitle(e.target.value)}
               title="انقر لتعديل عنوان العقد مباشرة"
-              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-32 sm:w-44 md:w-56 truncate"
+              className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none w-28 sm:w-40 md:w-52 truncate"
               placeholder="عنوان العقد..."
             />
             <span className="text-[10px] shrink-0">
@@ -2057,15 +2070,13 @@ export default function NotaryEditorApp() {
         </div>
 
         {/* Zone 2: Segmented Navigation for the Sidebar (Clauses · Parties · Templates · Documents) */}
-        <nav className="hidden lg:flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <nav className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto max-w-full">
           <button
             type="button"
-            onClick={() => {
-              setSidebarTab('clauses');
-              setDesktopSidebarOpen(true);
-            }}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'clauses' && desktopSidebarOpen
+            onClick={() => handleTopBarTabClick('clauses')}
+            title="فتح تبويب البنود الجاهزة أو طي اللوحة الجانبية"
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              sidebarTab === 'clauses' && isSidebarOpen
                 ? 'bg-white text-blue-900 shadow-2xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
@@ -2076,12 +2087,10 @@ export default function NotaryEditorApp() {
 
           <button
             type="button"
-            onClick={() => {
-              setSidebarTab('parties');
-              setDesktopSidebarOpen(true);
-            }}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 relative ${
-              sidebarTab === 'parties' && desktopSidebarOpen
+            onClick={() => handleTopBarTabClick('parties')}
+            title="فتح استمارة الأطراف والتعيينات أو طي اللوحة الجانبية"
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 relative ${
+              sidebarTab === 'parties' && isSidebarOpen
                 ? 'bg-white text-blue-900 shadow-2xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
@@ -2095,12 +2104,10 @@ export default function NotaryEditorApp() {
 
           <button
             type="button"
-            onClick={() => {
-              setSidebarTab('templates');
-              setDesktopSidebarOpen(true);
-            }}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'templates' && desktopSidebarOpen
+            onClick={() => handleTopBarTabClick('templates')}
+            title="فتح القوالب والوثائق المشتقة أو طي اللوحة الجانبية"
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              sidebarTab === 'templates' && isSidebarOpen
                 ? 'bg-white text-blue-900 shadow-2xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
@@ -2111,12 +2118,10 @@ export default function NotaryEditorApp() {
 
           <button
             type="button"
-            onClick={() => {
-              setSidebarTab('documents');
-              setDesktopSidebarOpen(true);
-            }}
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              sidebarTab === 'documents' && desktopSidebarOpen
+            onClick={() => handleTopBarTabClick('documents')}
+            title="فتح المستندات والأرشيف أو طي اللوحة الجانبية"
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              sidebarTab === 'documents' && isSidebarOpen
                 ? 'bg-white text-blue-900 shadow-2xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
@@ -2169,7 +2174,7 @@ export default function NotaryEditorApp() {
                 setMergedPreviewHtml(mergePlaceholdersIntoHtml(currentHtml, activeVals));
                 setPreviewMergedMode(true);
                 setSidebarTab('parties');
-                setDesktopSidebarOpen(true);
+                setIsSidebarOpen(true);
                 showToast(
                   'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
                 );
@@ -2205,7 +2210,7 @@ export default function NotaryEditorApp() {
           <button
             type="button"
             onClick={handleExportCurrentToWord}
-            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
             title="تصدير العقد التوثيقي كاملاً إلى ملف Word (.docx)"
           >
             <Download className="w-4 h-4" />
@@ -2232,28 +2237,31 @@ export default function NotaryEditorApp() {
             <Printer className="w-4 h-4" />
           </button>
 
-          {/* Toggle Sidebar (Desktop & Mobile) */}
+          {/* Toggle Sidebar (Unified State across viewports) */}
           <button
             type="button"
-            onClick={() => {
-              setDesktopSidebarOpen((v) => !v);
-              setMobileSidebarOpen((v) => !v);
-            }}
-            className={`p-1.5 border rounded-lg transition-colors shrink-0 ${
-              desktopSidebarOpen
-                ? 'bg-blue-50 border-blue-200 text-blue-900'
-                : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'
+            onClick={() => setIsSidebarOpen((v) => !v)}
+            className={`px-2.5 py-1.5 border rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors shrink-0 ${
+              isSidebarOpen
+                ? 'bg-blue-50 border-blue-200 text-blue-900 font-semibold'
+                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
             }`}
             title={
-              desktopSidebarOpen
-                ? 'طي اللوحة الجانبية لتركيز أكبر على ورقة العقد A4'
-                : 'توسيع اللوحة الجانبية'
+              isSidebarOpen
+                ? 'طي الشريط الجانبي لتوسيع مساحة ورقة العقد A4'
+                : 'فتح وتوسيع الشريط الجانبي'
             }
           >
-            {desktopSidebarOpen ? (
-              <PanelRightClose className="w-4 h-4" />
+            {isSidebarOpen ? (
+              <>
+                <PanelRightClose className="w-4 h-4" />
+                <span className="hidden sm:inline">طي الجانبية</span>
+              </>
             ) : (
-              <PanelRightOpen className="w-4 h-4" />
+              <>
+                <PanelRightOpen className="w-4 h-4" />
+                <span className="hidden sm:inline">فتح الجانبية</span>
+              </>
             )}
           </button>
         </div>
@@ -2453,18 +2461,18 @@ export default function NotaryEditorApp() {
       {/* MAIN WORKSPACE: RIGHT SIDEBAR + CENTER A4 CANVAS WITH HORIZONTAL & VERTICAL RULERS */}
       <div
         id="workspace"
-        className="flex-1 flex flex-col lg:flex-row overflow-hidden relative"
+        className="flex-1 flex flex-row min-h-0 overflow-hidden print:overflow-visible relative"
       >
-        {/* DESKTOP & MOBILE SIDEBAR (EXPANDED VS SLIM ICON RAIL) */}
-        {desktopSidebarOpen ? (
-          <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} lg:block h-full shrink-0 transition-all duration-200`}>
+        {/* RIGHT SIDEBAR (EXPANDED WORKSPACE VS 48PX SLIM ICON RAIL) */}
+        {isSidebarOpen ? (
+          <div className="block h-full min-h-0 shrink-0 transition-all duration-150">
             <SidebarWorkspace
-              onToggleCollapse={() => {
-                setDesktopSidebarOpen(false);
-                setMobileSidebarOpen(false);
+              onToggleCollapse={() => setIsSidebarOpen(false)}
+              activeTab={sidebarTab}
+              onSelectTab={(tab) => {
+                setSidebarTab(tab);
+                setIsSidebarOpen(true);
               }}
-            activeTab={sidebarTab}
-            onSelectTab={setSidebarTab}
             clauses={clauses}
             activeClauseIdsInDoc={activeClauseIdsInDoc}
             onToggleClauseInDoc={handleToggleClauseInDoc}
@@ -2766,13 +2774,13 @@ export default function NotaryEditorApp() {
           />
         </div>
       ) : (
-        /* SLIM DESKTOP ICON RAIL (عند طي اللوحة على شاشات سطح المكتب) */
-        <aside className="hidden lg:flex w-12 bg-white border-l border-slate-200 flex-col items-center py-3 gap-2 h-full shrink-0 select-none no-print transition-all duration-200 shadow-2xs">
+        /* SLIM ICON RAIL (عند طي اللوحة الجانبية: يتيح التوسيع السريع أو فتح أي تبويب بضغطة واحدة) */
+        <aside className="flex w-12 bg-white border-l border-slate-200 flex-col items-center py-3 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
           {/* Quick Expand button */}
           <button
             type="button"
-            onClick={() => setDesktopSidebarOpen(true)}
-            className="p-2 text-slate-500 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-colors mb-1"
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 text-slate-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg transition-colors mb-1"
             title="توسيع اللوحة الجانبية"
           >
             <PanelRightOpen className="w-4 h-4" />
@@ -2785,7 +2793,7 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => {
               setSidebarTab('clauses');
-              setDesktopSidebarOpen(true);
+              setIsSidebarOpen(true);
             }}
             className={`p-2 rounded-lg transition-colors relative ${
               sidebarTab === 'clauses'
@@ -2802,7 +2810,7 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => {
               setSidebarTab('parties');
-              setDesktopSidebarOpen(true);
+              setIsSidebarOpen(true);
             }}
             className={`p-2 rounded-lg transition-colors relative ${
               sidebarTab === 'parties'
@@ -2822,7 +2830,7 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => {
               setSidebarTab('templates');
-              setDesktopSidebarOpen(true);
+              setIsSidebarOpen(true);
             }}
             className={`p-2 rounded-lg transition-colors relative ${
               sidebarTab === 'templates'
@@ -2839,7 +2847,7 @@ export default function NotaryEditorApp() {
             type="button"
             onClick={() => {
               setSidebarTab('documents');
-              setDesktopSidebarOpen(true);
+              setIsSidebarOpen(true);
             }}
             className={`p-2 rounded-lg transition-colors relative ${
               sidebarTab === 'documents'
@@ -2854,7 +2862,7 @@ export default function NotaryEditorApp() {
       )}
 
         {/* CENTER A4 CANVAS AREA WITH HORIZONTAL & VERTICAL RULERS */}
-        <main className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center bg-slate-200/80">
+        <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-slate-200/80">
           {/* Top Horizontal A4 Margin Ruler Indicator (21cm total: 7cm Right | 12cm Content | 2cm Left) */}
           <div
             className="mb-2 bg-white border border-slate-300 rounded-t shadow-2xs text-[10px] font-mono text-slate-500 flex items-center select-none overflow-hidden no-print"
