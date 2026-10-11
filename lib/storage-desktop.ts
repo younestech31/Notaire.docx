@@ -8,6 +8,8 @@ import {
   NotaryClerk,
   NotaryClause,
   PartyField,
+  PublicationTrack,
+  RegistrationBatch,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
@@ -354,6 +356,33 @@ export async function deleteContractFolder(id: string): Promise<void> {
   await desktopDelete('folders', id);
 }
 
+// 7d. Registration Batches & Land Publication Tracks
+export async function loadRegistrationBatches(): Promise<RegistrationBatch[]> {
+  const items = await desktopLoad<RegistrationBatch>('registration_batches');
+  return items.sort((a, b) => b.statusDate.localeCompare(a.statusDate));
+}
+
+export async function saveRegistrationBatch(batch: RegistrationBatch): Promise<void> {
+  await desktopSave('registration_batches', batch);
+}
+
+export async function deleteRegistrationBatch(id: string): Promise<void> {
+  await desktopDelete('registration_batches', id);
+}
+
+export async function loadPublicationTracks(): Promise<PublicationTrack[]> {
+  const items = await desktopLoad<PublicationTrack>('publication_tracks');
+  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function savePublicationTrack(track: PublicationTrack): Promise<void> {
+  await desktopSave('publication_tracks', track);
+}
+
+export async function deletePublicationTrack(id: string): Promise<void> {
+  await desktopDelete('publication_tracks', id);
+}
+
 // 8. Party Fields (Async from Disk / SQLite)
 export async function loadPartyFields(): Promise<PartyField[]> {
   const bridge = requireBridge();
@@ -434,6 +463,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     savedProperties,
     clerks,
     folders,
+    registrationBatches,
+    publicationTracks,
     sealedOriginals,
     defaultFields,
   ] = await Promise.all([
@@ -448,12 +479,14 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadSavedProperties(),
     loadNotaryClerks(),
     loadContractFolders(),
+    loadRegistrationBatches(),
+    loadPublicationTracks(),
     desktopLoad<SerializedSealedOriginal>('sealed_originals'),
     loadPartyFields(),
   ]);
 
   return {
-    version: '2.6.0',
+    version: '2.7.0',
     exportedAt: new Date().toISOString(),
     clerks,
     folders,
@@ -466,6 +499,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     downloads,
     savedParties,
     savedProperties,
+    registrationBatches,
+    publicationTracks,
     defaultFields,
     ...(sealedOriginals.length > 0 ? { sealedOriginals } : {}),
   };
@@ -550,6 +585,16 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
       if (prop && prop.id && prop.label) await savePropertyRecord(prop);
     }
   }
+  if (Array.isArray(bundle.registrationBatches)) {
+    for (const batch of bundle.registrationBatches) {
+      if (batch && batch.id) await saveRegistrationBatch(batch);
+    }
+  }
+  if (Array.isArray(bundle.publicationTracks)) {
+    for (const track of bundle.publicationTracks) {
+      if (track && track.id && track.documentId) await savePublicationTrack(track);
+    }
+  }
   if (Array.isArray(bundle.sealedOriginals)) {
     for (const so of bundle.sealedOriginals) {
       if (so && so.documentId && so.base64Data) {
@@ -615,6 +660,12 @@ export const desktopOfficeStore: OfficeStore = {
   loadContractFolders,
   saveContractFolder,
   deleteContractFolder,
+  loadRegistrationBatches,
+  saveRegistrationBatch,
+  deleteRegistrationBatch,
+  loadPublicationTracks,
+  savePublicationTrack,
+  deletePublicationTrack,
   loadPartyFields,
   savePartyFields,
   loadActiveDraftSession,

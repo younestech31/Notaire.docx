@@ -29,6 +29,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  ShieldCheck,
   Sparkles,
   Square,
   Trash2,
@@ -62,8 +63,9 @@ import {
 } from '@/lib/types';
 import FolderTreeExplorer from './FolderTreeExplorer';
 import ClausesPanel from './ClausesPanel';
+import NotaryHubPanel from './NotaryHubPanel';
 
-export type SidebarTab = 'clauses' | 'parties' | 'templates' | 'documents';
+export type SidebarTab = 'clauses' | 'parties' | 'templates' | 'documents' | 'notary_hub';
 
 interface SidebarWorkspaceProps {
   activeTab: SidebarTab;
@@ -177,6 +179,7 @@ interface SidebarWorkspaceProps {
   onUpdateDocumentMeta: (updated: SavedDocument) => void;
   onOpenDerivedModal: (templateId?: string) => void;
   onSelectDerivedDoc: (derivedDoc: SavedContractDerivedDoc) => void;
+  showToast: (msg: string) => void;
 }
 
 export default function SidebarWorkspace({
@@ -286,6 +289,7 @@ export default function SidebarWorkspace({
   onUpdateDocumentMeta,
   onOpenDerivedModal,
   onSelectDerivedDoc,
+  showToast,
 }: SidebarWorkspaceProps) {
   // Clause creation & live contract outline state
   const [newClauseTitle, setNewClauseTitle] = useState('');
@@ -398,6 +402,7 @@ export default function SidebarWorkspace({
             {activeTab === 'parties' && 'استمارة الأطراف والتعيينات'}
             {activeTab === 'templates' && 'قوالب عقود المكتب'}
             {activeTab === 'documents' && 'المستندات والأرشيف المحلي'}
+            {activeTab === 'notary_hub' && 'الفهارس ومنظومة الموثق'}
           </h3>
         </div>
         {onToggleCollapse && (
@@ -414,7 +419,7 @@ export default function SidebarWorkspace({
       </div>
 
       {/* Sidebar Segmented Navigation — Single Source of Section Navigation */}
-      <div className="grid grid-cols-4 gap-1 p-2 bg-slate-50 border-b border-slate-200 shrink-0">
+      <div className="grid grid-cols-5 gap-1 p-2 bg-slate-50 border-b border-slate-200 shrink-0">
         {/* 1. البنود */}
         <button
           type="button"
@@ -423,8 +428,8 @@ export default function SidebarWorkspace({
               ? onToggleCollapse()
               : onSelectTab('clauses')
           }
-          title="البنود الجاهزة (انقر مجدداً لطي الشريط)"
-          className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
+          title="البنود الجاهزة"
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'clauses'
               ? 'bg-blue-900 text-white shadow-2xs'
               : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
@@ -434,7 +439,7 @@ export default function SidebarWorkspace({
           <span>البنود</span>
         </button>
 
-        {/* 2. الأطراف والتعيينات */}
+        {/* 2. الأطراف */}
         <button
           type="button"
           onClick={() =>
@@ -442,8 +447,8 @@ export default function SidebarWorkspace({
               ? onToggleCollapse()
               : onSelectTab('parties')
           }
-          title="الأطراف والتعيينات (انقر مجدداً لطي الشريط)"
-          className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap relative ${
+          title="الأطراف والتعيينات"
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap relative ${
             activeTab === 'parties'
               ? 'bg-blue-900 text-white shadow-2xs'
               : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
@@ -456,7 +461,7 @@ export default function SidebarWorkspace({
           )}
         </button>
 
-        {/* 3. قوالب العقود (مفصولة عن الوثائق المشتقة) */}
+        {/* 3. القوالب */}
         <button
           type="button"
           onClick={() =>
@@ -464,8 +469,8 @@ export default function SidebarWorkspace({
               ? onToggleCollapse()
               : onSelectTab('templates')
           }
-          title="قوالب عقود المكتب (انقر مجدداً لطي الشريط)"
-          className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
+          title="قوالب عقود المكتب"
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'templates'
               ? 'bg-blue-900 text-white shadow-2xs'
               : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
@@ -475,7 +480,7 @@ export default function SidebarWorkspace({
           <span>القوالب</span>
         </button>
 
-        {/* 4. الأرشيف والمستندات */}
+        {/* 4. الأرشيف */}
         <button
           type="button"
           onClick={() =>
@@ -483,8 +488,8 @@ export default function SidebarWorkspace({
               ? onToggleCollapse()
               : onSelectTab('documents')
           }
-          title="المستندات والأرشيف (انقر مجدداً لطي الشريط)"
-          className={`flex flex-col items-center justify-center py-1.5 px-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
+          title="المستندات والأرشيف المحلي"
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
             activeTab === 'documents'
               ? 'bg-blue-900 text-white shadow-2xs'
               : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
@@ -492,6 +497,25 @@ export default function SidebarWorkspace({
         >
           <FolderArchive className="w-3.5 h-3.5 mb-0.5" />
           <span>الأرشيف</span>
+        </button>
+
+        {/* 5. الفهارس ومنظومة الموثق */}
+        <button
+          type="button"
+          onClick={() =>
+            activeTab === 'notary_hub' && onToggleCollapse
+              ? onToggleCollapse()
+              : onSelectTab('notary_hub')
+          }
+          title="الفهارس، المفتشية والشهر العقاري"
+          className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
+            activeTab === 'notary_hub'
+              ? 'bg-blue-900 text-white shadow-2xs'
+              : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 mb-0.5" />
+          <span>الفهارس</span>
         </button>
       </div>
 
@@ -1863,6 +1887,15 @@ export default function SidebarWorkspace({
             onOpenDerivedModal={onOpenDerivedModal}
             onSelectDerivedDoc={onSelectDerivedDoc}
             activeDerivedDocId={activeDerivedDocId}
+          />
+        )}
+
+        {activeTab === 'notary_hub' && (
+          <NotaryHubPanel
+            documents={documents}
+            activeDocument={activeDocument}
+            onOpenDocument={onOpenDocument}
+            showToast={showToast}
           />
         )}
       </div>

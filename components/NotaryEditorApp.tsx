@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  ShieldCheck,
   Sparkles,
   UserCheck,
   X,
@@ -3506,6 +3507,7 @@ export default function NotaryEditorApp() {
               }
             }}
             onSaveSelectionBookmark={saveSelectionBookmark}
+            showToast={showToast}
           />
         </div>
       ) : (
@@ -3568,6 +3570,20 @@ export default function NotaryEditorApp() {
           >
             <FolderArchive className="w-4 h-4" />
             <span className="text-[10px] font-medium">الأرشيف</span>
+          </button>
+
+          {/* 5. Notary Hub & Indexes Section */}
+          <button
+            type="button"
+            onClick={() => {
+              setSidebarTab('notary_hub');
+              setIsSidebarOpen(true);
+            }}
+            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
+            title="الفهارس، المفتشية والشهر العقاري"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span className="text-[10px] font-medium">الفهارس</span>
           </button>
         </aside>
       )}

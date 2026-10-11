@@ -8,6 +8,8 @@ import {
   NotaryClerk,
   NotaryClause,
   PartyField,
+  PublicationTrack,
+  RegistrationBatch,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
@@ -33,7 +35,7 @@ import {
 } from './office-store';
 
 const DB_NAME = 'NotarySmartEditorDB';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 const STORE_TEMPLATES = 'templates';
 const STORE_DOCUMENTS = 'documents';
 const STORE_ESTATES = 'estates';
@@ -47,6 +49,8 @@ const STORE_CLERKS = 'clerks';
 const STORE_FOLDERS = 'folders';
 const STORE_WORD_TEMPLATES = 'word_templates';
 const STORE_SEALED_ORIGINALS = 'sealed_originals';
+const STORE_REGISTRATION_BATCHES = 'registration_batches';
+const STORE_PUBLICATION_TRACKS = 'publication_tracks';
 
 const LS_FIELDS_KEY = 'notary_default_party_fields_v2';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
@@ -78,6 +82,8 @@ function openDatabase(): Promise<IDBDatabase | null> {
           STORE_CLERKS,
           STORE_FOLDERS,
           STORE_WORD_TEMPLATES,
+          STORE_REGISTRATION_BATCHES,
+          STORE_PUBLICATION_TRACKS,
         ];
         for (const s of storesWithIdKey) {
           if (!db.objectStoreNames.contains(s)) {
@@ -613,6 +619,39 @@ export async function deleteContractFolder(id: string): Promise<void> {
   await deleteFromStore(STORE_FOLDERS, 'notary_folders_v1', id);
 }
 
+// 7d. Registration Batches & Land Publication Tracks
+export async function loadRegistrationBatches(): Promise<RegistrationBatch[]> {
+  const items = await getAllFromStore<RegistrationBatch>(
+    STORE_REGISTRATION_BATCHES,
+    'notary_registration_batches_v1'
+  );
+  return items.sort((a, b) => b.statusDate.localeCompare(a.statusDate));
+}
+
+export async function saveRegistrationBatch(batch: RegistrationBatch): Promise<void> {
+  await putInStore(STORE_REGISTRATION_BATCHES, 'notary_registration_batches_v1', batch);
+}
+
+export async function deleteRegistrationBatch(id: string): Promise<void> {
+  await deleteFromStore(STORE_REGISTRATION_BATCHES, 'notary_registration_batches_v1', id);
+}
+
+export async function loadPublicationTracks(): Promise<PublicationTrack[]> {
+  const items = await getAllFromStore<PublicationTrack>(
+    STORE_PUBLICATION_TRACKS,
+    'notary_publication_tracks_v1'
+  );
+  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function savePublicationTrack(track: PublicationTrack): Promise<void> {
+  await putInStore(STORE_PUBLICATION_TRACKS, 'notary_publication_tracks_v1', track);
+}
+
+export async function deletePublicationTrack(id: string): Promise<void> {
+  await deleteFromStore(STORE_PUBLICATION_TRACKS, 'notary_publication_tracks_v1', id);
+}
+
 // 8. Default / Custom Party Fields
 export async function loadPartyFields(): Promise<PartyField[]> {
   if (typeof window === 'undefined') return DEFAULT_PARTY_FIELDS;
@@ -674,6 +713,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     savedProperties,
     clerks,
     folders,
+    registrationBatches,
+    publicationTracks,
     rawSealedOriginals,
     defaultFields,
   ] = await Promise.all([
@@ -688,6 +729,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadSavedProperties(),
     loadNotaryClerks(),
     loadContractFolders(),
+    loadRegistrationBatches(),
+    loadPublicationTracks(),
     getAllSealedOriginals(),
     loadPartyFields(),
   ]);
@@ -702,7 +745,7 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
   }));
 
   return {
-    version: '2.6.0',
+    version: '2.7.0',
     exportedAt: new Date().toISOString(),
     clerks,
     folders,
@@ -715,6 +758,8 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     downloads,
     savedParties,
     savedProperties,
+    registrationBatches,
+    publicationTracks,
     defaultFields,
     ...(sealedOriginals.length > 0 ? { sealedOriginals } : {}),
   };
@@ -823,6 +868,22 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
     }
   }
 
+  if (Array.isArray(bundle.registrationBatches)) {
+    for (const batch of bundle.registrationBatches) {
+      if (batch && batch.id) {
+        await saveRegistrationBatch(batch);
+      }
+    }
+  }
+
+  if (Array.isArray(bundle.publicationTracks)) {
+    for (const track of bundle.publicationTracks) {
+      if (track && track.id && track.documentId) {
+        await savePublicationTrack(track);
+      }
+    }
+  }
+
   if (Array.isArray(bundle.sealedOriginals)) {
     for (const so of bundle.sealedOriginals) {
       if (so && so.documentId && so.relativePath && so.sha256) {
@@ -890,6 +951,12 @@ export const browserOfficeStore: OfficeStore = {
   loadContractFolders,
   saveContractFolder,
   deleteContractFolder,
+  loadRegistrationBatches,
+  saveRegistrationBatch,
+  deleteRegistrationBatch,
+  loadPublicationTracks,
+  savePublicationTrack,
+  deletePublicationTrack,
   loadPartyFields,
   savePartyFields,
   loadActiveDraftSession,

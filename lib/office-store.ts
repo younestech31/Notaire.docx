@@ -8,6 +8,8 @@ import {
   NotaryClerk,
   NotaryClause,
   PartyField,
+  PublicationTrack,
+  RegistrationBatch,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
@@ -108,6 +110,14 @@ export interface OfficeStore {
   saveContractFolder(folder: ContractFolder): Promise<void>;
   deleteContractFolder(id: string): Promise<void>;
 
+  // 7d. Registration Batches & Land Publication Tracks
+  loadRegistrationBatches(): Promise<RegistrationBatch[]>;
+  saveRegistrationBatch(batch: RegistrationBatch): Promise<void>;
+  deleteRegistrationBatch(id: string): Promise<void>;
+  loadPublicationTracks(): Promise<PublicationTrack[]>;
+  savePublicationTrack(track: PublicationTrack): Promise<void>;
+  deletePublicationTrack(id: string): Promise<void>;
+
   // 8. Party Fields
   loadPartyFields(): Promise<PartyField[]>;
   savePartyFields(fields: PartyField[]): Promise<void>;
@@ -158,11 +168,15 @@ export const DEFAULT_PARTY_FIELDS: PartyField[] = [
   { key: 'بيانات_البائع_الجبائية', label: 'بيانات البائع الجبائية (رقم التعريف الجبائي / المهنة)', value: '', category: 'fiscal', inputType: 'text' },
   { key: 'بيانات_المشتري_الجبائية', label: 'بيانات المشتري الجبائية (رقم التعريف الجبائي / المهنة)', value: '', category: 'fiscal', inputType: 'text' },
   { key: 'تكملة_خلف_الصفحة', label: 'تكملة خلف الصفحة (ملاحظات وتفاصيل جبائية إضافية)', value: '', category: 'fiscal', inputType: 'text' },
-  // 5. الفهرس والتسجيل (index)
-  { key: 'تاريخ_العقد', label: 'تاريخ تحرير العقد', value: '', category: 'index', inputType: 'date' },
-  { key: 'رقم_الفهرس', label: 'رقم الفهرس السنوي', value: '', category: 'index', inputType: 'text' },
+  // 5. الفهرس والتسجيل والشهر العقاري (index)
+  { key: 'رقم_الإيداع', label: 'رقم ملف الإيداع السنوي (قبل الفهرسة)', value: '', category: 'index', inputType: 'text' },
+  { key: 'تاريخ_العقد', label: 'تاريخ تحرير وتوقيع العقد', value: '', category: 'index', inputType: 'date' },
+  { key: 'رقم_الفهرس', label: 'رقم الفهرس الرسمي السنوي', value: '', category: 'index', inputType: 'text' },
   { key: 'مفتشية_التسجيل', label: 'مفتشية التسجيل والطابع المختصة', value: '', category: 'index', inputType: 'text' },
+  { key: 'مراجع_التسجيل', label: 'مراجع التسجيل (التاريخ، رقم الوصل، المفتشية)', value: '', category: 'index', inputType: 'text' },
   { key: 'المحافظة_العقارية', label: 'المحافظة العقارية المختصة', value: '', category: 'index', inputType: 'text' },
+  { key: 'مراجع_الشهر', label: 'مراجع الشهر العقاري (التاريخ، المجلد، الرقم، المحافظة)', value: '', category: 'index', inputType: 'text' },
+  { key: 'عنوان_المكتب', label: 'عنوان مكتب التوثيق الرسمي', value: '', category: 'index', inputType: 'text' },
 ];
 
 const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
@@ -179,11 +193,12 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">مستخرج عقد توثيقي لأجل التسجيل</p>
-      <p dir="rtl" style="${pStyle}">فهرس رقم: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> — بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span></p>
+      <p dir="rtl" style="${pStyle}">فهرس رقم: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> — بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> — مفتشية التسجيل: <span class="smart-tag" data-var="مفتشية_التسجيل">[مفتشية_التسجيل]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">الطرف الأول:</span> <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>، المولود بتاريخ <span class="smart-tag" data-var="الطرف_الأول_تاريخ_الميلاد">[الطرف_الأول_تاريخ_الميلاد]</span> بـ <span class="smart-tag" data-var="الطرف_الأول_مكان_الميلاد">[الطرف_الأول_مكان_الميلاد]</span>، بن <span class="smart-tag" data-var="الطرف_الأول_النسب">[الطرف_الأول_النسب]</span>، المقيم بـ <span class="smart-tag" data-var="الطرف_الأول_الإقامة">[الطرف_الأول_الإقامة]</span>.</p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">الطرف الثاني:</span> <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span>، المولود بتاريخ <span class="smart-tag" data-var="الطرف_الثاني_تاريخ_الميلاد">[الطرف_الثاني_تاريخ_الميلاد]</span> بـ <span class="smart-tag" data-var="الطرف_الثاني_مكان_الميلاد">[الطرف_الثاني_مكان_الميلاد]</span>، بن <span class="smart-tag" data-var="الطرف_الثاني_النسب">[الطرف_الثاني_النسب]</span>، المقيم بـ <span class="smart-tag" data-var="الطرف_الثاني_الإقامة">[الطرف_الثاني_الإقامة]</span>.</p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">تعيين العقار (الحصة رقم <span class="smart-tag" data-var="رقم_الحصة">[رقم_الحصة]</span>):</span> <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">الثمن الإجمالي:</span> <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span> (<span class="smart-tag" data-var="الثمن_بالأرقام">[الثمن_بالأرقام]</span>).</p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">تأشيرة ومراجع التسجيل:</span> <span class="smart-tag" data-var="مراجع_التسجيل">[مراجع_التسجيل]</span></p>
     `.trim(),
   },
   {
@@ -196,7 +211,8 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">قائمة إجراء الشهر العقاري</p>
-      <p dir="rtl" style="${pStyle}">موجب العقد المحرر بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم الفهرس: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span></p>
+      <p dir="rtl" style="${pStyle}">المحافظة العقارية المختصة: <span class="smart-tag" data-var="المحافظة_العقارية">[المحافظة_العقارية]</span></p>
+      <p dir="rtl" style="${pStyle}">موجب العقد المحرر بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم الفهرس: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> — <span class="smart-tag" data-var="مراجع_التسجيل">[مراجع_التسجيل]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">أولاً — تعيين الأطراف:</span></p>
       <p dir="rtl" style="${pStyle}">1. المتصرف (البائع): <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>، تاريخ ومكان الميلاد: <span class="smart-tag" data-var="الطرف_الأول_تاريخ_الميلاد">[الطرف_الأول_تاريخ_الميلاد]</span> <span class="smart-tag" data-var="الطرف_الأول_مكان_الميلاد">[الطرف_الأول_مكان_الميلاد]</span>، النسب: <span class="smart-tag" data-var="الطرف_الأول_النسب">[الطرف_الأول_النسب]</span>.</p>
       <p dir="rtl" style="${pStyle}">2. المتصرف إليه (المشتري): <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span>، تاريخ ومكان الميلاد: <span class="smart-tag" data-var="الطرف_الثاني_تاريخ_الميلاد">[الطرف_الثاني_تاريخ_الميلاد]</span> <span class="smart-tag" data-var="الطرف_الثاني_مكان_الميلاد">[الطرف_الثاني_مكان_الميلاد]</span>، النسب: <span class="smart-tag" data-var="الطرف_الثاني_النسب">[الطرف_الثاني_النسب]</span>.</p>
@@ -205,6 +221,7 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
       <p dir="rtl" style="${pStyle}">الوصف الكامل: <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
       <p dir="rtl" style="${pStyle}">مراجع الوصف التقسيمي: <span class="smart-tag" data-var="مراجع_الوصف_التقسيمي">[مراجع_الوصف_التقسيمي]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">ثالثاً — الثمن والشروط المالية:</span> <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span> (<span class="smart-tag" data-var="الثمن_بالأرقام">[الثمن_بالأرقام]</span>).</p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">مراجع الشهر العقاري:</span> <span class="smart-tag" data-var="مراجع_الشهر">[مراجع_الشهر]</span></p>
     `.trim(),
   },
   {
@@ -217,7 +234,7 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">شهادة توثيقية</p>
-      <p dir="rtl" style="${pStyle}">يشهد الموثق الموقع أسفله أنه بموجب عقد محرر بمكتبنا بتاريخ <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم الفهرس <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span>:</p>
+      <p dir="rtl" style="${pStyle}">يشهد الموثق الموقع أسفله أنه بموجب عقد محرر بمكتبنا بتاريخ <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم الفهرس <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> (<span class="smart-tag" data-var="مراجع_التسجيل">[مراجع_التسجيل]</span>):</p>
       <p dir="rtl" style="${pStyle}">قام السيد(ة): <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>، الحامل لوثيقة الهوية: <span class="smart-tag" data-var="الطرف_الأول_الهوية">[الطرف_الأول_الهوية]</span>.</p>
       <p dir="rtl" style="${pStyle}">بالتصرف لفائدة السيد(ة): <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span>، الحامل لوثيقة الهوية: <span class="smart-tag" data-var="الطرف_الثاني_الهوية">[الطرف_الثاني_الهوية]</span>.</p>
       <p dir="rtl" style="${pStyle}">في العقار المعين كما يلي: <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
@@ -235,7 +252,7 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenterBold}">باسم الشعب الجزائري — نسخة تنفيذية</p>
-      <p dir="rtl" style="${pStyle}">موجب العقد المحرر بتاريخ <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> بين <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span> و <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span> بخصوص الحصة رقم <span class="smart-tag" data-var="رقم_الحصة">[رقم_الحصة]</span> (<span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span>) بمبلغ <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span>.</p>
+      <p dir="rtl" style="${pStyle}">موجب العقد المحرر بتاريخ <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> تحت رقم <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> (<span class="smart-tag" data-var="مراجع_التسجيل">[مراجع_التسجيل]</span> — <span class="smart-tag" data-var="مراجع_الشهر">[مراجع_الشهر]</span>) بين <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span> و <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span> بخصوص الحصة رقم <span class="smart-tag" data-var="رقم_الحصة">[رقم_الحصة]</span> (<span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span>) بمبلغ <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span>.</p>
       <p dir="rtl" style="${pStyle}">وبناءً على ذلك، فإن الجمهورية الجزائرية الديمقراطية الشعبية تدعو وتأمر جميع المحضرين وكذا كل الأعوان الذين طُلب منهم ذلك أن ينفذوا هذا العقد، وعلى النواب العامين ووكلاء الجمهورية لدى المحاكم أن يمدوا يد المساعدة اللازمة لتنفيذه، وعلى جميع قادة وضباط القوة العمومية أن يمدوا يد المعونة بقوة القانون متى طُلب منهم ذلك بصفة قانونية.</p>
     `.trim(),
   },
@@ -249,7 +266,7 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">مستخرج عقد هبة</p>
-      <p dir="rtl" style="${pStyle}">بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> — فهرس رقم: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span></p>
+      <p dir="rtl" style="${pStyle}">بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> — فهرس رقم: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> — <span class="smart-tag" data-var="مراجع_التسجيل">[مراجع_التسجيل]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">الواهب:</span> <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>، المقيم بـ <span class="smart-tag" data-var="الطرف_الأول_الإقامة">[الطرف_الأول_الإقامة]</span>.</p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">الموهوب له:</span> <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span>، المقيم بـ <span class="smart-tag" data-var="الطرف_الثاني_الإقامة">[الطرف_الثاني_الإقامة]</span>.</p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">العقار الموهوب:</span> <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
@@ -266,6 +283,7 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">طلب معلومات على الإجراءات المشهرة (PR4BIS)</p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">المحافظة العقارية:</span> <span class="smart-tag" data-var="المحافظة_العقارية">[المحافظة_العقارية]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">المالك الحالي / الطرف الأول:</span> <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>، تاريخ ومكان الميلاد: <span class="smart-tag" data-var="الطرف_الأول_تاريخ_الميلاد">[الطرف_الأول_تاريخ_الميلاد]</span> بـ <span class="smart-tag" data-var="الطرف_الأول_مكان_الميلاد">[الطرف_الأول_مكان_الميلاد]</span>، النسب: <span class="smart-tag" data-var="الطرف_الأول_النسب">[الطرف_الأول_النسب]</span>.</p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">تعيين العقار المطلوب بشأنه المعلومات:</span> الحصة رقم <span class="smart-tag" data-var="رقم_الحصة">[رقم_الحصة]</span> — <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
       <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">مراجع الوصف التقسيمي / السند:</span> <span class="smart-tag" data-var="مراجع_الوصف_التقسيمي">[مراجع_الوصف_التقسيمي]</span></p>
@@ -274,20 +292,83 @@ export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
   {
     id: 'derived_recu_depot',
     code: 'recu_depot',
-    name: 'وصل استلام الوديعة (Reçu de Dépôt)',
-    description: 'وصل استلام المبالغ أو الوثائق المودعة بالمكتب — قابل للتعديل الكامل',
+    name: 'وصل استلام الوديعة / ملف الإيداع (Reçu de Dépôt)',
+    description: 'وصل إيداع الملف أو استلام المبالغ والوثائق المودعة بالمكتب قبل الفهرسة — قابل للتعديل الكامل',
     headerHtml: '',
     footerHtml: '',
     updatedAt: '2026-01-01T00:00:00.000Z',
     bodyHtml: `
-      <p dir="rtl" style="${pCenterBold}">وصل استلام وديعة</p>
-      <p dir="rtl" style="${pStyle}">بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span></p>
+      <p dir="rtl" style="${pCenterBold}">وصل إيداع ملف واستلام وديعة</p>
+      <p dir="rtl" style="${pStyle}">رقم الإيداع: <span class="smart-tag" data-var="رقم_الإيداع">[رقم_الإيداع]</span> — بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span></p>
       <p dir="rtl" style="${pStyle}">استلمنا من السيد(ة): <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span>، المقيم بـ <span class="smart-tag" data-var="الطرف_الثاني_الإقامة">[الطرف_الثاني_الإقامة]</span>.</p>
       <p dir="rtl" style="${pStyle}">مبلغاً قدره: <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span> (<span class="smart-tag" data-var="الثمن_بالأرقام">[الثمن_بالأرقام]</span>).</p>
       <p dir="rtl" style="${pStyle}">وذلك بخصوص المعاملة المتعلقة بالحصة رقم <span class="smart-tag" data-var="رقم_الحصة">[رقم_الحصة]</span> مع السيد(ة) <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span>.</p>
     `.trim(),
   },
 ];
+
+/**
+ * Formats the full notarial registration reference string for [مراجع_التسجيل].
+ */
+export function formatRegistrationReferenceTag(batch: {
+  inspectorateName?: string;
+  registrationDate?: string;
+  receiptNumber?: string;
+  totalFees?: number;
+  chequeRef?: string;
+}): string {
+  if (!batch.receiptNumber && !batch.registrationDate) {
+    return batch.inspectorateName
+      ? `قيد التسجيل لدى مفتشية التسجيل والطابع بـ ${batch.inspectorateName}`
+      : 'غير مسجل بعد';
+  }
+  const parts: string[] = ['مسجل'];
+  if (batch.inspectorateName) {
+    parts.push(`لدى مفتشية التسجيل والطابع بـ ${batch.inspectorateName}`);
+  }
+  if (batch.registrationDate) {
+    parts.push(`بتاريخ ${batch.registrationDate}`);
+  }
+  if (batch.receiptNumber) {
+    parts.push(`حسب وصل رقم ${batch.receiptNumber}`);
+  }
+  if (typeof batch.totalFees === 'number' && batch.totalFees > 0) {
+    parts.push(`بحقوق قدرها ${batch.totalFees.toLocaleString('ar-DZ')} دج`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Formats the full notarial land publication reference string for [مراجع_الشهر].
+ */
+export function formatPublicationReferenceTag(track: {
+  conservationOffice?: string;
+  publicationDate?: string;
+  volume?: string;
+  number?: string;
+  depositDate?: string;
+}): string {
+  if (!track.volume && !track.number && !track.publicationDate) {
+    if (track.depositDate && track.conservationOffice) {
+      return `مودع للشهر بالمحافظة العقارية بـ ${track.conservationOffice} بتاريخ ${track.depositDate}`;
+    }
+    return 'غير مشهر بعد';
+  }
+  const parts: string[] = ['مشهر'];
+  if (track.conservationOffice) {
+    parts.push(`بالمحافظة العقارية بـ ${track.conservationOffice}`);
+  }
+  if (track.publicationDate) {
+    parts.push(`بتاريخ ${track.publicationDate}`);
+  }
+  if (track.volume) {
+    parts.push(`مجلد ${track.volume}`);
+  }
+  if (track.number) {
+    parts.push(`رقم ${track.number}`);
+  }
+  return parts.join(' ');
+}
 
 export const DEFAULT_NOTARY_CLERKS: NotaryClerk[] = [
   { id: 'notary-head', name: 'الموثق الرئيسي (الأستاذ)', role: 'notary', color: '#1e3a8a', createdAt: '2026-01-01T00:00:00.000Z' },

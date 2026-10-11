@@ -218,6 +218,63 @@ export interface ContractOutlineClause {
   condition?: ClauseCondition;
 }
 
+export type ContractLifecycleStatus =
+  | 'draft'
+  | 'editing'
+  | 'ready_to_sign'
+  | 'signed'
+  | 'signed_indexed'
+  | 'deposited_for_registration'
+  | 'registered'
+  | 'deposited_for_publication'
+  | 'published';
+
+export interface ContractFinancialTracking {
+  officeFees?: number; // أتعاب المكتب
+  registrationFees?: number; // حقوق التسجيل
+  publicationFees?: number; // رسوم الشهر العقاري
+  tvaAmount?: number; // الرسم على القيمة المضافة TVA
+  advancePaid?: number; // التسبيق المدفوع
+  paymentMethod?: string; // صك / نقد / تحويل
+  chequeRef?: string; // مرجع الصك
+  paymentNotes?: string; // ملاحظات الدفع والملف
+}
+
+export interface RegistrationBatch {
+  id: string;
+  year: number;
+  statusDate: string; // تاريخ حالة الإيداع (YYYY-MM-DD)
+  contractIds: string[]; // معرّفات العقود المضمنة في الدفعة
+  indexNumbers?: string[]; // أرقام الفهارس السنوية للعقود
+  totalFees: number; // مجموع حقوق التسجيل يدخلها الكاتب
+  paymentMethod: string; // صك / نقد / تحويل...
+  chequeRef?: string; // رقم وتاريخ الصك
+  registrationDate?: string; // تاريخ التسجيل الفعلي عند رجوع الأوراق
+  receiptNumber?: string; // رقم وصل المفتشية
+  inspectorateName: string; // مفتشية التسجيل والطابع المختصة
+  status: 'pending' | 'registered' | 'rejected';
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface PublicationTrack {
+  id: string; // مطابق لـ documentId أو معرّف فريد
+  documentId: string;
+  indexNumber: string; // رقم الفهرس الرسمي
+  wilaya?: string; // الولاية
+  conservationOffice: string; // المحافظة العقارية (بئر الجير، وهران شرق...)
+  depositDate?: string; // تاريخ الإيداع بالمحافظة
+  publicationDate?: string; // تاريخ الشهر الفعلي
+  volume?: string; // المجلد
+  number?: string; // الرقم
+  fees: number; // رسوم الشهر العقاري
+  feesPaid: boolean; // هل دُفعت رسوم الشهر
+  chequeRef?: string; // مرجع صك الدفع
+  status: 'not_sent' | 'deposited' | 'published' | 'rejected';
+  notes?: string;
+  updatedAt: string;
+}
+
 export interface SavedDocument {
   id: string;
   title: string;
@@ -236,12 +293,25 @@ export interface SavedDocument {
   folderId?: string | null;
   clerkId?: string;
   clerkName?: string;
-  contractNumber?: string;
+  depositNumber?: string; // رقم الإيداع عند فتح الملف (منفصل عن رقم الفهرس)
+  indexNumber?: string; // رقم الفهرس الرسمي السنوي بعد التوقيع والفهرسة
+  indexedAt?: string; // تاريخ ووقت الفهرسة الصريحة
+  sealedOriginalPath?: string; // archive/{year}/{index}.docx
+  sealedOriginalSha256?: string;
+  contractNumber?: string; // للتوافق مع السجلات السابقة (يمثل رقم الفهرس أو الإيداع)
   year?: number;
   clientName?: string;
   modelId?: string;
   modelTitle?: string;
-  status?: 'draft' | 'editing' | 'ready_to_sign' | 'signed' | 'registered';
+  status?: ContractLifecycleStatus;
+  expectedSignDate?: string; // موعد التوقيع المتوقع
+  fileCompleteness?: 'complete' | 'incomplete'; // حالة الملف (مكتمل / ناقص)
+  missingDocsNote?: string; // بيان الوثائق الناقصة في الملف
+  registrationBatchId?: string; // معرّف دفعة التسجيل المرتبطة
+  inspectorateName?: string; // مفتشية التسجيل والطابع
+  conservationOffice?: string; // المحافظة العقارية
+  wilaya?: string; // الولاية
+  financialTracking?: ContractFinancialTracking; // التتبع المالي المنفصل للملف
   derivedDocuments?: SavedContractDerivedDoc[];
   updatedAt: string;
   createdAt: string;
@@ -334,6 +404,8 @@ export interface BackupBundle {
   downloads: DownloadArchiveItem[];
   savedParties?: SavedPartyRecord[];
   savedProperties?: SavedPropertyRecord[];
+  registrationBatches?: RegistrationBatch[];
+  publicationTracks?: PublicationTrack[];
   defaultFields: PartyField[];
   sealedOriginals?: SerializedSealedOriginal[];
 }

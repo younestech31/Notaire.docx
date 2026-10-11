@@ -8,6 +8,8 @@ import {
   NotaryClerk,
   NotaryClause,
   PartyField,
+  PublicationTrack,
+  RegistrationBatch,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
@@ -218,6 +220,31 @@ export function saveContractFolder(folder: ContractFolder): Promise<void> {
 
 export function deleteContractFolder(id: string): Promise<void> {
   return getActiveOfficeStore().deleteContractFolder(id);
+}
+
+// 7d. Registration Batches & Land Publication Tracks
+export function loadRegistrationBatches(): Promise<RegistrationBatch[]> {
+  return getActiveOfficeStore().loadRegistrationBatches();
+}
+
+export function saveRegistrationBatch(batch: RegistrationBatch): Promise<void> {
+  return getActiveOfficeStore().saveRegistrationBatch(batch);
+}
+
+export function deleteRegistrationBatch(id: string): Promise<void> {
+  return getActiveOfficeStore().deleteRegistrationBatch(id);
+}
+
+export function loadPublicationTracks(): Promise<PublicationTrack[]> {
+  return getActiveOfficeStore().loadPublicationTracks();
+}
+
+export function savePublicationTrack(track: PublicationTrack): Promise<void> {
+  return getActiveOfficeStore().savePublicationTrack(track);
+}
+
+export function deletePublicationTrack(id: string): Promise<void> {
+  return getActiveOfficeStore().deletePublicationTrack(id);
 }
 
 // 8. Party Fields
