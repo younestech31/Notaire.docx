@@ -904,18 +904,18 @@ export function DocxImportPreviewModal({
   onConfirmApply,
 }: DocxImportPreviewModalProps) {
   const [importMode, setImportMode] = useState<'replace' | 'insert'>('replace');
+  const [lastResultRef, setLastResultRef] = useState<DocxImportResult | null>(null);
   const [segmentIntoClauses, setSegmentIntoClauses] = useState<boolean>(true);
   const [candidateClauses, setCandidateClauses] = useState<CandidateImportedClause[]>([]);
   const [expandedClauseId, setExpandedClauseId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen && importResult) {
-      const detected = segmentHtmlIntoCandidateClauses(importResult.bodyHtml);
-      setCandidateClauses(detected);
-      setSegmentIntoClauses(detected.length > 0);
-      setExpandedClauseId(detected[0]?.id || null);
-    }
-  }, [isOpen, importResult]);
+  if (isOpen && importResult && importResult !== lastResultRef) {
+    const detected = segmentHtmlIntoCandidateClauses(importResult.bodyHtml);
+    setLastResultRef(importResult);
+    setCandidateClauses(detected);
+    setSegmentIntoClauses(detected.length > 0);
+    setExpandedClauseId(detected[0]?.id || null);
+  }
 
   if (!isOpen || !importResult) return null;
 

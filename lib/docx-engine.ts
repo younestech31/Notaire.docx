@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { buildVirtualTableGrid } from './table-grid';
+import { injectNotarialPaginationIntoHtml } from './editor-utils';
 import {
   A4_SIZE_TWIPS,
   NET_CONTENT_WIDTH_TWIPS,
@@ -938,7 +939,11 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const zip = new JSZip();
   const parser = new DOMParser();
 
-  const mergedBodyHtml = mergePlaceholdersIntoHtml(options.bodyHtml, options.fieldValues);
+  const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, options.fieldValues);
+  const mergedBodyHtml = injectNotarialPaginationIntoHtml(
+    rawMergedBody,
+    options.pageNumberingEnabled !== false
+  );
   const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', options.fieldValues);
   const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', options.fieldValues);
 
@@ -954,8 +959,7 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   }
 
   const hasHeader = mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter =
-    mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0 || Boolean(options.pageNumberingEnabled);
+  const hasFooter = mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -1006,19 +1010,9 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   if (hasFooter) {
     const fDoc = parser.parseFromString(`<div>${mergedFooterHtml}</div>`, 'text/html');
     const fRoot = fDoc.body.firstElementChild as HTMLElement;
-    let fInnerXml = '';
-    if (mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0) {
-      fInnerXml += serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS);
-    }
-    if (options.pageNumberingEnabled) {
-      const rPr = buildRunPropertiesXml({}, true);
-      fInnerXml += `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}
-        <w:r>${rPr}<w:t xml:space="preserve">صفحة </w:t></w:r>
-        <w:fldSimple w:instr="PAGE"><w:r>${rPr}<w:t>1</w:t></w:r></w:fldSimple>
-        <w:r>${rPr}<w:t xml:space="preserve"> من </w:t></w:r>
-        <w:fldSimple w:instr="NUMPAGES"><w:r>${rPr}<w:t>1</w:t></w:r></w:fldSimple>
-      </w:p>`;
-    }
+    const fInnerXml =
+      serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS) ||
+      `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
     zip.file(
       'word/footer1.xml',
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

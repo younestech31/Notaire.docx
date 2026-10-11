@@ -1996,6 +1996,163 @@ export function computeDocumentMetrics(html: string): {
 }
 
 /**
+ * Converts a page number (1, 2, 3...) into its official Arabic feminine ordinal word
+ * for the closing line of the contract ("الصفحة التاسعة والأخيرة").
+ */
+export function getArabicOrdinalPageWord(pageNumber: number): string {
+  const n = Math.max(1, Math.floor(pageNumber));
+  const map: Record<number, string> = {
+    1: 'الأولى',
+    2: 'الثانية',
+    3: 'الثالثة',
+    4: 'الرابعة',
+    5: 'الخامسة',
+    6: 'السادسة',
+    7: 'السابعة',
+    8: 'الثامنة',
+    9: 'التاسعة',
+    10: 'العاشرة',
+    11: 'الحادية عشرة',
+    12: 'الثانية عشرة',
+    13: 'الثالثة عشرة',
+    14: 'الرابعة عشرة',
+    15: 'الخامسة عشرة',
+    16: 'السادسة عشرة',
+    17: 'السابعة عشرة',
+    18: 'الثامنة عشرة',
+    19: 'التاسعة عشرة',
+    20: 'العشرون',
+    21: 'الحادية والعشرون',
+    22: 'الثانية والعشرون',
+    23: 'الثالثة والعشرون',
+    24: 'الرابعة والعشرون',
+    25: 'الخامسة والعشرون',
+    26: 'السادسة والعشرون',
+    27: 'السابعة والعشرون',
+    28: 'الثامنة والعشرون',
+    29: 'التاسعة والعشرون',
+    30: 'الثلاثون',
+  };
+  return map[n] || `${n}`;
+}
+
+export function buildNotarialPaginationClosingText(totalPages: number): string {
+  return `الصفحة ${getArabicOrdinalPageWord(totalPages)} والأخيرة`;
+}
+
+/**
+ * Strips any previously injected transient pagination markers (`data-notary-pagination="true"`)
+ * and injects official Algerian Notarial pagination markers into the flow of the contract HTML:
+ * - At the end of non-final pages (before explicit page breaks or every ~320 words): ` ../..`
+ * - At the end of the final paragraph of the contract: ` الصفحة {العدد بالحروف} والأخيرة`
+ * Note: This is used only for Merged Preview, Print, and Word (.docx) Export so raw clause HTML stays clean.
+ */
+export function stripNotarialPaginationFromHtml(html: string): string {
+  if (!html) return '';
+  return html.replace(
+    /<span[^>]*data-notary-pagination="true"[^>]*>[\s\S]*?<\/span>/gi,
+    ''
+  );
+}
+
+export function injectNotarialPaginationIntoHtml(
+  html: string,
+  pageNumberingEnabled: boolean = true
+): string {
+  const cleanHtml = stripNotarialPaginationFromHtml(html);
+  if (!pageNumberingEnabled || !cleanHtml.trim()) return cleanHtml;
+
+  if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${cleanHtml}</div>`, 'text/html');
+      const root = doc.body.firstElementChild as HTMLElement | null;
+      if (!root) return cleanHtml;
+
+      // Collect top-level or clause-level paragraphs and explicit page breaks in reading order
+      const blocks = Array.from(
+        root.querySelectorAll('p, li, div.page-break, [data-page-break="true"]')
+      ) as HTMLElement[];
+
+      if (blocks.length === 0) return cleanHtml;
+
+      let wordsOnCurrentPage = 0;
+      let totalPagesCount = 1;
+      const pageEndParagraphs: HTMLElement[] = [];
+      let lastContentParagraph: HTMLElement | null = null;
+
+      for (const el of blocks) {
+        const isPageBreak =
+          el.classList.contains('page-break') ||
+          el.getAttribute('data-page-break') === 'true';
+
+        if (isPageBreak) {
+          if (lastContentParagraph && !pageEndParagraphs.includes(lastContentParagraph)) {
+            pageEndParagraphs.push(lastContentParagraph);
+          }
+          totalPagesCount++;
+          wordsOnCurrentPage = 0;
+          continue;
+        }
+
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+
+        lastContentParagraph = el;
+        const wCount = text.split(' ').filter(Boolean).length;
+        wordsOnCurrentPage += wCount;
+
+        // If a page reaches ~320 words and there are still more blocks ahead, mark end of page
+        if (wordsOnCurrentPage >= 320 && el !== blocks[blocks.length - 1]) {
+          pageEndParagraphs.push(el);
+          totalPagesCount++;
+          wordsOnCurrentPage = 0;
+        }
+      }
+
+      // If lastContentParagraph was inadvertently pushed as a non-final page end, pop it so it gets the final closing marker
+      if (
+        lastContentParagraph &&
+        pageEndParagraphs.length > 0 &&
+        pageEndParagraphs[pageEndParagraphs.length - 1] === lastContentParagraph
+      ) {
+        pageEndParagraphs.pop();
+        totalPagesCount = Math.max(1, totalPagesCount - 1);
+      }
+
+      // 1. Append ` ../..` to the end of each non-final page's last paragraph
+      for (const pEl of pageEndParagraphs) {
+        const marker = doc.createElement('span');
+        marker.setAttribute('data-notary-pagination', 'true');
+        marker.style.fontFamily = STRICT_FONT_FAMILY;
+        marker.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+        marker.style.fontWeight = 'bold';
+        marker.textContent = ' ../..';
+        pEl.appendChild(marker);
+      }
+
+      // 2. Append ` الصفحة {العدد بالحروف} والأخيرة` to the very last content paragraph
+      if (lastContentParagraph) {
+        const closingText = buildNotarialPaginationClosingText(totalPagesCount);
+        const closingMarker = doc.createElement('span');
+        closingMarker.setAttribute('data-notary-pagination', 'true');
+        closingMarker.style.fontFamily = STRICT_FONT_FAMILY;
+        closingMarker.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+        closingMarker.style.fontWeight = 'bold';
+        closingMarker.textContent = `   ${closingText}`;
+        lastContentParagraph.appendChild(closingMarker);
+      }
+
+      return root.innerHTML;
+    } catch {
+      return cleanHtml;
+    }
+  }
+
+  return cleanHtml;
+}
+
+/**
  * Computes word-by-word Diff tokens between two HTML versions for the Version Diff Viewer.
  */
 export interface DiffSegment {

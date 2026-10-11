@@ -124,6 +124,7 @@ import {
 } from '@/lib/storage';
 import {
   applyPartyCardsToFieldValues,
+  buildNotarialPaginationClosingText,
   computeDocumentMetrics,
   convertSelectionToSmartTag,
   decorateSmartTagsInDOM,
@@ -135,6 +136,7 @@ import {
   findMatchesAcrossNodes,
   focusAndSelectMatchInDOM,
   getIntersectingBlockElements,
+  injectNotarialPaginationIntoHtml,
   insertHtmlAtSelection,
   insertOrWrapNewClauseAtSelection,
   moveContractClauseInDOM,
@@ -395,7 +397,10 @@ export default function NotaryEditorApp() {
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
 
       if (previewMergedMode) {
-        setMergedPreviewHtml(mergePlaceholdersIntoHtml(bodyHtml, activeValues));
+        const rawMerged = mergePlaceholdersIntoHtml(bodyHtml, activeValues);
+        setMergedPreviewHtml(
+          injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
+        );
       }
 
       if (editingDerivedTpl || editingClauseObj) {
@@ -518,7 +523,7 @@ export default function NotaryEditorApp() {
           id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           documentId: docId,
           documentTitle: docTitle || 'عقد توثيقي',
-          author: activeClerk?.name || 'كاتب المكتب',
+          author: activeClerk.name || 'كاتب المكتب',
           bodyHtml,
           fieldValues: { ...fieldValuesRef.current },
           createdAt: new Date().toISOString(),
@@ -538,7 +543,7 @@ export default function NotaryEditorApp() {
           });
       }
     },
-    [activeClerk?.name, docId, docTitle, getEditorZonesHtml, showToast]
+    [activeClerk.name, docId, docTitle, getEditorZonesHtml, showToast]
   );
 
   const handleCreateFolder = useCallback(
@@ -801,119 +806,132 @@ export default function NotaryEditorApp() {
         }
       }
 
-      const [
-        loadedTemplates,
-        loadedDocs,
-        loadedEstates,
-        loadedClauses,
-        loadedDerived,
-        loadedRevs,
-        loadedDownloads,
-        loadedSavedParties,
-        loadedSavedProps,
-        loadedClerks,
-        loadedFolders,
-        loadedWordTpls,
-        loadedFields,
-        activeDraft,
-      ] = await Promise.all([
-        loadCustomTemplates(),
-        loadSavedDocuments(),
-        loadSubdivisionEstates(),
-        loadNotaryClauses(),
-        loadDerivedDocTemplates(),
-        loadDocumentRevisions(),
-        loadDownloadArchive(),
-        loadSavedParties(),
-        loadSavedProperties(),
-        loadNotaryClerks(),
-        loadContractFolders(),
-        loadWordTemplates(),
-        loadPartyFields(),
-        loadActiveDraftSession(),
-      ]);
-      if (!mounted) return;
+      try {
+        const [
+          loadedTemplates,
+          loadedDocs,
+          loadedEstates,
+          loadedClauses,
+          loadedDerived,
+          loadedRevs,
+          loadedDownloads,
+          loadedSavedParties,
+          loadedSavedProps,
+          loadedClerks,
+          loadedFolders,
+          loadedWordTpls,
+          loadedFields,
+          activeDraft,
+        ] = await Promise.all([
+          loadCustomTemplates(),
+          loadSavedDocuments(),
+          loadSubdivisionEstates(),
+          loadNotaryClauses(),
+          loadDerivedDocTemplates(),
+          loadDocumentRevisions(),
+          loadDownloadArchive(),
+          loadSavedParties(),
+          loadSavedProperties(),
+          loadNotaryClerks(),
+          loadContractFolders(),
+          loadWordTemplates(),
+          loadPartyFields(),
+          loadActiveDraftSession(),
+        ]);
+        if (!mounted) return;
 
-      setPartyFields(loadedFields);
-      setTemplates(loadedTemplates);
-      setDocuments(loadedDocs);
-      setEstates(loadedEstates);
-      setClauses(loadedClauses);
-      setDerivedTemplates(loadedDerived);
-      setWordTemplates(loadedWordTpls);
-      setRevisions(loadedRevs);
-      setDownloads(loadedDownloads);
-      setSavedParties(loadedSavedParties);
-      setSavedProperties(loadedSavedProps);
-      setClerks(loadedClerks);
-      if (loadedClerks.length > 0) setActiveClerk(loadedClerks[0]);
-      setFolders(loadedFolders);
+        setPartyFields(loadedFields);
+        setTemplates(loadedTemplates);
+        setDocuments(loadedDocs);
+        setEstates(loadedEstates);
+        setClauses(loadedClauses);
+        setDerivedTemplates(loadedDerived);
+        setWordTemplates(loadedWordTpls);
+        setRevisions(loadedRevs);
+        setDownloads(loadedDownloads);
+        setSavedParties(loadedSavedParties);
+        setSavedProperties(loadedSavedProps);
+        setClerks(loadedClerks);
+        if (loadedClerks.length > 0) setActiveClerk(loadedClerks[0]);
+        setFolders(loadedFolders);
 
-      if (loadedEstates.length > 0) {
-        setSelectedEstateId(loadedEstates[0].id);
-      }
-
-      if (activeDraft && bodyEditorRef.current) {
-        setDocId(activeDraft.id || `doc_${Date.now()}`);
-        setDocTitle(activeDraft.title || 'عقد توثيقي جديد');
-        setShowHeaderFooter(Boolean(activeDraft.showHeaderFooter));
-        setPageNumberingEnabled(
-          activeDraft.pageNumberingEnabled !== undefined
-            ? activeDraft.pageNumberingEnabled
-            : true
-        );
-        const initialVals = activeDraft.fieldValues || {};
-        const initialTypes = activeDraft.fieldInputTypes || {};
-        const initialOutline = activeDraft.outlineClauses || [];
-        const initialConditions = activeDraft.contractConditions || {};
-        const initialPartyCards = activeDraft.partyCards || [];
-        fieldValuesRef.current = initialVals;
-        fieldInputTypesRef.current = initialTypes;
-        outlineClausesRef.current = initialOutline;
-        contractConditionsRef.current = initialConditions;
-        partyCardsRef.current = initialPartyCards;
-        setFieldValues(initialVals);
-        setFieldInputTypes(initialTypes);
-        setOutlineClauses(initialOutline);
-        setContractConditions(initialConditions);
-        setPartyCards(initialPartyCards);
-        setSelectedEstateId(activeDraft.selectedEstateId || '');
-        setSelectedLotNumber(activeDraft.selectedLotNumber || '');
-
-        bodyEditorRef.current.innerHTML = activeDraft.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
-        normalizeNotaryContainerDOM(bodyEditorRef.current);
-        upgradeTopLevelHashSegmentsToContainers(bodyEditorRef.current, initialOutline);
-        if (headerEditorRef.current && activeDraft.headerHtml) {
-          headerEditorRef.current.innerHTML = activeDraft.headerHtml;
+        if (loadedEstates.length > 0) {
+          setSelectedEstateId(loadedEstates[0].id);
         }
-        if (footerEditorRef.current && activeDraft.footerHtml) {
-          footerEditorRef.current.innerHTML = activeDraft.footerHtml;
+
+        if (activeDraft && bodyEditorRef.current) {
+          setDocId(activeDraft.id || `doc_${Date.now()}`);
+          setDocTitle(activeDraft.title || 'عقد توثيقي جديد');
+          setShowHeaderFooter(Boolean(activeDraft.showHeaderFooter));
+          setPageNumberingEnabled(
+            activeDraft.pageNumberingEnabled !== undefined
+              ? activeDraft.pageNumberingEnabled
+              : true
+          );
+          const initialVals = activeDraft.fieldValues || {};
+          const initialTypes = activeDraft.fieldInputTypes || {};
+          const initialOutline = activeDraft.outlineClauses || [];
+          const initialConditions = activeDraft.contractConditions || {};
+          const initialPartyCards = activeDraft.partyCards || [];
+          fieldValuesRef.current = initialVals;
+          fieldInputTypesRef.current = initialTypes;
+          outlineClausesRef.current = initialOutline;
+          contractConditionsRef.current = initialConditions;
+          partyCardsRef.current = initialPartyCards;
+          setFieldValues(initialVals);
+          setFieldInputTypes(initialTypes);
+          setOutlineClauses(initialOutline);
+          setContractConditions(initialConditions);
+          setPartyCards(initialPartyCards);
+          setSelectedEstateId(activeDraft.selectedEstateId || '');
+          setSelectedLotNumber(activeDraft.selectedLotNumber || '');
+
+          bodyEditorRef.current.innerHTML = activeDraft.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
+          normalizeNotaryContainerDOM(bodyEditorRef.current);
+          upgradeTopLevelHashSegmentsToContainers(bodyEditorRef.current, initialOutline);
+          if (headerEditorRef.current && activeDraft.headerHtml) {
+            headerEditorRef.current.innerHTML = activeDraft.headerHtml;
+          }
+          if (footerEditorRef.current && activeDraft.footerHtml) {
+            footerEditorRef.current.innerHTML = activeDraft.footerHtml;
+          }
+          const found = extractPlaceholdersFromHtml(
+            activeDraft.headerHtml || '',
+            activeDraft.bodyHtml || '',
+            activeDraft.footerHtml || ''
+          );
+          setExtractedPlaceholders(found);
+          setClauseGroups(
+            extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
+          );
+          const liveOutline = extractLiveContractClausesFromDOM(
+            bodyEditorRef.current,
+            initialOutline
+          );
+          outlineClausesRef.current = liveOutline;
+          setOutlineClauses(liveOutline);
+          setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
+          refreshActiveClausesInDOM(liveOutline);
+          syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
+          const matchingSaved = loadedDocs.find((d) => d.id === activeDraft.id);
+          if (matchingSaved) {
+            setActiveDocument(matchingSaved);
+            activeDocumentRef.current = matchingSaved;
+          }
+        } else if (bodyEditorRef.current) {
+          bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
         }
-        const found = extractPlaceholdersFromHtml(
-          activeDraft.headerHtml || '',
-          activeDraft.bodyHtml || '',
-          activeDraft.footerHtml || ''
-        );
-        setExtractedPlaceholders(found);
-        setClauseGroups(
-          extractPlaceholdersGroupedByClause(bodyEditorRef.current, found)
-        );
-        const liveOutline = extractLiveContractClausesFromDOM(
-          bodyEditorRef.current,
-          initialOutline
-        );
-        outlineClausesRef.current = liveOutline;
-        setOutlineClauses(liveOutline);
-        setDocMetrics(computeDocumentMetrics(activeDraft.bodyHtml || ''));
-        refreshActiveClausesInDOM(liveOutline);
-        syncSmartTagsFilledStateInDOM(bodyEditorRef.current, initialVals);
-        const matchingSaved = loadedDocs.find((d) => d.id === activeDraft.id);
-        if (matchingSaved) {
-          setActiveDocument(matchingSaved);
-          activeDocumentRef.current = matchingSaved;
+      } catch (err) {
+        if (mounted && bodyEditorRef.current) {
+          bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
         }
-      } else if (bodyEditorRef.current) {
-        bodyEditorRef.current.innerHTML = INITIAL_EMPTY_PARAGRAPH;
+        if (mounted) {
+          showToast(
+            err instanceof Error
+              ? err.message
+              : 'تعذر تحميل بعض السجلات المحفوظة'
+          );
+        }
       }
 
       if (typeof window !== 'undefined') {
@@ -929,7 +947,7 @@ export default function NotaryEditorApp() {
     return () => {
       mounted = false;
     };
-  }, [refreshActiveClausesInDOM]);
+  }, [refreshActiveClausesInDOM, showToast]);
 
   // Selection Bookmarking
   const saveSelectionBookmark = useCallback(() => {
@@ -2886,12 +2904,15 @@ export default function NotaryEditorApp() {
             const currentHtml =
               bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
             const activeVals = fieldValuesRef.current || fieldValues;
-            setMergedPreviewHtml(mergePlaceholdersIntoHtml(currentHtml, activeVals));
+            const rawMerged = mergePlaceholdersIntoHtml(currentHtml, activeVals);
+            setMergedPreviewHtml(
+              injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
+            );
             setPreviewMergedMode(true);
             setSidebarTab('parties');
             setIsSidebarOpen(true);
             showToast(
-              'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج مباشرة'
+              'وضع معاينة الدمج جنباً إلى جنب: عدّل أي قيمة في اليمين لترى العقد المدمج وعلامات الترقيم (../..) مباشرة'
             );
           } else {
             setPreviewMergedMode(false);
@@ -3740,44 +3761,48 @@ export default function NotaryEditorApp() {
                 />
               )}
 
-              {/* Optional Document Footer & Page Numbering Preview */}
-              {(showHeaderFooter || pageNumberingEnabled) && (
+              {/* Inline Notarial Closing Line Marker at end of body text (before 6cm bottom margin) */}
+              {pageNumberingEnabled && !previewMergedMode && (
+                <div
+                  dir="rtl"
+                  className="text-left text-slate-900 font-bold select-none mt-1 relative z-10"
+                  style={{
+                    fontFamily: STRICT_FONT_FAMILY,
+                    fontSize: `${STRICT_FONT_SIZE_PT}pt`,
+                    lineHeight: 1,
+                  }}
+                  title="تُدرج علامة ../.. في آخر سطر من الصفحات غير الأخيرة، وعبارة الإغلاق هذه في آخر سطر من الصفحة الأخيرة تلقائياً عند الدمج والطباعة والتصدير"
+                >
+                  {docMetrics.estimatedPages > 1 && (
+                    <span className="text-slate-400 font-normal text-[10pt] ml-3 no-print">
+                      [الصفحات 1..{docMetrics.estimatedPages - 1} تنتهي بـ: ../..]
+                    </span>
+                  )}
+                  <span>{buildNotarialPaginationClosingText(docMetrics.estimatedPages)}</span>
+                </div>
+              )}
+
+              {/* Optional Document Footer */}
+              {showHeaderFooter && (
                 <div className="mt-4 pt-1 border-t border-dashed border-slate-300 relative z-10">
-                  {showHeaderFooter && (
-                    <>
-                      <div className="text-[9px] text-slate-400 mb-0.5 select-none no-print">
-                        تذييل العقد (Footer)
-                      </div>
-                      <div
-                        ref={footerEditorRef}
-                        contentEditable={!previewMergedMode}
-                        suppressContentEditableWarning
-                        dir="rtl"
-                        onInput={() => syncPlaceholdersAndDraft()}
-                        onKeyUp={(e) => {
-                          if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
-                        }}
-                        onBlur={decorateEditorZonesPreservingSelection}
-                        onKeyDown={handleEditorKeyDown}
-                        onPaste={handleEditorPaste}
-                        onClick={handleEditorClick}
-                        className="notary-editor-zone outline-none min-h-[18px]"
-                      />
-                    </>
-                  )}
-                  {pageNumberingEnabled && (
-                    <div
-                      dir="rtl"
-                      className="text-center text-slate-600 select-none mt-1"
-                      style={{
-                        fontFamily: STRICT_FONT_FAMILY,
-                        fontSize: `${STRICT_FONT_SIZE_PT}pt`,
-                        lineHeight: 1,
-                      }}
-                    >
-                      الصفحة 1 من {docMetrics.estimatedPages}
-                    </div>
-                  )}
+                  <div className="text-[9px] text-slate-400 mb-0.5 select-none no-print">
+                    تذييل العقد (Footer)
+                  </div>
+                  <div
+                    ref={footerEditorRef}
+                    contentEditable={!previewMergedMode}
+                    suppressContentEditableWarning
+                    dir="rtl"
+                    onInput={() => syncPlaceholdersAndDraft()}
+                    onKeyUp={(e) => {
+                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
+                    }}
+                    onBlur={decorateEditorZonesPreservingSelection}
+                    onKeyDown={handleEditorKeyDown}
+                    onPaste={handleEditorPaste}
+                    onClick={handleEditorClick}
+                    className="notary-editor-zone outline-none min-h-[18px]"
+                  />
                 </div>
               )}
             </div>

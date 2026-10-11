@@ -59,7 +59,7 @@ export default function EditorTopBar({
     : null;
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-[#C4A46A]/35 shrink-0 no-print select-none shadow-2xs">
+    <header className="flex flex-nowrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-white border-b border-[#C4A46A]/35 shrink-0 no-print select-none shadow-2xs">
       {/* Right: Brand Mark (/brand/mark.svg) & Editable Contract Title Input with Auto-Save Badge */}
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="flex items-center gap-2.5">

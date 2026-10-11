@@ -35,7 +35,7 @@ import {
 } from './office-store';
 
 const DB_NAME = 'NotarySmartEditorDB';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 const STORE_TEMPLATES = 'templates';
 const STORE_DOCUMENTS = 'documents';
 const STORE_ESTATES = 'estates';
@@ -64,7 +64,7 @@ function openDatabase(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !('indexedDB' in window)) {
     return Promise.resolve(null);
   }
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
@@ -101,53 +101,44 @@ function openDatabase(): Promise<IDBDatabase | null> {
         };
         resolve(db);
       };
-      request.onerror = () =>
-        reject(
-          new Error(
-            `تعذر فتح قاعدة بيانات المتصفح المحلية: ${
-              request.error?.message || 'خطأ غير معروف'
-            }`
-          )
-        );
-      request.onblocked = () =>
-        reject(new Error('قاعدة بيانات المتصفح محجوبة بواسطة علامة تبويب أخرى'));
-    } catch (err) {
-      reject(
-        err instanceof Error
-          ? err
-          : new Error('تعذر تهيئة قاعدة بيانات المتصفح المحلية')
-      );
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
     }
   });
 }
 
 async function getAllFromStore<T>(storeName: string, lsFallbackKey: string): Promise<T[]> {
-  const db = await openDatabase();
-  if (db && db.objectStoreNames.contains(storeName)) {
-    const dbResult = await new Promise<T[]>((resolve, reject) => {
-      try {
-        const tx = db.transaction(storeName, 'readonly');
-        const store = tx.objectStore(storeName);
-        const req = store.getAll();
-        req.onsuccess = () => resolve((req.result as T[]) || []);
-        req.onerror = () =>
-          reject(
-            new Error(
-              `فشل قراءة المخزن (${storeName}): ${req.error?.message || ''}`
-            )
-          );
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(`فشل قراءة المخزن (${storeName})`));
+  try {
+    const db = await openDatabase();
+    if (db && db.objectStoreNames.contains(storeName)) {
+      const dbResult = await new Promise<T[]>((resolve) => {
+        try {
+          const tx = db.transaction(storeName, 'readonly');
+          const store = tx.objectStore(storeName);
+          const req = store.getAll();
+          req.onsuccess = () => resolve((req.result as T[]) || []);
+          req.onerror = () => resolve([]);
+        } catch {
+          resolve([]);
+        }
+      });
+      if (dbResult.length > 0) {
+        return dbResult;
       }
-    });
-    if (dbResult.length > 0) {
-      return dbResult;
     }
+  } catch {
+    // Fall back to localStorage below
   }
   if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem(lsFallbackKey);
-    if (!raw) return [];
-    return JSON.parse(raw) as T[];
+    try {
+      const raw = localStorage.getItem(lsFallbackKey);
+      if (!raw) return [];
+      return JSON.parse(raw) as T[];
+    } catch {
+      return [];
+    }
   }
   return [];
 }
@@ -157,37 +148,23 @@ async function putInStore<T extends { id: string }>(
   lsFallbackKey: string,
   item: T
 ): Promise<void> {
-  const db = await openDatabase();
-  if (db && db.objectStoreNames.contains(storeName)) {
-    await new Promise<void>((resolve, reject) => {
-      try {
-        const tx = db.transaction(storeName, 'readwrite');
-        tx.objectStore(storeName).put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () =>
-          reject(
-            new Error(
-              `فشل حفظ السجل في (${storeName}): ${
-                tx.error?.message || 'خطأ في معاملة التخزين'
-              }`
-            )
-          );
-        tx.onabort = () =>
-          reject(
-            new Error(
-              `تم إحباط معاملة الحفظ في (${storeName}): ${
-                tx.error?.message || 'تجاوز السعة أو خطأ داخلي'
-              }`
-            )
-          );
-      } catch (err) {
-        reject(
-          err instanceof Error
-            ? err
-            : new Error(`فشل تنفيذ معاملة الحفظ في (${storeName})`)
-        );
-      }
-    });
+  try {
+    const db = await openDatabase();
+    if (db && db.objectStoreNames.contains(storeName)) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(storeName, 'readwrite');
+          tx.objectStore(storeName).put(item);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+          tx.onabort = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+  } catch {
+    // Fallback to localStorage mirror below
   }
   if (typeof window !== 'undefined') {
     try {

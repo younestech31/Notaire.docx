@@ -113,24 +113,19 @@ export default function FolderTreeExplorer({
     [documents, activeDocument, activeDocumentId]
   );
 
-  const [selectedSaveFolderId, setSelectedSaveFolderId] = useState<string | null>(
-    currentSavedDoc?.folderId ?? null
-  );
+  const [customSaveFolderId, setCustomSaveFolderId] = useState<{
+    docId: string | undefined;
+    folderId: string | null;
+  } | null>(null);
 
-  useEffect(() => {
-    setSelectedSaveFolderId(currentSavedDoc?.folderId ?? null);
-  }, [currentSavedDoc?.folderId, activeDocumentId]);
+  const selectedSaveFolderId =
+    customSaveFolderId && customSaveFolderId.docId === activeDocumentId
+      ? customSaveFolderId.folderId
+      : (currentSavedDoc?.folderId ?? null);
 
-  // Auto-expand initial root folders when folders load for the first time
-  useEffect(() => {
-    if (folders.length > 0 && Object.keys(expandedFolders).length === 0) {
-      const next: Record<string, boolean> = {};
-      folders.forEach((f) => {
-        if (f.parentId === null) next[f.id] = true;
-      });
-      setExpandedFolders(next);
-    }
-  }, [folders, expandedFolders]);
+  const setSelectedSaveFolderId = (folderId: string | null) => {
+    setCustomSaveFolderId({ docId: activeDocumentId, folderId });
+  };
 
   // Modal / Prompt states
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
