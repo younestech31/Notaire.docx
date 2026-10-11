@@ -39,8 +39,10 @@ export function isContractOfficiallyIndexed(doc?: SavedDocument | null): boolean
   return (
     norm === 'signed_indexed' ||
     norm === 'deposited_for_registration' ||
+    norm === 'registration_rejected' ||
     norm === 'registered' ||
     norm === 'deposited_for_publication' ||
+    norm === 'publication_rejected' ||
     norm === 'published' ||
     Boolean(doc.sealedOriginalSha256)
   );
@@ -268,12 +270,18 @@ export async function officiallyIndexAndSealContract(params: {
  */
 export function formatRegistrationReferenceText(batch: RegistrationBatch): string {
   const datePart = batch.registrationDate || batch.statusDate;
-  const receiptPart =
-    batch.status === 'rejected'
-      ? 'مرفوض للتصحيح بالتسجيل'
-      : batch.receiptNumber
-      ? `حسب الوصل رقم ${batch.receiptNumber}`
-      : 'مودع للتسجيل';
+  if (batch.status === 'rejected') {
+    return [
+      `رُفض للتسوية/التصحيح بـ${batch.inspectorateName || 'مفتشية التسجيل والطابع'}`,
+      datePart ? `بتاريخ ${datePart}` : '',
+      batch.notes ? `(${batch.notes})` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  const receiptPart = batch.receiptNumber
+    ? `حسب الوصل رقم ${batch.receiptNumber}`
+    : 'مودع للتسجيل';
   const feesPart = batch.totalFees
     ? `بحقوق قدرها ${batch.totalFees.toLocaleString('ar-DZ')} دج`
     : '';
@@ -290,7 +298,7 @@ export function formatRegistrationReferenceText(batch: RegistrationBatch): strin
 /**
  * Synchronizes a saved or updated `RegistrationBatch` back to all linked contracts:
  * - Matches contracts by `contractIds` and by `indexNumbers`
- * - Sets `registrationBatchId`, `inspectorateName`, and updates `status` (`deposited_for_registration` or `registered`)
+ * - Sets `registrationBatchId`, `inspectorateName`, and updates `status` (`deposited_for_registration`, `registered`, or `registration_rejected`)
  * - Automatically populates `fieldValues['مراجع_التسجيل']` (and updates derived documents if present)
  */
 export async function syncRegistrationBatchToContracts(
@@ -306,7 +314,11 @@ export async function syncRegistrationBatchToContracts(
   const idSet = new Set(batch.contractIds || []);
 
   const targetStatus: ContractLifecycleStatus =
-    batch.status === 'registered' ? 'registered' : 'deposited_for_registration';
+    batch.status === 'registered'
+      ? 'registered'
+      : batch.status === 'rejected'
+      ? 'registration_rejected'
+      : 'deposited_for_registration';
   const regRefText = formatRegistrationReferenceText(batch);
   const nowIso = new Date().toISOString();
 
@@ -371,7 +383,13 @@ export async function syncRegistrationBatchToContracts(
       bodyHtml: updatedDoc.bodyHtml,
       fieldValues: nextFieldValues,
       createdAt: nowIso,
-      summary: `تحديث دفعة التسجيل (${batch.status === 'registered' ? 'مسجل' : 'مودع للتسجيل'}): ${regRefText}`,
+      summary: `تحديث دفعة التسجيل (${
+        batch.status === 'registered'
+          ? 'مسجل'
+          : batch.status === 'rejected'
+          ? 'مرفوض للتسوية'
+          : 'مودع للتسجيل'
+      }): ${regRefText}`,
     });
   }
 
@@ -385,6 +403,15 @@ export function formatPublicationReferenceText(track: PublicationTrack): string 
   const officePart = `${track.conservationOffice || 'المحافظة العقارية'}${
     track.wilaya ? ` (${track.wilaya})` : ''
   }`;
+  if (track.status === 'rejected') {
+    return [
+      `رفض/تحفظ بالشهر العقاري لدى ${officePart}`,
+      track.depositDate ? `بتاريخ ${track.depositDate}` : '',
+      track.notes ? `(${track.notes})` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
   if (track.status === 'published' || (track.volume && track.number)) {
     const pubDate = track.publicationDate || track.depositDate || '';
     return [
@@ -406,7 +433,7 @@ export function formatPublicationReferenceText(track: PublicationTrack): string 
 
 /**
  * Synchronizes a saved or updated `PublicationTrack` back to its linked contract:
- * - Updates contract status (`deposited_for_publication` or `published`)
+ * - Updates contract status (`deposited_for_publication`, `published`, or `publication_rejected`)
  * - Populates `fieldValues['مراجع_الشهر']`, `المحافظة_العقارية`, `مجلد_الشهر`, `رقم_الشهر`
  */
 export async function syncPublicationTrackToContract(
@@ -442,7 +469,11 @@ export async function syncPublicationTrackToContract(
   if (track.publicationDate) nextFieldValues['تاريخ_الشهر'] = track.publicationDate;
 
   const nextStatus: ContractLifecycleStatus =
-    track.status === 'published' ? 'published' : 'deposited_for_publication';
+    track.status === 'published'
+      ? 'published'
+      : track.status === 'rejected'
+      ? 'publication_rejected'
+      : 'deposited_for_publication';
 
   const updatedDerived = (targetDoc.derivedDocuments || []).map((dd) => ({
     ...dd,
@@ -472,7 +503,13 @@ export async function syncPublicationTrackToContract(
     bodyHtml: updatedDoc.bodyHtml,
     fieldValues: nextFieldValues,
     createdAt: nowIso,
-    summary: `تحديث مسار الشهر العقاري (${track.status === 'published' ? 'مشهر' : 'قيد الإيداع'}): ${pubRefText}`,
+    summary: `تحديث مسار الشهر العقاري (${
+      track.status === 'published'
+        ? 'مشهر'
+        : track.status === 'rejected'
+        ? 'رفض/تحفظ عقاري'
+        : 'قيد الإيداع'
+    }): ${pubRefText}`,
   });
 
   return updatedDoc;

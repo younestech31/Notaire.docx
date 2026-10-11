@@ -49,6 +49,7 @@ import {
 
 interface EditorRibbonProps {
   toolbarState: ToolbarState;
+  isBodyLocked?: boolean;
   canUndo: boolean;
   canRedo: boolean;
   zoom: number;
@@ -134,6 +135,7 @@ const HIGHLIGHT_COLORS = [
 
 export default function EditorRibbon({
   toolbarState,
+  isBodyLocked = false,
   canUndo,
   canRedo,
   zoom,
@@ -228,8 +230,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={onUndo}
-            disabled={!canUndo}
-            className={btnClass(false, !canUndo)}
+            disabled={!canUndo || isBodyLocked}
+            className={btnClass(false, !canUndo || isBodyLocked)}
             title="تراجع (Ctrl+Z)"
           >
             <Undo2 className="w-4 h-4" />
@@ -238,8 +240,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={onRedo}
-            disabled={!canRedo}
-            className={btnClass(false, !canRedo)}
+            disabled={!canRedo || isBodyLocked}
+            className={btnClass(false, !canRedo || isBodyLocked)}
             title="إعادة (Ctrl+Y)"
           >
             <Redo2 className="w-4 h-4" />
@@ -252,7 +254,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={onToggleBold}
-            className={btnClass(toolbarState.bold)}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.bold, isBodyLocked)}
             title="خط عريض (Ctrl+B)"
           >
             <Bold className="w-4 h-4" />
@@ -261,7 +264,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={onToggleItalic}
-            className={btnClass(toolbarState.italic)}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.italic, isBodyLocked)}
             title="خط مائل (Ctrl+I)"
           >
             <Italic className="w-4 h-4" />
@@ -270,7 +274,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={onToggleUnderline}
-            className={btnClass(toolbarState.underline)}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.underline, isBodyLocked)}
             title="تسطير (Ctrl+U)"
           >
             <Underline className="w-4 h-4" />
@@ -283,7 +288,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={() => onSetAlign('right')}
-            className={btnClass(toolbarState.align === 'right')}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.align === 'right', isBodyLocked)}
             title="محاذاة إلى اليمين"
           >
             <AlignRight className="w-4 h-4" />
@@ -292,7 +298,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={() => onSetAlign('center')}
-            className={btnClass(toolbarState.align === 'center')}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.align === 'center', isBodyLocked)}
             title="توسيط"
           >
             <AlignCenter className="w-4 h-4" />
@@ -301,7 +308,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={() => onSetAlign('left')}
-            className={btnClass(toolbarState.align === 'left')}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.align === 'left', isBodyLocked)}
             title="محاذاة إلى اليسار"
           >
             <AlignLeft className="w-4 h-4" />
@@ -310,7 +318,8 @@ export default function EditorRibbon({
             type="button"
             onMouseDown={preventFocusLoss}
             onClick={() => onSetAlign('justify')}
-            className={btnClass(toolbarState.align === 'justify')}
+            disabled={isBodyLocked}
+            className={btnClass(toolbarState.align === 'justify', isBodyLocked)}
             title="ضبط كلي للفقرة (Justify)"
           >
             <AlignJustify className="w-4 h-4" />
@@ -322,16 +331,21 @@ export default function EditorRibbon({
           <div className="relative">
             <button
               type="button"
+              disabled={isBodyLocked}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSaveSelectionBookmark();
+                if (!isBodyLocked) onSaveSelectionBookmark();
               }}
               onClick={() => {
+                if (isBodyLocked) return;
                 const next = !showListMenu;
                 closeAllMenus();
                 setShowListMenu(next);
               }}
-              className={btnClass(toolbarState.listType !== 'none' || showListMenu)}
+              className={btnClass(
+                toolbarState.listType !== 'none' || showListMenu,
+                isBodyLocked
+              )}
               title="إدراج قائمة مرقمة أو أبجدية عربية أو نقطية"
             >
               <ListOrdered className="w-4 h-4 ml-1" />
@@ -408,16 +422,18 @@ export default function EditorRibbon({
           <div className="relative">
             <button
               type="button"
+              disabled={isBodyLocked}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSaveSelectionBookmark();
+                if (!isBodyLocked) onSaveSelectionBookmark();
               }}
               onClick={() => {
+                if (isBodyLocked) return;
                 const next = !showTablePicker;
                 closeAllMenus();
                 setShowTablePicker(next);
               }}
-              className={btnClass(toolbarState.inTable || showTablePicker)}
+              className={btnClass(toolbarState.inTable || showTablePicker, isBodyLocked)}
               title="إدراج وإدارة الجداول"
             >
               <TableIcon className="w-4 h-4 ml-1" />
@@ -476,7 +492,7 @@ export default function EditorRibbon({
           </div>
 
           {/* Contextual Table Tools when Caret is inside a Table */}
-          {toolbarState.inTable && (
+          {toolbarState.inTable && !isBodyLocked && (
             <div className="flex items-center gap-1 bg-blue-50/70 border border-blue-200 rounded px-1.5 py-0.5">
               <button
                 type="button"
@@ -826,13 +842,24 @@ export default function EditorRibbon({
           {/* 2. 1-CLICK SELECTION TO SMART TAG CONVERTER */}
           <button
             type="button"
+            disabled={isBodyLocked}
             onMouseDown={(e) => {
               e.preventDefault();
-              onSaveSelectionBookmark();
+              if (!isBodyLocked) onSaveSelectionBookmark();
             }}
-            onClick={onConvertSelectionToSmartTag}
-            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold bg-pink-800 text-white hover:bg-pink-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
-            title="حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم متغير [...] (Alt+V)"
+            onClick={() => {
+              if (!isBodyLocked) onConvertSelectionToSmartTag();
+            }}
+            className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 shadow-2xs ${
+              isBodyLocked
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-pink-800 text-white hover:bg-pink-900'
+            }`}
+            title={
+              isBodyLocked
+                ? 'متن العقد مقفول بعد الفهرسة والختم الرسمي'
+                : 'حدد أي كلمة أو جملة داخل العقد ثم اضغط هنا لتحويلها فوراً إلى وسم متغير [...] (Alt+V)'
+            }
           >
             <span className="font-mono text-[10px] bg-pink-950/40 px-1 rounded">[ ]</span>
             <span>تحويل لوسم</span>
@@ -842,11 +869,13 @@ export default function EditorRibbon({
           <div className="relative">
             <button
               type="button"
+              disabled={isBodyLocked}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onSaveSelectionBookmark();
+                if (!isBodyLocked) onSaveSelectionBookmark();
               }}
               onClick={() => {
+                if (isBodyLocked) return;
                 const sel = typeof window !== 'undefined' ? window.getSelection() : null;
                 if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
                   closeAllMenus();
@@ -857,8 +886,16 @@ export default function EditorRibbon({
                 closeAllMenus();
                 setShowTagInserterMenu(next);
               }}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs font-semibold bg-white border border-pink-200 text-pink-900 hover:bg-pink-50 transition-colors whitespace-nowrap shrink-0"
-              title="إدراج وسم متغير جاهز [...] أو إنشاء وسم جديد عند موضع المؤشر"
+              className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
+                isBodyLocked
+                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-white border-pink-200 text-pink-900 hover:bg-pink-50'
+              }`}
+              title={
+                isBodyLocked
+                  ? 'متن العقد مقفول بعد الفهرسة والختم الرسمي'
+                  : 'إدراج وسم متغير جاهز [...] أو إنشاء وسم جديد عند موضع المؤشر'
+              }
             >
               <span className="font-mono font-bold text-[11px]">[ ]</span>
               <span>إدراج وسم</span>
@@ -971,13 +1008,24 @@ export default function EditorRibbon({
           {/* 4. # NEW CLAUSE HEADING & CONTAINER AT CARET */}
           <button
             type="button"
+            disabled={isBodyLocked}
             onMouseDown={(e) => {
               e.preventDefault();
-              onSaveSelectionBookmark();
+              if (!isBodyLocked) onSaveSelectionBookmark();
             }}
-            onClick={onInsertNewClauseHeadingAtCaret}
-            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-colors whitespace-nowrap shrink-0"
-            title="تحويل السطر/التحديد الحالي إلى عنوان بند جديد أو إدراج حاوية بند جديدة"
+            onClick={() => {
+              if (!isBodyLocked) onInsertNewClauseHeadingAtCaret();
+            }}
+            className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              isBodyLocked
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-slate-800 text-white hover:bg-slate-700'
+            }`}
+            title={
+              isBodyLocked
+                ? 'متن العقد مقفول بعد الفهرسة والختم الرسمي'
+                : 'تحويل السطر/التحديد الحالي إلى عنوان بند جديد أو إدراج حاوية بند جديدة'
+            }
           >
             <span className="font-mono font-bold text-amber-300">#</span>
             <span>بند جديد</span>

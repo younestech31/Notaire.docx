@@ -68,7 +68,13 @@ const STATUS_LABELS: Record<string, string> = {
   editing: 'قيد التحرير',
   ready_to_sign: 'جاهز للتوقيع',
   signed: 'موقع',
-  registered: 'مشهر',
+  signed_indexed: 'مفهرس ومختوم',
+  deposited_for_registration: 'مودع للتسجيل',
+  registration_rejected: 'مرفوض بالتسجيل',
+  registered: 'مسجل جبائياً',
+  deposited_for_publication: 'مودع للشهر',
+  publication_rejected: 'رفض بالشهر',
+  published: 'مشهر عقارياً',
 };
 
 export default function FolderTreeExplorer({

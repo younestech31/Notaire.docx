@@ -51,7 +51,7 @@ interface NotaryHubPanelProps {
   documentTitle: string;
   fieldValues: Record<string, string>;
   onUpdateFieldValue: (key: string, val: string) => void;
-  onSaveCurrentDocument: (overrideTitle?: string) => Promise<void>;
+  onSaveCurrentDocument: (overrideTitle?: string) => Promise<SavedDocument | void>;
   onContractIndexedOrSynced?: (updatedDoc?: SavedDocument) => Promise<void> | void;
   showToast: (msg: string) => void;
 }
@@ -134,6 +134,10 @@ export default function NotaryHubPanel({
   const [newBatchIndices, setNewBatchIndices] = useState('');
   const [newBatchFees, setNewBatchFees] = useState('');
   const [newBatchReceipt, setNewBatchReceipt] = useState('');
+  const [newBatchStatus, setNewBatchStatus] = useState<
+    'deposited' | 'registered' | 'rejected'
+  >('deposited');
+  const [newBatchNotes, setNewBatchNotes] = useState('');
   const [newBatchRegDate, setNewBatchRegDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -147,6 +151,10 @@ export default function NotaryHubPanel({
   const [newPubWilaya, setNewPubWilaya] = useState('وهران');
   const [newPubVolume, setNewPubVolume] = useState('');
   const [newPubNumber, setNewPubNumber] = useState('');
+  const [newPubStatus, setNewPubStatus] = useState<
+    'deposited' | 'published' | 'rejected'
+  >('deposited');
+  const [newPubNotes, setNewPubNotes] = useState('');
   const [newPubDepositDate, setNewPubDepositDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
@@ -180,15 +188,15 @@ export default function NotaryHubPanel({
 
     setIsSealing(true);
     try {
-      // 1. Always flush and persist the live editor state first so bodyHtml is never stale or empty
-      await onSaveCurrentDocument();
+      // 1. Always flush and persist the live editor DOM state first and capture its returned SavedDocument
+      const liveFlushedDoc = await onSaveCurrentDocument();
 
       // 2. Reload fresh documents from storage after saving
       const freshDocs = await loadSavedDocuments();
       const targetDoc =
+        (liveFlushedDoc && typeof liveFlushedDoc === 'object' ? liveFlushedDoc : null) ||
         (activeDocumentId ? freshDocs.find((d) => d.id === activeDocumentId) : null) ||
         activeSavedDoc ||
-        freshDocs[0] ||
         null;
 
       if (!targetDoc) {
@@ -282,6 +290,8 @@ export default function NotaryHubPanel({
     setNewBatchIndices(defaultIdx);
     setNewBatchFees(fieldValues['حقوق_التسجيل'] || '');
     setNewBatchReceipt('');
+    setNewBatchStatus('deposited');
+    setNewBatchNotes('');
     setNewBatchRegDate(new Date().toISOString().slice(0, 10));
     setShowNewBatchModal(true);
   };
@@ -293,6 +303,14 @@ export default function NotaryHubPanel({
     setNewBatchIndices((batch.indexNumbers || []).join('، '));
     setNewBatchFees(batch.totalFees ? String(batch.totalFees) : '');
     setNewBatchReceipt(batch.receiptNumber || '');
+    setNewBatchStatus(
+      batch.status === 'rejected'
+        ? 'rejected'
+        : batch.status === 'registered' || Boolean(batch.receiptNumber)
+        ? 'registered'
+        : 'deposited'
+    );
+    setNewBatchNotes(batch.notes || '');
     setNewBatchRegDate(
       batch.registrationDate || batch.statusDate || new Date().toISOString().slice(0, 10)
     );
@@ -351,6 +369,13 @@ export default function NotaryHubPanel({
       : null;
 
     const hasReceipt = newBatchReceipt.trim().length > 0;
+    const effectiveStatus: 'deposited' | 'registered' | 'rejected' =
+      newBatchStatus === 'rejected'
+        ? 'rejected'
+        : hasReceipt || newBatchStatus === 'registered'
+        ? 'registered'
+        : 'deposited';
+
     const batch: RegistrationBatch = {
       id: existingBatch?.id || `batch_${Date.now()}`,
       batchNumber: existingBatch?.batchNumber || batches.length + 1,
@@ -359,10 +384,12 @@ export default function NotaryHubPanel({
       contractIds: matchedDocs.map((d) => d.id),
       indexNumbers: allIndexNumbers,
       totalFees: Number(newBatchFees.replace(/[^\d.]/g, '')) || 0,
-      status: hasReceipt ? 'registered' : 'deposited',
+      status: effectiveStatus,
       statusDate: newBatchRegDate || new Date().toISOString().slice(0, 10),
-      receiptNumber: newBatchReceipt.trim() || undefined,
-      registrationDate: hasReceipt ? newBatchRegDate : undefined,
+      receiptNumber:
+        effectiveStatus === 'rejected' ? undefined : newBatchReceipt.trim() || undefined,
+      registrationDate: effectiveStatus === 'registered' ? newBatchRegDate : undefined,
+      notes: newBatchNotes.trim() || undefined,
       createdAt: existingBatch?.createdAt || new Date().toISOString(),
     };
 
@@ -391,8 +418,10 @@ export default function NotaryHubPanel({
     setShowNewBatchModal(false);
     setEditingBatchId(null);
     showToast(
-      hasReceipt
+      effectiveStatus === 'registered'
         ? `تم تسجيل الدفعة رقم ${batch.batchNumber}/${batch.year} وتحديث وسم [مراجع_التسجيل] في (${syncedDocs.length}) عقد`
+        : effectiveStatus === 'rejected'
+        ? `تم تسجيل رفض/إرجاع الدفعة رقم ${batch.batchNumber}/${batch.year} للتسوية في (${syncedDocs.length}) عقد`
         : `تم حفظ دفعة الإيداع للتسجيل رقم ${batch.batchNumber}/${batch.year} وربطها بـ (${syncedDocs.length}) عقد`
     );
   };
@@ -477,6 +506,8 @@ export default function NotaryHubPanel({
     setNewPubWilaya(defaultDoc?.wilaya || 'وهران');
     setNewPubVolume(defaultDoc?.fieldValues?.['مجلد_الشهر'] || '');
     setNewPubNumber(defaultDoc?.fieldValues?.['رقم_الشهر'] || '');
+    setNewPubStatus('deposited');
+    setNewPubNotes('');
     setNewPubDepositDate(new Date().toISOString().slice(0, 10));
     setNewPubPublicationDate(new Date().toISOString().slice(0, 10));
     setShowNewPubModal(true);
@@ -489,6 +520,14 @@ export default function NotaryHubPanel({
     setNewPubWilaya(track.wilaya || 'وهران');
     setNewPubVolume(track.volume || '');
     setNewPubNumber(track.number || '');
+    setNewPubStatus(
+      track.status === 'rejected'
+        ? 'rejected'
+        : track.status === 'published' || Boolean(track.volume && track.number)
+        ? 'published'
+        : 'deposited'
+    );
+    setNewPubNotes(track.notes || '');
     setNewPubDepositDate(track.depositDate || new Date().toISOString().slice(0, 10));
     setNewPubPublicationDate(
       track.publicationDate || new Date().toISOString().slice(0, 10)
@@ -509,7 +548,14 @@ export default function NotaryHubPanel({
       ? publications.find((p) => p.id === editingPubId)
       : null;
 
-    const isPublished = Boolean(newPubVolume.trim() && newPubNumber.trim());
+    const hasVolAndNum = Boolean(newPubVolume.trim() && newPubNumber.trim());
+    const effectivePubStatus: 'deposited' | 'published' | 'rejected' =
+      newPubStatus === 'rejected'
+        ? 'rejected'
+        : hasVolAndNum || newPubStatus === 'published'
+        ? 'published'
+        : 'deposited';
+
     const docIdx =
       targetDoc.indexNumber ||
       targetDoc.fieldValues?.['رقم_الفهرس'] ||
@@ -523,10 +569,11 @@ export default function NotaryHubPanel({
       conservationOffice: newPubOffice.trim() || 'المحافظة العقارية',
       wilaya: newPubWilaya.trim() || 'وهران',
       depositDate: newPubDepositDate || new Date().toISOString().slice(0, 10),
-      status: isPublished ? 'published' : 'deposited',
-      volume: newPubVolume.trim() || undefined,
-      number: newPubNumber.trim() || undefined,
-      publicationDate: isPublished ? newPubPublicationDate : undefined,
+      status: effectivePubStatus,
+      volume: effectivePubStatus === 'rejected' ? undefined : newPubVolume.trim() || undefined,
+      number: effectivePubStatus === 'rejected' ? undefined : newPubNumber.trim() || undefined,
+      publicationDate: effectivePubStatus === 'published' ? newPubPublicationDate : undefined,
+      notes: newPubNotes.trim() || undefined,
       updatedAt: new Date().toISOString(),
     };
 
@@ -555,8 +602,10 @@ export default function NotaryHubPanel({
     setShowNewPubModal(false);
     setEditingPubId(null);
     showToast(
-      isPublished
+      effectivePubStatus === 'published'
         ? `تم تأكيد الشهر العقاري للعقد (${targetDoc.title}) وتحديث وسم [مراجع_الشهر] آلياً`
+        : effectivePubStatus === 'rejected'
+        ? `تم تسجيل رفض/تحفظ الشهر العقاري للعقد (${targetDoc.title})`
         : `تم تسجيل إيداع الشهر العقاري للعقد (${targetDoc.title})`
     );
   };
@@ -818,8 +867,16 @@ export default function NotaryHubPanel({
                         إيداع: {doc.depositNumber || '—'} · الحالة:{' '}
                         {doc.status === 'published'
                           ? 'مشهر'
+                          : doc.status === 'publication_rejected'
+                          ? 'رفض بالشهر'
+                          : doc.status === 'deposited_for_publication'
+                          ? 'مودع للشهر'
                           : doc.status === 'registered'
                           ? 'مسجل'
+                          : doc.status === 'registration_rejected'
+                          ? 'مرفوض بالتسجيل'
+                          : doc.status === 'deposited_for_registration'
+                          ? 'مودع للتسجيل'
                           : 'مفهرس'}
                       </span>
                     </div>
@@ -942,13 +999,43 @@ export default function NotaryHubPanel({
                 />
               </div>
 
-              <input
-                type="text"
-                value={newBatchReceipt}
-                onChange={(e) => setNewBatchReceipt(e.target.value)}
-                placeholder="رقم وصل التسجيل (عند استلامه لحقن [مراجع_التسجيل] آلياً)"
-                className="w-full text-xs bg-white border border-emerald-300 rounded px-2 py-1.5 font-mono tabular-nums"
-              />
+              <div className="grid grid-cols-2 gap-1.5">
+                <select
+                  value={newBatchStatus}
+                  onChange={(e) =>
+                    setNewBatchStatus(
+                      e.target.value as 'deposited' | 'registered' | 'rejected'
+                    )
+                  }
+                  className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5 font-bold text-slate-800"
+                >
+                  <option value="deposited">مودعة للتسجيل</option>
+                  <option value="registered">مسجلة رسمياً (بوصل)</option>
+                  <option value="rejected">مرفوضة للتصحيح / التسوية</option>
+                </select>
+                <input
+                  type="text"
+                  value={newBatchReceipt}
+                  onChange={(e) => {
+                    setNewBatchReceipt(e.target.value);
+                    if (e.target.value.trim() && newBatchStatus === 'deposited') {
+                      setNewBatchStatus('registered');
+                    }
+                  }}
+                  placeholder="رقم وصل التسجيل"
+                  className="w-full text-xs bg-white border border-emerald-300 rounded px-2 py-1.5 font-mono tabular-nums"
+                />
+              </div>
+
+              {newBatchStatus === 'rejected' && (
+                <input
+                  type="text"
+                  value={newBatchNotes}
+                  onChange={(e) => setNewBatchNotes(e.target.value)}
+                  placeholder="سبب الرفض أو الملاحظة الجبائية للتسوية..."
+                  className="w-full text-xs bg-red-50/60 border border-red-300 rounded px-2 py-1.5 text-red-900"
+                />
+              )}
 
               <div className="flex items-center gap-1.5 pt-1">
                 <button
@@ -987,11 +1074,15 @@ export default function NotaryHubPanel({
                       className={`text-[10px] px-2 py-0.5 rounded font-bold ${
                         batch.status === 'registered'
                           ? 'bg-emerald-100 text-emerald-800'
+                          : batch.status === 'rejected'
+                          ? 'bg-red-100 text-red-800'
                           : 'bg-amber-100 text-amber-800'
                       }`}
                     >
                       {batch.status === 'registered'
                         ? `مسجلة (وصل ${batch.receiptNumber || ''})`
+                        : batch.status === 'rejected'
+                        ? 'مرفوضة للتسوية'
                         : 'مودعة للتسجيل'}
                     </span>
                     <button
@@ -1092,22 +1183,54 @@ export default function NotaryHubPanel({
                 placeholder="المحافظة العقارية..."
                 className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5"
               />
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
+                <select
+                  value={newPubStatus}
+                  onChange={(e) =>
+                    setNewPubStatus(
+                      e.target.value as 'deposited' | 'published' | 'rejected'
+                    )
+                  }
+                  className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5 font-bold text-slate-800"
+                >
+                  <option value="deposited">قيد الإيداع</option>
+                  <option value="published">مشهر رسمياً</option>
+                  <option value="rejected">رفض / تحفظ عقاري</option>
+                </select>
                 <input
                   type="text"
                   value={newPubVolume}
-                  onChange={(e) => setNewPubVolume(e.target.value)}
-                  placeholder="رقم المجلد (إن شُهر)"
+                  onChange={(e) => {
+                    setNewPubVolume(e.target.value);
+                    if (e.target.value.trim() && newPubNumber.trim() && newPubStatus === 'deposited') {
+                      setNewPubStatus('published');
+                    }
+                  }}
+                  placeholder="رقم المجلد"
                   className="w-full text-xs bg-white border border-emerald-300 rounded px-2 py-1.5 font-mono tabular-nums"
                 />
                 <input
                   type="text"
                   value={newPubNumber}
-                  onChange={(e) => setNewPubNumber(e.target.value)}
-                  placeholder="رقم الشهر (إن شُهر)"
+                  onChange={(e) => {
+                    setNewPubNumber(e.target.value);
+                    if (e.target.value.trim() && newPubVolume.trim() && newPubStatus === 'deposited') {
+                      setNewPubStatus('published');
+                    }
+                  }}
+                  placeholder="رقم الشهر"
                   className="w-full text-xs bg-white border border-emerald-300 rounded px-2 py-1.5 font-mono tabular-nums"
                 />
               </div>
+              {newPubStatus === 'rejected' && (
+                <input
+                  type="text"
+                  value={newPubNotes}
+                  onChange={(e) => setNewPubNotes(e.target.value)}
+                  placeholder="سبب الرفض أو التحفظ العقاري..."
+                  className="w-full text-xs bg-red-50/60 border border-red-300 rounded px-2 py-1.5 text-red-900"
+                />
+              )}
               <div className="grid grid-cols-2 gap-1.5">
                 <div>
                   <label className="block text-[9px] text-slate-500">تاريخ الإيداع</label>

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Eye } from 'lucide-react';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from '@/lib/types';
 import { buildNotarialPaginationClosingText } from '@/lib/editor-utils';
 
@@ -18,6 +19,7 @@ interface EditorA4CanvasProps {
   footerEditorRef: React.RefObject<HTMLDivElement | null>;
   onSyncPlaceholdersAndDraft: () => void;
   onDecorateEditorZonesPreservingSelection: () => void;
+  onTogglePreviewMergedMode?: () => void;
   onEditorKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onEditorPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void;
   onEditorMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
@@ -39,6 +41,7 @@ export default function EditorA4Canvas({
   footerEditorRef,
   onSyncPlaceholdersAndDraft,
   onDecorateEditorZonesPreservingSelection,
+  onTogglePreviewMergedMode,
   onEditorKeyDown,
   onEditorPaste,
   onEditorMouseDown,
@@ -170,7 +173,7 @@ export default function EditorA4Canvas({
             </div>
           )}
 
-          {/* MAIN CONTRACT BODY EDITABLE ZONE */}
+          {/* MAIN CONTRACT BODY EDITABLE ZONE OR PAGINATED MERGED PREVIEW */}
           {previewMergedMode ? (
             <div
               dir="rtl"
@@ -202,7 +205,7 @@ export default function EditorA4Canvas({
                   isBodyLocked ? 'cursor-default select-text' : ''
                 }`}
               />
-              {/* Print-Only Paginated Layer with ../.. on non-final pages and الصفحة … والأخيرة on final page */}
+              {/* Print-Only Paginated Layer with exact ../.. on non-final pages and الصفحة … والأخيرة on final page */}
               <div
                 dir="rtl"
                 className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
@@ -213,25 +216,29 @@ export default function EditorA4Canvas({
             </>
           )}
 
-          {/* Inline Notarial Closing Line Marker at end of body text (before 6cm bottom margin) */}
+          {/* Clean Notarial Closing Line Marker at end of body text (no artificial explanation on screen) */}
           {pageNumberingEnabled && !previewMergedMode && (
             <div
               dir="rtl"
-              className="text-left text-slate-900 font-bold select-none mt-1 relative z-10 no-print"
+              className="text-left text-slate-900 font-bold select-none mt-1 relative z-10 no-print flex items-center justify-between gap-2"
               style={{
                 fontFamily: STRICT_FONT_FAMILY,
                 fontSize: `${STRICT_FONT_SIZE_PT}pt`,
                 lineHeight: 1,
               }}
-              title="تُدرج علامة ../.. في آخر سطر من الصفحات غير الأخيرة، وعبارة الإغلاق هذه في آخر سطر من الصفحة الأخيرة تلقائياً عند الدمج والطباعة والتصدير"
             >
-              {estimatedPages > 1 && (
-                <div className="text-left text-slate-900 font-bold mb-1">
-                  <span>../..</span>
-                  <span className="text-slate-400 font-normal text-[9.5pt] mr-2">
-                    (علامة آخر السطر للصفحات 1 إلى {estimatedPages - 1})
-                  </span>
-                </div>
+              {estimatedPages > 1 && onTogglePreviewMergedMode ? (
+                <button
+                  type="button"
+                  onClick={onTogglePreviewMergedMode}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-900 border border-slate-200 font-sans font-semibold text-[10px] transition"
+                  title="معاينة تقسيم الصفحات ومواضع علامة ../.. تحت آخر سطر لكل صفحة كما ستخرج في الطباعة والوورد"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>معاينة مواضع (../..) عبر {estimatedPages} صفحات</span>
+                </button>
+              ) : (
+                <span />
               )}
               <div>{buildNotarialPaginationClosingText(estimatedPages)}</div>
             </div>

@@ -123,7 +123,7 @@ interface SidebarWorkspaceProps {
   currentEditorTitle?: string;
   onOpenDocument: (doc: SavedDocument) => void;
   onOpenMultiSourceNewModal: () => void;
-  onSaveCurrentDocument: (targetFolderId?: string | null) => Promise<void>;
+  onSaveCurrentDocument: (targetFolderId?: string | null) => Promise<SavedDocument | void>;
   onDeleteDocument: (id: string) => Promise<void>;
   onExportDocumentDocx: (doc: SavedDocument) => Promise<void>;
   onOpenVersionDiffModal: () => void;
@@ -454,7 +454,7 @@ export default function SidebarWorkspace({
             activeDocumentId={activeDocumentId}
             currentEditorTitle={currentEditorTitle || 'عقد توثيقي جديد'}
             onSelectDocument={onOpenDocument}
-            onSaveCurrentToFolder={(targetFolderId) => onSaveCurrentDocument(targetFolderId)}
+            onSaveCurrentToFolder={async (targetFolderId) => { await onSaveCurrentDocument(targetFolderId); }}
             onExportDocumentDocx={onExportDocumentDocx}
             onCreateFolder={onCreateFolder}
             onRenameFolder={onRenameFolder}

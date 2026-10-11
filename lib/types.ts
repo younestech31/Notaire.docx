@@ -225,8 +225,10 @@ export type ContractLifecycleStatus =
   | 'signed'
   | 'signed_indexed'
   | 'deposited_for_registration'
+  | 'registration_rejected'
   | 'registered'
   | 'deposited_for_publication'
+  | 'publication_rejected'
   | 'published';
 
 export interface ContractFinancialTracking {
