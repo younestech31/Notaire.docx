@@ -1,60 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  Download,
-  Eye,
-  FileEdit,
-  FileOutput,
-  FilePlus2,
-  FileText,
-  FileUp,
-  FolderArchive,
-  FormInput,
-  GitCompare,
-  HelpCircle,
-  History,
-  ListChecks,
-  Lock,
-  PanelRightClose,
-  PanelRightOpen,
-  Printer,
-  Replace,
-  RotateCcw,
-  Save,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  Unlock,
-  UserCheck,
-  X,
-} from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
 import EditorTopBar from './EditorTopBar';
 import EditorA4Canvas from './editor/EditorA4Canvas';
+import {
+  EditorActivityRail,
+  EditorModalsHost,
+} from './editor/EditorModalsHost';
 import {
   EditorBottomStatusBar,
   EditorFindReplaceBar,
   EditorModeAndSealBanners,
 } from './editor/EditorStatusBars';
-import InlineVariablePopover, {
-  InlineVariablePopoverState,
-} from './InlineVariablePopover';
+import { InlineVariablePopoverState } from './InlineVariablePopover';
 import SidebarWorkspace, { SidebarTab } from './SidebarWorkspace';
-import {
-  DocxImportPreviewModal,
-  MultiSourceStartModal,
-  OnboardingTourModal,
-  SaveAsTemplateModal,
-  SmartVariablesModal,
-  SnapshotsHistoryModal,
-  VersionDiffModal,
-  WordTemplatesModal,
-} from './SmartModals';
 import {
   ClauseCondition,
   ClauseVariableGroup,
@@ -84,6 +45,7 @@ import {
 } from '@/lib/types';
 import {
   DEFAULT_DERIVED_DOC_TEMPLATES,
+  deleteContractFolder,
   deleteCustomTemplate,
   deleteDerivedDocTemplate,
   deleteDocumentRecord,
@@ -94,10 +56,7 @@ import {
   deletePropertyRecord,
   deleteSubdivisionEstate,
   deleteWordTemplate,
-  exportCustomTemplatesJson,
-  exportFullBackupBundle,
   getRuntimeInfo,
-  importCustomTemplatesJson,
   importFullBackupBundle,
   loadActiveDraftSession,
   loadContractFolders,
@@ -105,8 +64,8 @@ import {
   loadDerivedDocTemplates,
   loadDocumentRevisions,
   loadDownloadArchive,
-  loadNotaryClerks,
   loadNotaryClauses,
+  loadNotaryClerks,
   loadPartyFields,
   loadSavedDocuments,
   loadSavedParties,
@@ -119,21 +78,20 @@ import {
   saveDerivedDocTemplate,
   saveDocumentRecord,
   saveDocumentRevision,
-  saveDownloadArchiveItem,
-  saveNotaryClerk,
   saveNotaryClause,
+  saveNotaryClerk,
   savePartyFields,
   savePartyRecord,
   savePropertyRecord,
   saveSubdivisionEstate,
   saveWordTemplate,
-  sealContractOriginal,
-  deleteContractFolder,
 } from '@/lib/storage';
 import {
-  applyPartyCardsToFieldValues,
-  buildNotarialPaginationClosingText,
   computeDocumentMetrics,
+  injectNotarialPaginationIntoHtml,
+} from '@/lib/notarial-pagination';
+import {
+  applyPartyCardsToFieldValues,
   convertSelectionToSmartTag,
   decorateSmartTagsInDOM,
   deleteContractClauseFromDOM,
@@ -144,7 +102,6 @@ import {
   findMatchesAcrossNodes,
   focusAndSelectMatchInDOM,
   getIntersectingBlockElements,
-  injectNotarialPaginationIntoHtml,
   insertHtmlAtSelection,
   insertOrWrapNewClauseAtSelection,
   moveContractClauseInDOM,
@@ -180,7 +137,16 @@ import {
   mergePlaceholdersIntoHtml,
   normalizePlaceholderKey,
 } from '@/lib/docx-engine';
-import { parseContractIntoClauses } from '@/lib/docx-template-engine';
+import {
+  buildFullSubdivisionTableHtml,
+  buildSubdivisionLotClauseHtml,
+  downloadOfficeBackupBundleFile,
+  downloadTemplatesJsonFile,
+  exportAndSealContractToWord,
+  generateAndDownloadDerivedDoc,
+  importDocxFilesAsTemplates,
+  importTemplatesJsonFile,
+} from '@/lib/document-io-workflows';
 import { isContractOfficiallyIndexed } from '@/lib/indexing-engine';
 
 const INITIAL_EMPTY_PARAGRAPH = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
@@ -2015,50 +1981,20 @@ export default function NotaryEditorApp() {
   const handleGenerateDerivedDoc = async (tpl: DerivedDocTemplate) => {
     try {
       const activeValues = fieldValuesRef.current || fieldValues;
-      // Strictly rely on current Smart Variables Form + Parties & Property Designations
-      const requiredVars = extractPlaceholdersFromHtml(
-        tpl.headerHtml,
-        tpl.bodyHtml,
-        tpl.footerHtml
-      );
-      const missingVars = requiredVars.filter(
-        (k) => !activeValues[k] || !activeValues[k].trim()
-      );
+      const { missingVarsCount, downloads: nextDownloads } =
+        await generateAndDownloadDerivedDoc({
+          docId,
+          docTitle,
+          tpl,
+          fieldValues: activeValues,
+        });
+      setDownloads(nextDownloads);
 
-      if (missingVars.length > 0) {
+      if (missingVarsCount > 0) {
         showToast(
-          `تنبيه: تم توليد "${tpl.name}" مع وجود (${missingVars.length}) متغير غير معبأ بعد في استمارة المتغيرات`
+          `تنبيه: تم توليد "${tpl.name}" مع وجود (${missingVarsCount}) متغير غير معبأ بعد في استمارة المتغيرات`
         );
-      }
-
-      const fileTitle = `${docTitle || 'عقد'} - ${tpl.name}`;
-      await downloadNotaryDocx({
-        title: fileTitle,
-        bodyHtml: tpl.bodyHtml,
-        headerHtml: tpl.headerHtml,
-        footerHtml: tpl.footerHtml,
-        pageNumberingEnabled: true,
-        fieldValues: activeValues,
-      });
-
-      // Log into Download Archive
-      const archiveItem: DownloadArchiveItem = {
-        id: `dl_${Date.now()}`,
-        documentId: docId,
-        documentTitle: docTitle || 'عقد توثيقي',
-        docTypeCode: tpl.code,
-        docTypeLabel: tpl.name,
-        fileName: `${fileTitle}.docx`,
-        bodyHtml: mergePlaceholdersIntoHtml(tpl.bodyHtml, activeValues),
-        headerHtml: mergePlaceholdersIntoHtml(tpl.headerHtml, activeValues),
-        footerHtml: mergePlaceholdersIntoHtml(tpl.footerHtml, activeValues),
-        fieldValues: { ...activeValues },
-        createdAt: new Date().toISOString(),
-      };
-      await saveDownloadArchiveItem(archiveItem);
-      setDownloads(await loadDownloadArchive());
-
-      if (missingVars.length === 0) {
+      } else {
         showToast(`تم توليد وتصدير "${tpl.name}" (.docx) وحفظه في أرشيف التحميلات`);
       }
     } catch (err) {
@@ -2165,15 +2101,7 @@ export default function NotaryEditorApp() {
   ) => {
     if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
-    const clauseHtml = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><span style="font-weight:bold;">التعيين العقاري (الحصة رقم ${escapeHtml(
-      lot.lotNumber
-    )}): </span>${escapeHtml(lot.fullDescription)}${
-      estate.subdivisionDeedRef
-        ? ` وذلك بموجب الجدول الوصفي للتقسيم المحرر بتاريخ ومراجع: ${escapeHtml(
-            estate.subdivisionDeedRef
-          )}.`
-        : ''
-    }</p>`;
+    const clauseHtml = buildSubdivisionLotClauseHtml(estate, lot);
     insertHtmlAtSelection(bodyEditorRef.current, clauseHtml, savedRangeRef.current);
     syncPlaceholdersAndDraft();
     showToast(`تم إدراج فقرة تعيين الحصة رقم (${lot.lotNumber}) في العقد`);
@@ -2182,38 +2110,7 @@ export default function NotaryEditorApp() {
   const handleInsertFullSubdivisionTableAtCaret = (estate: SubdivisionEstate) => {
     if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
-    let rowsHtml = `<tr>
-      <td style="width:14%;border:1px solid #000000;background-color:#F1F5F9;padding:2px 4px;font-weight:bold;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;font-weight:bold;">رقم الحصة</p></td>
-      <td style="width:20%;border:1px solid #000000;background-color:#F1F5F9;padding:2px 4px;font-weight:bold;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;font-weight:bold;">الطبيعة</p></td>
-      <td style="width:20%;border:1px solid #000000;background-color:#F1F5F9;padding:2px 4px;font-weight:bold;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;font-weight:bold;">الطابق والعمارة</p></td>
-      <td style="width:18%;border:1px solid #000000;background-color:#F1F5F9;padding:2px 4px;font-weight:bold;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;font-weight:bold;">المساحة (م²)</p></td>
-      <td style="width:28%;border:1px solid #000000;background-color:#F1F5F9;padding:2px 4px;font-weight:bold;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;font-weight:bold;">الحصة في الأجزاء المشتركة</p></td>
-    </tr>`;
-
-    for (const lot of estate.lots) {
-      rowsHtml += `<tr>
-        <td style="border:1px solid #000000;padding:2px 4px;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;">${escapeHtml(
-          lot.lotNumber
-        )}</p></td>
-        <td style="border:1px solid #000000;padding:2px 4px;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;">${escapeHtml(
-          lot.nature
-        )}</p></td>
-        <td style="border:1px solid #000000;padding:2px 4px;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;">${escapeHtml(
-          `${lot.floor} ${lot.building}`.trim()
-        )}</p></td>
-        <td style="border:1px solid #000000;padding:2px 4px;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;">${escapeHtml(
-          lot.area
-        )}</p></td>
-        <td style="border:1px solid #000000;padding:2px 4px;"><p dir="rtl" style="margin:0;line-height:1;text-align:center;">${escapeHtml(
-          lot.commonShares
-        )}</p></td>
-      </tr>`;
-    }
-
-    const tableHtml = `<p dir="rtl" style="margin:0;line-height:1;font-weight:bold;">جدول الوصف التقسيمي للعقار: ${escapeHtml(
-      estate.estateName
-    )}</p><table dir="rtl" style="width:100%;max-width:120mm;border-collapse:collapse;table-layout:fixed;margin:0;"><tbody>${rowsHtml}</tbody></table><p dir="rtl" style="margin:0;line-height:1;"><br></p>`;
-
+    const tableHtml = buildFullSubdivisionTableHtml(estate);
     insertHtmlAtSelection(bodyEditorRef.current, tableHtml, savedRangeRef.current);
     syncPlaceholdersAndDraft();
     showToast(`تم إدراج جدول الوصف التقسيمي (${estate.estateName}) في العقد`);
@@ -2226,47 +2123,29 @@ export default function NotaryEditorApp() {
     try {
       const activeValues = fieldValuesRef.current || fieldValues;
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
-      const titleToUse = docTitle || 'عقد_توثيقي';
-      const docxBytes = await downloadNotaryDocx({
-        title: titleToUse,
-        bodyHtml,
-        headerHtml: showHeaderFooter ? headerHtml : '',
-        footerHtml: showHeaderFooter ? footerHtml : '',
-        pageNumberingEnabled,
-        fieldValues: activeValues,
-      });
-
       const currentYear = activeDocument?.year || new Date().getFullYear();
       const indexNumber =
         activeValues['رقم_الفهرس'] ||
         activeDocument?.contractNumber ||
         docId.replace(/^doc_/, '');
 
-      const sealed = await sealContractOriginal({
-        documentId: docId,
-        year: currentYear,
-        indexNumber,
-        docxBytes,
-      });
-
-      const archiveItem: DownloadArchiveItem = {
-        id: `dl_${Date.now()}`,
-        documentId: docId,
-        documentTitle: titleToUse,
-        docTypeCode: 'acte',
-        docTypeLabel: `الأصل المعتمد (${sealed.relativePath})`,
-        fileName: `${titleToUse}.docx`,
-        bodyHtml,
-        headerHtml: showHeaderFooter ? headerHtml : '',
-        footerHtml: showHeaderFooter ? footerHtml : '',
-        fieldValues: { ...activeValues },
-        createdAt: new Date().toISOString(),
-      };
-      await saveDownloadArchiveItem(archiveItem);
-      setDownloads(await loadDownloadArchive());
+      const { relativePath, sha256, downloads: nextDownloads } =
+        await exportAndSealContractToWord({
+          docId,
+          docTitle,
+          bodyHtml,
+          headerHtml,
+          footerHtml,
+          showHeaderFooter,
+          pageNumberingEnabled,
+          fieldValues: activeValues,
+          year: currentYear,
+          indexNumber,
+        });
+      setDownloads(nextDownloads);
 
       showToast(
-        `تم تصدير وختم الأصل المعتمد (${sealed.relativePath}) ببصمة SHA-256: ${sealed.sha256.slice(0, 12)}...`
+        `تم تصدير وختم الأصل المعتمد (${relativePath}) ببصمة SHA-256: ${sha256.slice(0, 12)}...`
       );
     } catch (err) {
       setAutoSaveState('error');
@@ -2344,29 +2223,8 @@ export default function NotaryEditorApp() {
   };
 
   const handleImportDocxAsTemplate = async (files: FileList) => {
-    let importedCount = 0;
-    for (const file of Array.from(files)) {
-      try {
-        const res = await importNotaryDocxFile(file);
-        const newTpl: CustomTemplate = {
-          id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          name: res.title,
-          category: 'نماذج وورد مستوردة',
-          bodyHtml: res.bodyHtml,
-          headerHtml: res.headerHtml,
-          footerHtml: res.footerHtml,
-          pageNumberingEnabled: true,
-          extractedPlaceholders: res.extractedPlaceholders,
-          sourceFileName: file.name,
-          updatedAt: new Date().toISOString(),
-        };
-        await saveCustomTemplate(newTpl);
-        importedCount++;
-      } catch {
-        // Skip invalid file
-      }
-    }
-    const updated = await loadCustomTemplates();
+    const { importedCount, templates: updated } =
+      await importDocxFilesAsTemplates(files);
     setTemplates(updated);
     if (importedCount > 0) {
       showToast(`تم استيراد وحفظ (${importedCount}) قالب في مكتبة المكتب بنجاح`);
@@ -2419,16 +2277,7 @@ export default function NotaryEditorApp() {
 
   const handleExportTemplatesJson = async () => {
     try {
-      const jsonStr = await exportCustomTemplatesJson();
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `قوالب_مكتب_التوثيق_${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadTemplatesJsonFile();
       showToast('تم تصدير قوالب المكتب إلى ملف JSON بنجاح');
     } catch {
       showToast('تعذر تصدير ملف القوالب');
@@ -2437,17 +2286,12 @@ export default function NotaryEditorApp() {
 
   const handleImportTemplatesJson = async (file: File) => {
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        const count = await importCustomTemplatesJson(parsed);
-        setTemplates(await loadCustomTemplates());
-        showToast(`تم استيراد وحفظ (${count}) قالب في مكتبة المكتب`);
-      } else {
-        showToast('ملف JSON غير صالح كقائمة قوالب');
-      }
-    } catch {
-      showToast('تعذر قراءة ملف القوالب');
+      const { count, templates: nextTemplates } =
+        await importTemplatesJsonFile(file);
+      setTemplates(nextTemplates);
+      showToast(`تم استيراد وحفظ (${count}) قالب في مكتبة المكتب`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'تعذر قراءة ملف القوالب');
     }
   };
 
@@ -3001,21 +2845,7 @@ export default function NotaryEditorApp() {
         }}
         onExportCurrentToWord={handleExportCurrentToWord}
         onExportBackupJson={async () => {
-          const bundle = await exportFullBackupBundle();
-          const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-            type: 'application/json',
-          });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `نسخة_احتياطية_الموثق_${new Date()
-            .toISOString()
-            .slice(0, 10)}.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          const nowIso = new Date().toISOString();
+          const nowIso = await downloadOfficeBackupBundleFile();
           setLastBackupAt(nowIso);
           if (typeof window !== 'undefined') {
             localStorage.setItem('notary_last_backup_at_v1', nowIso);
@@ -3464,20 +3294,7 @@ export default function NotaryEditorApp() {
               setDownloads(await loadDownloadArchive());
             }}
             onExportBackupJson={async () => {
-              const bundle = await exportFullBackupBundle();
-              const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-                type: 'application/json',
-              });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `نسخة_احتياطية_الموثق_${new Date()
-                .toISOString()
-                .slice(0, 10)}.json`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
+              await downloadOfficeBackupBundleFile();
               showToast('تم تصدير النسخة الاحتياطية الشاملة للمكتب (JSON)');
             }}
             onImportBackupJson={async (file) => {
@@ -3542,81 +3359,13 @@ export default function NotaryEditorApp() {
           />
         </div>
       ) : (
-        /* SLIM ACTIVITY RAIL (الشريط الجانبي يبدأ مطوياً كعمود أيقونات نحيف للأقسام الأربعة ويفتح عند اختيار قسم) */
-        <aside className="flex w-14 bg-white border-l border-[#C4A46A]/35 flex-col items-center py-2.5 gap-2 h-full min-h-0 shrink-0 select-none no-print transition-all duration-150 shadow-2xs">
-          {/* 1. Clauses Section */}
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('clauses');
-              setIsSidebarOpen(true);
-            }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
-            title="فتح قسم البنود الجاهزة"
-          >
-            <ListChecks className="w-4 h-4" />
-            <span className="text-[10px] font-medium">البنود</span>
-          </button>
-
-          {/* 2. Parties Section */}
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('parties');
-              setIsSidebarOpen(true);
-            }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744] relative"
-            title="فتح قسم الأطراف والتعيينات"
-          >
-            <UserCheck className="w-4 h-4" />
-            <span className="text-[10px] font-medium">الأطراف</span>
-            {unfilledCount > 0 && (
-              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-[#8C1D2C]" />
-            )}
-          </button>
-
-          {/* 3. Contract Templates Section */}
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('templates');
-              setIsSidebarOpen(true);
-            }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
-            title="فتح قسم قوالب عقود المكتب"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="text-[10px] font-medium">القوالب</span>
-          </button>
-
-          {/* 4. Archive & Saved Documents Section */}
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('documents');
-              setIsSidebarOpen(true);
-            }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
-            title="فتح قسم المستندات والأرشيف"
-          >
-            <FolderArchive className="w-4 h-4" />
-            <span className="text-[10px] font-medium">الأرشيف</span>
-          </button>
-
-          {/* 5. Notary Hub & Indexes Section */}
-          <button
-            type="button"
-            onClick={() => {
-              setSidebarTab('notary_hub');
-              setIsSidebarOpen(true);
-            }}
-            className="w-11 py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[#5C6B7A] hover:bg-[#F7F5F0] hover:text-[#0F2744]"
-            title="الفهارس، المفتشية والشهر العقاري"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span className="text-[10px] font-medium">الفهارس</span>
-          </button>
-        </aside>
+        <EditorActivityRail
+          unfilledCount={unfilledCount}
+          onSelectTab={(tab) => {
+            setSidebarTab(tab);
+            setIsSidebarOpen(true);
+          }}
+        />
       )}
 
         <EditorA4Canvas
@@ -3673,33 +3422,20 @@ export default function NotaryEditorApp() {
         }}
       />
 
-      {/* INLINE FLOATING VARIABLE POPOVER (Phase 3) */}
-      <InlineVariablePopover
-        popover={inlinePopover}
-        value={inlinePopover ? fieldValues[inlinePopover.varKey] || '' : ''}
-        inputType={
-          inlinePopover ? fieldInputTypes[inlinePopover.varKey] || 'text' : 'text'
-        }
-        onChangeValue={(key, value) => {
-          const next = { ...fieldValuesRef.current, [key]: value };
-          fieldValuesRef.current = next;
-          setFieldValues(next);
-          syncPlaceholdersAndDraft(next);
-        }}
-        onChangeInputType={handleChangeFieldInputType}
-        onOpenFullModal={(varKey) => {
+      <EditorModalsHost
+        docId={docId}
+        docTitle={docTitle}
+        activeClerk={activeClerk}
+        inlinePopover={inlinePopover}
+        onCloseInlinePopover={() => setInlinePopover(null)}
+        showSmartVarsModal={showSmartVarsModal}
+        onCloseSmartVarsModal={() => setShowSmartVarsModal(false)}
+        focusedVarKey={focusedVarKey}
+        onOpenSmartVarsModalForKey={(varKey) => {
           decorateEditorZonesPreservingSelection();
           setFocusedVarKey(varKey);
           setShowSmartVarsModal(true);
         }}
-        onClose={() => setInlinePopover(null)}
-      />
-
-      {/* MODALS */}
-      <SmartVariablesModal
-        isOpen={showSmartVarsModal}
-        onClose={() => setShowSmartVarsModal(false)}
-        focusedVarKey={focusedVarKey}
         extractedPlaceholders={extractedPlaceholders}
         clauseGroups={clauseGroups}
         partyFields={partyFields}
@@ -3725,73 +3461,40 @@ export default function NotaryEditorApp() {
         }}
         onChangeFieldInputType={handleChangeFieldInputType}
         onBakeAllIntoDocument={handleBakeAllPlaceholdersIntoDocument}
-      />
-
-      <VersionDiffModal
-        isOpen={showVersionDiffModal}
-        onClose={() => {
+        showVersionDiffModal={showVersionDiffModal}
+        onCloseVersionDiffModal={() => {
           setShowVersionDiffModal(false);
           setDiffComparisonRevision(null);
         }}
-        revisions={(() => {
-          const contractRevs = revisions.filter((r) => r.documentId === docId);
-          return diffComparisonRevision
-            ? [
-                diffComparisonRevision,
-                ...contractRevs.filter((r) => r.id !== diffComparisonRevision.id),
-              ]
-            : contractRevs;
-        })()}
-        currentBodyHtml={modalActiveBodyHtml}
-        currentTitle={docTitle}
-        onRestoreRevision={handleRestoreSnapshot}
-      />
-
-      <DocxImportPreviewModal
-        isOpen={showDocxPreviewModal}
-        onClose={() => {
+        revisions={revisions}
+        diffComparisonRevision={diffComparisonRevision}
+        modalActiveBodyHtml={modalActiveBodyHtml}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        showDocxPreviewModal={showDocxPreviewModal}
+        onCloseDocxPreviewModal={() => {
           setShowDocxPreviewModal(false);
           setPendingDocxImport(null);
         }}
-        importResult={pendingDocxImport}
-        onConfirmApply={handleApplyDocxImport}
-      />
-
-      <SaveAsTemplateModal
-        isOpen={showSaveAsTemplateModal}
-        onClose={() => setShowSaveAsTemplateModal(false)}
-        currentDocTitle={docTitle}
-        extractedPlaceholders={extractedPlaceholders}
-        currentFieldValues={fieldValues}
-        onConfirmSave={handleSaveCustomTemplateAdvanced}
-      />
-
-      <SnapshotsHistoryModal
-        isOpen={showSnapshotsHistoryModal}
-        onClose={() => setShowSnapshotsHistoryModal(false)}
-        revisions={revisions.filter((r) => r.documentId === docId)}
-        currentBodyHtml={modalActiveBodyHtml}
-        currentTitle={docTitle}
+        pendingDocxImport={pendingDocxImport}
+        onConfirmApplyDocxImport={handleApplyDocxImport}
+        showSaveAsTemplateModal={showSaveAsTemplateModal}
+        onCloseSaveAsTemplateModal={() => setShowSaveAsTemplateModal(false)}
+        onConfirmSaveCustomTemplate={handleSaveCustomTemplateAdvanced}
+        showSnapshotsHistoryModal={showSnapshotsHistoryModal}
+        onCloseSnapshotsHistoryModal={() => setShowSnapshotsHistoryModal(false)}
         onTakeManualSnapshot={handleTakeManualSnapshot}
-        onRestoreSnapshot={handleRestoreSnapshot}
         onDeleteSnapshot={handleDeleteSnapshot}
         onOpenDiffComparison={handleOpenDiffComparison}
-      />
-
-      <OnboardingTourModal
-        isOpen={showOnboardingTour}
-        onClose={() => setShowOnboardingTour(false)}
-        onFinishTour={() => {
+        showOnboardingTour={showOnboardingTour}
+        onCloseOnboardingTour={() => setShowOnboardingTour(false)}
+        onFinishOnboardingTour={() => {
           if (typeof window !== 'undefined') {
             localStorage.setItem('notary_editor_tour_v27', 'true');
           }
           setShowOnboardingTour(false);
         }}
-      />
-
-      <MultiSourceStartModal
-        isOpen={showMultiSourceModal}
-        onClose={() => setShowMultiSourceModal(false)}
+        showMultiSourceModal={showMultiSourceModal}
+        onCloseMultiSourceModal={() => setShowMultiSourceModal(false)}
         templates={templates}
         documents={documents}
         downloads={downloads}
@@ -3819,9 +3522,10 @@ export default function NotaryEditorApp() {
           syncPlaceholdersAndDraft({}, {});
           showToast('تم فتح ورقة عقد توثيقي جديد معزول تماماً');
         }}
-        onSelectTemplate={(tpl, mode, clearPreviousClauses) => {
+        onSelectTemplateFromMultiSource={(tpl, mode, clearPreviousClauses) => {
           if (!bodyEditorRef.current) return;
           if (mode === 'insert') {
+            if (!ensureBodyEditable()) return;
             recordHistorySnapshot(`قبل إدراج القالب "${tpl.name}" عند المؤشر`);
             insertHtmlAtSelection(
               bodyEditorRef.current,
@@ -3865,12 +3569,12 @@ export default function NotaryEditorApp() {
             `تم فتح عقد جديد من القالب "${tpl.name}" بمتغيرات وبنود معزولة`
           );
         }}
-        onSelectSavedDoc={(doc) => {
+        onSelectSavedDocFromMultiSource={(doc) => {
           handleSelectDocument(doc);
           showToast(`تم فتح العقد "${doc.title}" بجميع خصائصه ومتغيراته المحفوظة`);
         }}
-        onImportDocxFile={handleImportDocxDirectlyToEditor}
-        onSelectDownloadArchiveItem={(item) => {
+        onImportDocxFileFromMultiSource={handleImportDocxDirectlyToEditor}
+        onSelectDownloadArchiveItemFromMultiSource={(item) => {
           if (!bodyEditorRef.current) return;
           setUndoStack([]);
           setRedoStack([]);
@@ -3888,12 +3592,10 @@ export default function NotaryEditorApp() {
           syncPlaceholdersAndDraft(nextVals, {});
           showToast(`تم استيراد "${item.docTypeLabel}" من أرشيف التحميلات للمحرر`);
         }}
-      />
-
-      <WordTemplatesModal
-        isOpen={showWordTemplatesModal}
-        onClose={() => setShowWordTemplatesModal(false)}
+        showWordTemplatesModal={showWordTemplatesModal}
+        onCloseWordTemplatesModal={() => setShowWordTemplatesModal(false)}
         wordTemplates={wordTemplates}
+        outlineClauses={outlineClauses}
         onSaveWordTemplate={async (tpl) => {
           await saveWordTemplate(tpl);
           setWordTemplates(await loadWordTemplates());
@@ -3903,43 +3605,6 @@ export default function NotaryEditorApp() {
           await deleteWordTemplate(id);
           setWordTemplates(await loadWordTemplates());
           showToast('تم حذف قالب Word');
-        }}
-        contractData={{
-          officeName: activeClerk.name,
-          officeAddr: 'مكتب التوثيق الرسمي',
-          typeActe: docTitle,
-          client1:
-            fieldValues['الطرف_الأول_الاسم'] ||
-            fieldValues['البائع'] ||
-            fieldValues['الموكل'] ||
-            '',
-          client2:
-            fieldValues['الطرف_الثاني_الاسم'] ||
-            fieldValues['المشتري'] ||
-            fieldValues['الوكيل'] ||
-            '',
-          dateActe: fieldValues['تاريخ_العقد'] || new Date().toLocaleDateString('ar-DZ'),
-          clauses: (() => {
-            const parsedFromSheet = parseContractIntoClauses(
-              modalActiveBodyHtml,
-              fieldValues
-            );
-            if (parsedFromSheet.length > 0) {
-              return parsedFromSheet.map((c) => ({
-                title: c.title,
-                contentHtml: c.bodyHtml,
-              }));
-            }
-            if (outlineClauses.length > 0) {
-              return outlineClauses.map((c) => ({
-                title: c.title,
-                contentHtml: c.contentHtml,
-              }));
-            }
-            return [];
-          })(),
-          rawContractBodyHtml: modalActiveBodyHtml,
-          fieldValues,
         }}
       />
     </div>

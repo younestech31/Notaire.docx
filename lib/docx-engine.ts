@@ -10,7 +10,7 @@ import {
   STRICT_LINE_SPACING_TWIPS,
   STRICT_MARGINS_TWIPS,
 } from './types';
-import { DocxImportResult, importNotaryDocxFile } from './docx-importer';
+import { type DocxImportResult, importNotaryDocxFile } from './docx-importer';
 
 export type { DocxImportResult };
 export { importNotaryDocxFile };

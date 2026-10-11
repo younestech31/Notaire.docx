@@ -1,8 +1,8 @@
 import JSZip from 'jszip';
-import { WordTemplateDefinition, STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
+import { type WordTemplateDefinition, STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
 import {
   generateNotaryDocxBlob,
-  DocxExportOptions,
+  type DocxExportOptions,
   downloadNotaryDocx,
   mergePlaceholdersIntoHtml,
 } from './docx-engine';

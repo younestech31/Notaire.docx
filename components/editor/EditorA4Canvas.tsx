@@ -3,7 +3,7 @@
 import React from 'react';
 import { Eye } from 'lucide-react';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from '@/lib/types';
-import { buildNotarialPaginationClosingText } from '@/lib/editor-utils';
+import { buildNotarialPaginationClosingText } from '@/lib/notarial-pagination';
 
 interface EditorA4CanvasProps {
   zoom: number;

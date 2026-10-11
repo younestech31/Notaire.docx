@@ -1,4 +1,4 @@
-import {
+import type {
   BackupBundle,
   ContractFolder,
   CustomTemplate,
@@ -18,7 +18,7 @@ import {
   WordTemplateDefinition,
 } from './types';
 import { DEFAULT_WORD_TEMPLATES } from './docx-template-engine';
-import { getDesktopBridge, DesktopOfficeBridge } from './desktop-bridge';
+import { getDesktopBridge, type DesktopOfficeBridge } from './desktop-bridge';
 import {
   base64ToUint8Array,
   buildArchiveRelativePath,
@@ -26,11 +26,11 @@ import {
   DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
   DEFAULT_PARTY_FIELDS,
-  OfficeStore,
-  OfficeStoreRuntimeInfo,
-  ReadSealedOriginalResult,
-  SealContractOriginalInput,
-  SealContractOriginalResult,
+  type OfficeStore,
+  type OfficeStoreRuntimeInfo,
+  type ReadSealedOriginalResult,
+  type SealContractOriginalInput,
+  type SealContractOriginalResult,
   uint8ArrayToBase64,
 } from './office-store';
 

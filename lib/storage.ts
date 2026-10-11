@@ -1,4 +1,4 @@
-import {
+import type {
   BackupBundle,
   ContractFolder,
   CustomTemplate,
@@ -21,11 +21,11 @@ import {
   DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
   DEFAULT_PARTY_FIELDS,
-  OfficeStore,
-  OfficeStoreRuntimeInfo,
-  ReadSealedOriginalResult,
-  SealContractOriginalInput,
-  SealContractOriginalResult,
+  type OfficeStore,
+  type OfficeStoreRuntimeInfo,
+  type ReadSealedOriginalResult,
+  type SealContractOriginalInput,
+  type SealContractOriginalResult,
 } from './office-store';
 import { browserOfficeStore } from './storage-browser';
 import { desktopOfficeStore } from './storage-desktop';
