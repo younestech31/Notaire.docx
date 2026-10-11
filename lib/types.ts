@@ -242,24 +242,27 @@ export interface ContractFinancialTracking {
 
 export interface RegistrationBatch {
   id: string;
+  batchNumber?: number; // رقم الدفعة التسلسلي السنوي
   year: number;
   statusDate: string; // تاريخ حالة الإيداع (YYYY-MM-DD)
   contractIds: string[]; // معرّفات العقود المضمنة في الدفعة
   indexNumbers?: string[]; // أرقام الفهارس السنوية للعقود
   totalFees: number; // مجموع حقوق التسجيل يدخلها الكاتب
-  paymentMethod: string; // صك / نقد / تحويل...
+  paymentMethod?: string; // صك / نقد / تحويل...
   chequeRef?: string; // رقم وتاريخ الصك
   registrationDate?: string; // تاريخ التسجيل الفعلي عند رجوع الأوراق
   receiptNumber?: string; // رقم وصل المفتشية
   inspectorateName: string; // مفتشية التسجيل والطابع المختصة
-  status: 'pending' | 'registered' | 'rejected';
+  status: 'pending' | 'deposited' | 'registered' | 'rejected';
   notes?: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface PublicationTrack {
   id: string; // مطابق لـ documentId أو معرّف فريد
   documentId: string;
+  contractTitle?: string; // عنوان العقد المرتبط
   indexNumber: string; // رقم الفهرس الرسمي
   wilaya?: string; // الولاية
   conservationOffice: string; // المحافظة العقارية (بئر الجير، وهران شرق...)
@@ -267,11 +270,12 @@ export interface PublicationTrack {
   publicationDate?: string; // تاريخ الشهر الفعلي
   volume?: string; // المجلد
   number?: string; // الرقم
-  fees: number; // رسوم الشهر العقاري
-  feesPaid: boolean; // هل دُفعت رسوم الشهر
+  fees?: number; // رسوم الشهر العقاري
+  feesPaid?: boolean; // هل دُفعت رسوم الشهر
   chequeRef?: string; // مرجع صك الدفع
   status: 'not_sent' | 'deposited' | 'published' | 'rejected';
   notes?: string;
+  createdAt?: string;
   updatedAt: string;
 }
 

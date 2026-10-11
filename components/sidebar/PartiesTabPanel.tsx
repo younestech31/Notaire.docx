@@ -1,0 +1,1255 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  FormInput,
+  Plus,
+  Save,
+  Trash2,
+  Users,
+} from 'lucide-react';
+import {
+  ClauseVariableGroup,
+  ContractPartyCard,
+  NotaryPartyRole,
+  PartyField,
+  SavedPartyRecord,
+  SavedPropertyRecord,
+  SubdivisionEstate,
+  SubdivisionLot,
+  VariableInputType,
+} from '@/lib/types';
+
+interface PartiesTabPanelProps {
+  partyCards: ContractPartyCard[];
+  onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
+  onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
+  partyFields: PartyField[];
+  extractedPlaceholders: string[];
+  clauseGroups: ClauseVariableGroup[];
+  unfilledCount: number;
+  fieldValues: Record<string, string>;
+  fieldInputTypes: Record<string, VariableInputType>;
+  onOpenSmartVariablesModal: (focusKey?: string) => void;
+  onUpdateFieldValue: (key: string, value: string) => void;
+  onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
+  onAddCustomField: (key: string, label: string) => void;
+  onInsertPlaceholderAtCaret: (key: string) => void;
+  onBakeAllPlaceholdersIntoDocument: (explicitValues?: Record<string, string>) => void;
+  estates: SubdivisionEstate[];
+  selectedEstateId: string;
+  selectedLotNumber: string;
+  onSelectEstateAndLot: (estateId: string, lotNumber: string) => void;
+  onSaveEstate: (estate: SubdivisionEstate) => Promise<void>;
+  onDeleteEstate: (id: string) => Promise<void>;
+  onInsertLotClauseAtCaret: (estate: SubdivisionEstate, lot: SubdivisionLot) => void;
+  onInsertFullSubdivisionTableAtCaret: (estate: SubdivisionEstate) => void;
+  savedParties: SavedPartyRecord[];
+  savedProperties: SavedPropertyRecord[];
+  onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
+  onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
+  onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
+  onSaveCurrentPropertyToDirectory: () => void;
+  onSaveSelectionBookmark: () => void;
+}
+
+export default function PartiesTabPanel({
+  partyCards = [],
+  onUpdatePartyCards,
+  onSavePartyCardToDirectory,
+  partyFields,
+  extractedPlaceholders,
+  clauseGroups,
+  unfilledCount,
+  fieldValues,
+  fieldInputTypes = {},
+  onOpenSmartVariablesModal,
+  onUpdateFieldValue,
+  onChangeFieldInputType,
+  onAddCustomField,
+  onInsertPlaceholderAtCaret,
+  onBakeAllPlaceholdersIntoDocument,
+  estates,
+  selectedEstateId,
+  selectedLotNumber,
+  onSelectEstateAndLot,
+  onSaveEstate,
+  onDeleteEstate,
+  onInsertLotClauseAtCaret,
+  onInsertFullSubdivisionTableAtCaret,
+  savedParties,
+  savedProperties,
+  onRecallPartyToRole,
+  onSaveCurrentPartyToDirectory,
+  onRecallPropertyRecord,
+  onSaveCurrentPropertyToDirectory,
+  onSaveSelectionBookmark,
+}: PartiesTabPanelProps) {
+  const [partiesSubTab, setPartiesSubTab] = useState<'fields' | 'subdivision'>('fields');
+  const [newFieldKey, setNewFieldKey] = useState('');
+  const [newPartyRole, setNewPartyRole] = useState<NotaryPartyRole>('بائع');
+  const [expandedPartyCardId, setExpandedPartyCardId] = useState<string | null>(null);
+  const [selectedPartyIdSidebar, setSelectedPartyIdSidebar] = useState<string>('');
+  const [selectedPropIdSidebar, setSelectedPropIdSidebar] = useState<string>('');
+
+  // Subdivision Estate form state
+  const [editingEstate, setEditingEstate] = useState<SubdivisionEstate | null>(null);
+  const [newLotNumber, setNewLotNumber] = useState('');
+  const [newLotBuilding, setNewLotBuilding] = useState('');
+  const [newLotFloor, setNewLotFloor] = useState('');
+  const [newLotNature, setNewLotNature] = useState('شقة سكنية');
+  const [newLotArea, setNewLotArea] = useState('');
+  const [newLotShares, setNewLotShares] = useState('');
+  const [newLotDesc, setNewLotDesc] = useState('');
+
+  const selectedEstate = estates.find((e) => e.id === selectedEstateId) || estates[0] || null;
+  const selectedLot =
+    selectedEstate?.lots.find((l) => l.lotNumber === selectedLotNumber) || null;
+
+  const startNewEstate = () => {
+    setEditingEstate({
+      id: `est_${Date.now()}`,
+      estateName: '',
+      commune: '',
+      wilaya: '',
+      cadastralSection: '',
+      cadastralPlot: '',
+      landArea: '',
+      subdivisionDeedRef: '',
+      lots: [],
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleAddLotToEditingEstate = () => {
+    if (!editingEstate || !newLotNumber.trim()) return;
+    const autoDesc =
+      newLotDesc.trim() ||
+      `الحصة رقم (${newLotNumber.trim()}) المتمثلة في ${newLotNature.trim()}${
+        newLotFloor.trim() ? ` الواقعة في ${newLotFloor.trim()}` : ''
+      }${newLotBuilding.trim() ? ` بـ ${newLotBuilding.trim()}` : ''}${
+        newLotArea.trim() ? `، تتربع على مساحة (${newLotArea.trim()} م²)` : ''
+      }${
+        newLotShares.trim()
+          ? `، وما ينوبها في الأجزاء المشتركة والأرض بـ (${newLotShares.trim()})`
+          : ''
+      }.`;
+
+    const lot: SubdivisionLot = {
+      id: `lot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      lotNumber: newLotNumber.trim(),
+      building: newLotBuilding.trim(),
+      floor: newLotFloor.trim(),
+      nature: newLotNature.trim(),
+      area: newLotArea.trim(),
+      commonShares: newLotShares.trim(),
+      boundaries: '',
+      fullDescription: autoDesc,
+    };
+
+    setEditingEstate({
+      ...editingEstate,
+      lots: [...editingEstate.lots, lot],
+      updatedAt: new Date().toISOString(),
+    });
+
+    setNewLotNumber('');
+    setNewLotArea('');
+    setNewLotShares('');
+    setNewLotDesc('');
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-navigation between Variables & Subdivision Table */}
+      <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded text-xs font-medium">
+        <button
+          type="button"
+          onClick={() => setPartiesSubTab('fields')}
+          className={`py-1 rounded ${
+            partiesSubTab === 'fields'
+              ? 'bg-white text-slate-900 shadow-2xs'
+              : 'text-slate-600'
+          }`}
+        >
+          الأطراف والمتغيرات
+        </button>
+        <button
+          type="button"
+          onClick={() => setPartiesSubTab('subdivision')}
+          className={`py-1 rounded ${
+            partiesSubTab === 'subdivision'
+              ? 'bg-white text-slate-900 shadow-2xs'
+              : 'text-slate-600'
+          }`}
+        >
+          جدول الوصف التقسيمي ({estates.length})
+        </button>
+      </div>
+
+      {partiesSubTab === 'fields' ? (
+        <div className="space-y-4">
+          {/* Smart Variables Modal Launcher Card */}
+          <div className="p-3 bg-pink-50/60 border border-pink-200 rounded-md space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-pink-950">
+                استمارة المتغيرات الموحدة
+              </span>
+              {unfilledCount > 0 ? (
+                <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded tabular-nums">
+                  {unfilledCount} غير معبأة !
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-700 text-white rounded">
+                  مكتمل ✓
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-600">
+              تُغذي هذه البيانات كلاً من العقد الأصلي وجميع الوثائق المشتقة (المستخرج، إجراء الشهر، شهادة البيع، الصيغة التنفيذية).
+            </p>
+            <button
+              type="button"
+              onClick={() => onOpenSmartVariablesModal()}
+              className="w-full py-1.5 px-3 bg-pink-800 text-white text-xs font-semibold rounded hover:bg-pink-900 inline-flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <FormInput className="w-3.5 h-3.5" />
+              <span>فتح استمارة المتغيرات الكاملة</span>
+            </button>
+          </div>
+
+          {/* STRUCTURED MULTI-PARTY CARDS */}
+          {onUpdatePartyCards && (
+            <div className="border border-blue-200 bg-blue-50/25 rounded-md p-3 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-blue-900" />
+                  <span className="text-xs font-bold text-slate-900">
+                    بطاقات أطراف العقد ({partyCards.length})
+                  </span>
+                </div>
+                <span className="text-[10px] text-blue-900 font-medium">
+                  ربط تلقائي بالوسوم [...]
+                </span>
+              </div>
+
+              {/* Add New Party Card Bar */}
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={newPartyRole}
+                  onChange={(e) => setNewPartyRole(e.target.value as NotaryPartyRole)}
+                  className="flex-1 px-2 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
+                >
+                  <option value="بائع">صفة الطرف: بائع</option>
+                  <option value="مشتري">صفة الطرف: مشتري</option>
+                  <option value="موكل">صفة الطرف: موكل</option>
+                  <option value="وكيل">صفة الطرف: وكيل</option>
+                  <option value="واهب">صفة الطرف: واهب</option>
+                  <option value="موهوب">صفة الطرف: موهوب له</option>
+                  <option value="أخرى">صفة أخرى مخصصة...</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sameRoleCount = partyCards.filter(
+                      (p) => p.role === newPartyRole
+                    ).length;
+                    const newCard: ContractPartyCard = {
+                      id: `pcard_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                      role: newPartyRole,
+                      customRoleLabel: newPartyRole === 'أخرى' ? 'شريك' : undefined,
+                      index: sameRoleCount + 1,
+                      fullName: '',
+                      birthDate: '',
+                      birthPlace: '',
+                      filiation: '',
+                      nationalIdNin: '',
+                      idCardDetails: '',
+                      address: '',
+                      legalRepresentative: '',
+                    };
+                    onUpdatePartyCards([...partyCards, newCard]);
+                    setExpandedPartyCardId(newCard.id);
+                  }}
+                  className="px-2.5 py-1.5 bg-blue-900 text-white text-[11px] font-semibold rounded hover:bg-blue-800 inline-flex items-center gap-1 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ إضافة طرف</span>
+                </button>
+              </div>
+
+              {partyCards.length === 0 ? (
+                <div className="text-[11px] text-slate-500 bg-white/80 border border-dashed border-blue-200 rounded p-2.5 text-center">
+                  أضف بطاقات الأطراف (بائع 1، بائع 2، مشتري 1...) لترتبط تلقائياً بجميع الوسوم مثل <code className="font-mono text-blue-900">[البائع_1_الاسم]</code> و<code className="font-mono text-blue-900">[البائع.الاسم]</code>.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {partyCards.map((card) => {
+                    const isExpanded = expandedPartyCardId === card.id;
+                    const roleLabel =
+                      card.role === 'أخرى'
+                        ? card.customRoleLabel || 'طرف'
+                        : card.role;
+                    const defRole = roleLabel.startsWith('ال')
+                      ? roleLabel
+                      : `ال${roleLabel}`;
+                    const tagPrefix = `${defRole}_${card.index}`;
+
+                    const updateThisCard = (patch: Partial<ContractPartyCard>) => {
+                      const updated = partyCards.map((c) =>
+                        c.id === card.id ? { ...c, ...patch } : c
+                      );
+                      const roleCounters: Record<string, number> = {};
+                      const reindexed = updated.map((c) => {
+                        const rKey =
+                          c.role === 'أخرى' ? c.customRoleLabel || 'أخرى' : c.role;
+                        roleCounters[rKey] = (roleCounters[rKey] || 0) + 1;
+                        return { ...c, index: roleCounters[rKey] };
+                      });
+                      onUpdatePartyCards(reindexed);
+                    };
+
+                    return (
+                      <div
+                        key={card.id}
+                        className="bg-white border border-slate-200 rounded-md overflow-hidden"
+                      >
+                        <div className="px-2.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedPartyCardId(isExpanded ? null : card.id)
+                            }
+                            className="flex items-center gap-1.5 text-right flex-1 min-w-0"
+                          >
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-900 text-white rounded shrink-0 tabular-nums">
+                              {roleLabel} {card.index}
+                            </span>
+                            <span className="text-xs font-bold text-slate-900 truncate">
+                              {card.fullName || 'بدون اسم بعد...'}
+                            </span>
+                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {onSavePartyCardToDirectory && card.fullName.trim() && (
+                              <button
+                                type="button"
+                                onClick={() => onSavePartyCardToDirectory(card)}
+                                className="p-1 text-slate-500 hover:text-blue-900"
+                                title="حفظ هذا الطرف في دفتر الأطراف المحفوظين"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const filtered = partyCards.filter(
+                                  (c) => c.id !== card.id
+                                );
+                                const roleCounters: Record<string, number> = {};
+                                const reindexed = filtered.map((c) => {
+                                  const rKey =
+                                    c.role === 'أخرى'
+                                      ? c.customRoleLabel || 'أخرى'
+                                      : c.role;
+                                  roleCounters[rKey] = (roleCounters[rKey] || 0) + 1;
+                                  return { ...c, index: roleCounters[rKey] };
+                                });
+                                onUpdatePartyCards(reindexed);
+                              }}
+                              className="p-1 text-slate-400 hover:text-red-600"
+                              title="حذف بطاقة هذا الطرف"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedPartyCardId(isExpanded ? null : card.id)
+                              }
+                              className="p-1 text-slate-500"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="p-2.5 space-y-2 text-xs">
+                            {savedParties.length > 0 && (
+                              <div className="flex items-center gap-1 pb-1.5 border-b border-slate-100">
+                                <select
+                                  value={
+                                    savedParties.find(
+                                      (p) => p.id === selectedPartyIdSidebar
+                                    )?.id ||
+                                    savedParties[0]?.id ||
+                                    ''
+                                  }
+                                  onChange={(e) =>
+                                    setSelectedPartyIdSidebar(e.target.value)
+                                  }
+                                  className="flex-1 px-2 py-1 text-[11px] bg-slate-50 border border-slate-300 rounded"
+                                >
+                                  {savedParties.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.fullName}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const sp =
+                                      savedParties.find(
+                                        (p) => p.id === selectedPartyIdSidebar
+                                      ) || savedParties[0];
+                                    if (!sp) return;
+                                    updateThisCard({
+                                      fullName: sp.fullName,
+                                      birthDate: sp.birthDate,
+                                      birthPlace: sp.birthPlace,
+                                      filiation: sp.parentage,
+                                      idCardDetails: sp.idCardRef,
+                                      address: sp.address,
+                                    });
+                                  }}
+                                  className="px-2 py-1 bg-slate-800 text-white text-[10px] font-semibold rounded hover:bg-slate-700 shrink-0"
+                                >
+                                  تعبئة من الدفتر
+                                </button>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">
+                                  الصفة في العقد
+                                </label>
+                                <select
+                                  value={card.role}
+                                  onChange={(e) =>
+                                    updateThisCard({
+                                      role: e.target.value as NotaryPartyRole,
+                                    })
+                                  }
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                >
+                                  <option value="بائع">بائع</option>
+                                  <option value="مشتري">مشتري</option>
+                                  <option value="موكل">موكل</option>
+                                  <option value="وكيل">وكيل</option>
+                                  <option value="واهب">واهب</option>
+                                  <option value="موهوب">موهوب له</option>
+                                  <option value="أخرى">أخرى</option>
+                                </select>
+                              </div>
+                              {card.role === 'أخرى' && (
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">
+                                    تسمية الصفة
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={card.customRoleLabel || ''}
+                                    onChange={(e) =>
+                                      updateThisCard({
+                                        customRoleLabel: e.target.value,
+                                      })
+                                    }
+                                    placeholder="مثال: شريك / مؤجر"
+                                    className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                  />
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-slate-600 font-semibold block mb-0.5">
+                                الاسم واللقب الكامل [{tagPrefix}_الاسم]
+                              </label>
+                              <input
+                                type="text"
+                                value={card.fullName}
+                                onChange={(e) =>
+                                  updateThisCard({ fullName: e.target.value })
+                                }
+                                placeholder="الاسم واللقب الكامل..."
+                                className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-900 focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">
+                                  تاريخ الميلاد
+                                </label>
+                                <input
+                                  type="date"
+                                  value={card.birthDate}
+                                  onChange={(e) =>
+                                    updateThisCard({ birthDate: e.target.value })
+                                  }
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">
+                                  مكان الميلاد
+                                </label>
+                                <input
+                                  type="text"
+                                  value={card.birthPlace}
+                                  onChange={(e) =>
+                                    updateThisCard({ birthPlace: e.target.value })
+                                  }
+                                  placeholder="البلدية والولاية..."
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-slate-500 block mb-0.5">
+                                النسب (ابن / ابنة فلان وفلانة)
+                              </label>
+                              <input
+                                type="text"
+                                value={card.filiation}
+                                onChange={(e) =>
+                                  updateThisCard({ filiation: e.target.value })
+                                }
+                                placeholder="بن ... وأمه ..."
+                                className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">
+                                  الرقم الوطني (NIN)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={card.nationalIdNin}
+                                  onChange={(e) =>
+                                    updateThisCard({
+                                      nationalIdNin: e.target.value,
+                                    })
+                                  }
+                                  placeholder="18 رقماً..."
+                                  className="w-full px-2 py-1 text-xs font-mono bg-slate-50 border border-slate-300 rounded"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">
+                                  بطاقة الهوية / ر.س
+                                </label>
+                                <input
+                                  type="text"
+                                  value={card.idCardDetails}
+                                  onChange={(e) =>
+                                    updateThisCard({
+                                      idCardDetails: e.target.value,
+                                    })
+                                  }
+                                  placeholder="رقم وتاريخ الصدور..."
+                                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-slate-500 block mb-0.5">
+                                عنوان الإقامة الكامل
+                              </label>
+                              <input
+                                type="text"
+                                value={card.address}
+                                onChange={(e) =>
+                                  updateThisCard({ address: e.target.value })
+                                }
+                                placeholder="الحي، البلدية، الولاية..."
+                                className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                              />
+                            </div>
+
+                            <div className="pt-1 border-t border-slate-100 flex items-center gap-1 flex-wrap">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onSaveSelectionBookmark();
+                                }}
+                                onClick={() =>
+                                  onInsertPlaceholderAtCaret(`${tagPrefix}_الاسم`)
+                                }
+                                className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                              >
+                                + [{tagPrefix}_الاسم]
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onSaveSelectionBookmark();
+                                }}
+                                onClick={() =>
+                                  onInsertPlaceholderAtCaret(
+                                    `${tagPrefix}_الرقم_الوطني`
+                                  )
+                                }
+                                className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                              >
+                                + [{tagPrefix}_الرقم_الوطني]
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  onSaveSelectionBookmark();
+                                }}
+                                onClick={() =>
+                                  onInsertPlaceholderAtCaret(`${tagPrefix}_العنوان`)
+                                }
+                                className="px-2 py-0.5 bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-200 rounded text-[10px] font-mono"
+                              >
+                                + [{tagPrefix}_العنوان]
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Saved Parties & Properties Directory */}
+          <div className="border border-slate-200 rounded-md p-3 bg-white space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900">
+                دفتر الأطراف والعقارات (استدعاء وحفظ سريع)
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSaveCurrentPartyToDirectory('party1')}
+                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-800 rounded"
+                >
+                  + حفظ طرف 1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSaveCurrentPartyToDirectory('party2')}
+                  className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-semibold text-slate-800 rounded"
+                >
+                  + حفظ طرف 2
+                </button>
+              </div>
+            </div>
+
+            {savedParties.length > 0 ? (
+              <div className="space-y-1.5">
+                <select
+                  value={
+                    savedParties.find((p) => p.id === selectedPartyIdSidebar)?.id ||
+                    savedParties[0]?.id ||
+                    ''
+                  }
+                  onChange={(e) => setSelectedPartyIdSidebar(e.target.value)}
+                  className="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                >
+                  {savedParties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.fullName} {p.birthDate ? `(${p.birthDate})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target =
+                        savedParties.find((p) => p.id === selectedPartyIdSidebar) ||
+                        savedParties[0];
+                      if (target) onRecallPartyToRole(target, 'party1');
+                    }}
+                    className="flex-1 py-1 px-2 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800"
+                  >
+                    استدعاء كطرف أول
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target =
+                        savedParties.find((p) => p.id === selectedPartyIdSidebar) ||
+                        savedParties[0];
+                      if (target) onRecallPartyToRole(target, 'party2');
+                    }}
+                    className="flex-1 py-1 px-2 bg-slate-800 text-white text-[11px] font-medium rounded hover:bg-slate-700"
+                  >
+                    استدعاء كطرف ثانٍ
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-500">
+                لا يوجد أطراف محفوظون بعد. املأ بيانات طرف ثم اضغط «+ حفظ طرف 1/2».
+              </div>
+            )}
+
+            <div className="border-t border-slate-100 pt-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-700">
+                  العقارات المحفوظة ({savedProperties.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={onSaveCurrentPropertyToDirectory}
+                  className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-[10px] font-semibold text-blue-900 rounded"
+                >
+                  + حفظ العقار الحالي
+                </button>
+              </div>
+              {savedProperties.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={
+                      savedProperties.find((p) => p.id === selectedPropIdSidebar)?.id ||
+                      savedProperties[0]?.id ||
+                      ''
+                    }
+                    onChange={(e) => setSelectedPropIdSidebar(e.target.value)}
+                    className="flex-1 px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded"
+                  >
+                    {savedProperties.map((pr) => (
+                      <option key={pr.id} value={pr.id}>
+                        {pr.label} {pr.lotNumber ? `(حصة ${pr.lotNumber})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target =
+                        savedProperties.find((p) => p.id === selectedPropIdSidebar) ||
+                        savedProperties[0];
+                      if (target) onRecallPropertyRecord(target);
+                    }}
+                    className="px-2.5 py-1 bg-blue-900 text-white text-[11px] font-medium rounded hover:bg-blue-800 shrink-0"
+                  >
+                    استدعاء
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Lot Selector from Subdivision Table */}
+          <div className="border border-slate-200 rounded-md p-3 bg-slate-50/70">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-900">
+                اختيار الحصة من جدول الوصف التقسيمي
+              </span>
+              <button
+                type="button"
+                onClick={() => setPartiesSubTab('subdivision')}
+                className="text-[11px] text-blue-800 hover:underline"
+              >
+                إدارة الجداول ({estates.length})
+              </button>
+            </div>
+
+            {estates.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPartiesSubTab('subdivision');
+                  startNewEstate();
+                }}
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-300 text-slate-800 rounded text-xs font-medium hover:bg-slate-100 transition-colors"
+              >
+                + إضافة جدول وصف تقسيمي لعقار
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <select
+                  value={selectedEstate?.id || ''}
+                  onChange={(e) => onSelectEstateAndLot(e.target.value, '')}
+                  className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded"
+                >
+                  {estates.map((est) => (
+                    <option key={est.id} value={est.id}>
+                      {est.estateName} ({est.lots.length} حصة)
+                    </option>
+                  ))}
+                </select>
+
+                {selectedEstate && (
+                  <select
+                    value={selectedLotNumber}
+                    onChange={(e) =>
+                      onSelectEstateAndLot(selectedEstate.id, e.target.value)
+                    }
+                    className="w-full px-2 py-1.5 text-xs bg-white border border-blue-300 rounded font-medium tabular-nums"
+                  >
+                    <option value="">-- اختر رقم الحصة لملء التعيين تلقائياً --</option>
+                    {selectedEstate.lots.map((lot) => (
+                      <option key={lot.id} value={lot.lotNumber}>
+                        حصة رقم {lot.lotNumber} — {lot.nature} ({lot.floor}) — {lot.area} م²
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {selectedEstate && selectedLot && (
+                  <div className="pt-1 space-y-1.5">
+                    <div className="text-[11px] text-slate-700 bg-white p-2 rounded border border-slate-200 leading-relaxed">
+                      {selectedLot.fullDescription}
+                    </div>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onSaveSelectionBookmark();
+                      }}
+                      onClick={() => onInsertLotClauseAtCaret(selectedEstate, selectedLot)}
+                      className="w-full py-1.5 px-2 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800 transition-colors"
+                    >
+                      إدراج فقرة تعيين الحصة رقم ({selectedLot.lotNumber}) عند المؤشر
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Dynamic Variables Grouped by Clause */}
+          <div className="space-y-2.5">
+            <div className="text-xs font-bold text-slate-900 flex items-center justify-between border-b border-slate-200 pb-1.5">
+              <span>
+                متغيرات هذا العقد المستخرجة من `[...]` ({extractedPlaceholders.length})
+              </span>
+              {extractedPlaceholders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
+                  className="text-[11px] text-pink-800 font-semibold hover:underline"
+                >
+                  دمج الكل في النص
+                </button>
+              )}
+            </div>
+
+            {clauseGroups.length > 0 ? (
+              clauseGroups.map((group) => (
+                <div
+                  key={group.clauseId}
+                  className="border border-pink-200 bg-pink-50/30 rounded-md p-2.5 space-y-2"
+                >
+                  <div className="text-[11px] font-bold text-pink-950 border-b border-pink-200/70 pb-1 flex items-center justify-between">
+                    <span className="truncate">{group.clauseTitle}</span>
+                    <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-pink-200 shrink-0 tabular-nums">
+                      {group.variables.length} متغير
+                    </span>
+                  </div>
+                  {group.clauseReferenceText && (
+                    <div className="p-2 bg-white/80 border border-pink-200/60 rounded text-[11px] text-slate-600 leading-relaxed line-clamp-3">
+                      <span className="font-bold text-blue-900">مرجع البند: </span>
+                      {group.clauseReferenceText}
+                    </div>
+                  )}
+                  {group.variables.map((key) => {
+                    const meta = partyFields.find((f) => f.key === key);
+                    const label = meta?.label || key.replace(/_/g, ' ');
+                    const perContractType = fieldInputTypes[key];
+                    const resolvedType = perContractType || meta?.inputType;
+                    const currentType: 'text' | 'number' | 'date' =
+                      resolvedType === 'number'
+                        ? 'number'
+                        : resolvedType === 'date'
+                        ? 'date'
+                        : 'text';
+                    return (
+                      <div
+                        key={key}
+                        className="space-y-1 bg-white p-2 rounded border border-slate-200"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <label className="text-[11px] font-semibold text-slate-800 truncate">
+                            {label}
+                          </label>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <div className="inline-flex items-center bg-slate-100 rounded p-0.5 text-[9px]">
+                              <button
+                                type="button"
+                                onClick={() => onChangeFieldInputType(key, 'text')}
+                                className={`px-1 rounded ${
+                                  currentType === 'text'
+                                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                                    : 'text-slate-500'
+                                }`}
+                              >
+                                نص
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onChangeFieldInputType(key, 'number')}
+                                className={`px-1 rounded ${
+                                  currentType === 'number'
+                                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                                    : 'text-slate-500'
+                                }`}
+                              >
+                                رقم
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onChangeFieldInputType(key, 'date')}
+                                className={`px-1 rounded ${
+                                  currentType === 'date'
+                                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                                    : 'text-slate-500'
+                                }`}
+                              >
+                                تاريخ
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                onSaveSelectionBookmark();
+                              }}
+                              onClick={() => onInsertPlaceholderAtCaret(key)}
+                              className="text-[10px] text-pink-800 font-semibold hover:underline"
+                            >
+                              +وسم
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type={
+                            currentType === 'date'
+                              ? 'date'
+                              : currentType === 'number'
+                              ? 'number'
+                              : 'text'
+                          }
+                          value={fieldValues[key] || ''}
+                          onChange={(e) => onUpdateFieldValue(key, e.target.value)}
+                          placeholder={`أدخل ${label} [${key}]...`}
+                          className={`w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-800 focus:outline-none ${
+                            currentType === 'number' ? 'tabular-nums font-mono' : ''
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <div className="border border-dashed border-pink-200 bg-pink-50/20 rounded-md p-3.5 text-center space-y-1.5">
+                <div className="text-xs font-bold text-slate-800">
+                  لا توجد وسوم `[...]` مكتوبة في هذا العقد حالياً
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  تُستخرج حقول هذه الاستمارة حصرياً من الوسوم المكتوبة بصيغة <code className="font-mono font-bold text-pink-800">[اسم_المتغير]</code> داخل ورقة العقد المفتوح حالياً.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Insert New Variable Directly Into Current Contract at Caret */}
+          <div className="border border-slate-200 rounded-md p-2.5 bg-white">
+            <div className="text-xs font-semibold text-slate-800 mb-1.5">
+              إدراج وسم متغير جديد `[...]` في العقد عند المؤشر
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newFieldKey}
+                onChange={(e) => setNewFieldKey(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newFieldKey.trim()) {
+                    const clean = newFieldKey.trim().replace(/\s+/g, '_');
+                    onAddCustomField(clean, newFieldKey.trim());
+                    onInsertPlaceholderAtCaret(clean);
+                    setNewFieldKey('');
+                  }
+                }}
+                placeholder="مثال: تسمية_الشركة أو البائع أو الثمن"
+                className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-blue-800 focus:outline-none"
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSaveSelectionBookmark();
+                }}
+                onClick={() => {
+                  const clean = newFieldKey.trim().replace(/\s+/g, '_');
+                  if (clean) {
+                    onAddCustomField(clean, newFieldKey.trim());
+                    onInsertPlaceholderAtCaret(clean);
+                    setNewFieldKey('');
+                  }
+                }}
+                className="px-2.5 py-1 bg-pink-800 text-white text-xs font-medium rounded hover:bg-pink-900 shrink-0"
+              >
+                + إدراج بالعقد
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Subdivision Estates Management Sub-tab */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-bold text-slate-900">
+              جداول الوصف التقسيمي للعقارات
+            </div>
+            {!editingEstate && (
+              <button
+                type="button"
+                onClick={startNewEstate}
+                className="px-2.5 py-1 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800 inline-flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>جدول عقار جديد</span>
+              </button>
+            )}
+          </div>
+
+          {editingEstate ? (
+            <div className="border border-blue-200 rounded-md p-3 bg-blue-50/30 space-y-3">
+              <div className="text-xs font-bold text-blue-950">
+                {editingEstate.estateName
+                  ? `تحرير: ${editingEstate.estateName}`
+                  : 'إنشاء جدول وصف تقسيمي جديد'}
+              </div>
+
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editingEstate.estateName}
+                  onChange={(e) =>
+                    setEditingEstate({ ...editingEstate, estateName: e.target.value })
+                  }
+                  placeholder="اسم العقار / الترقية العقارية *"
+                  className="w-full px-2 py-1.5 text-xs bg-white border border-slate-300 rounded"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={editingEstate.commune}
+                    onChange={(e) =>
+                      setEditingEstate({ ...editingEstate, commune: e.target.value })
+                    }
+                    placeholder="البلدية"
+                    className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  />
+                  <input
+                    type="text"
+                    value={editingEstate.wilaya}
+                    onChange={(e) =>
+                      setEditingEstate({ ...editingEstate, wilaya: e.target.value })
+                    }
+                    placeholder="الولاية"
+                    className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={editingEstate.subdivisionDeedRef}
+                  onChange={(e) =>
+                    setEditingEstate({
+                      ...editingEstate,
+                      subdivisionDeedRef: e.target.value,
+                    })
+                  }
+                  placeholder="مراجع عقد الوصف التقسيمي وشهره"
+                  className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                />
+              </div>
+
+              <div className="border-t border-slate-200 pt-2.5 space-y-2">
+                <div className="text-[11px] font-bold text-slate-800">
+                  إضافة حصة إلى جدول الوصف التقسيمي
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <input
+                    type="text"
+                    value={newLotNumber}
+                    onChange={(e) => setNewLotNumber(e.target.value)}
+                    placeholder="رقم الحصة *"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded tabular-nums"
+                  />
+                  <input
+                    type="text"
+                    value={newLotNature}
+                    onChange={(e) => setNewLotNature(e.target.value)}
+                    placeholder="الطبيعة"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  />
+                  <input
+                    type="text"
+                    value={newLotFloor}
+                    onChange={(e) => setNewLotFloor(e.target.value)}
+                    placeholder="الطابق"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <input
+                    type="text"
+                    value={newLotBuilding}
+                    onChange={(e) => setNewLotBuilding(e.target.value)}
+                    placeholder="العمارة/المدخل"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                  />
+                  <input
+                    type="text"
+                    value={newLotArea}
+                    onChange={(e) => setNewLotArea(e.target.value)}
+                    placeholder="المساحة م²"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded tabular-nums"
+                  />
+                  <input
+                    type="text"
+                    value={newLotShares}
+                    onChange={(e) => setNewLotShares(e.target.value)}
+                    placeholder="الأجزاء المشتركة"
+                    className="px-2 py-1 text-xs bg-white border border-slate-300 rounded tabular-nums"
+                  />
+                </div>
+                <textarea
+                  rows={2}
+                  value={newLotDesc}
+                  onChange={(e) => setNewLotDesc(e.target.value)}
+                  placeholder="نص تعيين الحصة الكامل (يُولّد تلقائياً إن تُرك فارغاً)"
+                  className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLotToEditingEstate}
+                  className="w-full py-1.5 bg-slate-900 text-white text-xs font-medium rounded hover:bg-slate-800"
+                >
+                  + إدراج الحصة في الجدول ({editingEstate.lots.length})
+                </button>
+              </div>
+
+              {editingEstate.lots.length > 0 && (
+                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded bg-white divide-y divide-slate-100">
+                  {editingEstate.lots.map((l) => (
+                    <div
+                      key={l.id}
+                      className="flex items-center justify-between px-2 py-1.5 text-[11px]"
+                    >
+                      <div>
+                        <span className="font-bold tabular-nums">حصة {l.lotNumber}</span>
+                        <span> — {l.nature}</span>
+                        {l.floor && <span> ({l.floor})</span>}
+                        {l.area && <span className="tabular-nums"> · {l.area} م²</span>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingEstate({
+                            ...editingEstate,
+                            lots: editingEstate.lots.filter((x) => x.id !== l.id),
+                          })
+                        }
+                        className="text-red-600 hover:underline"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingEstate.estateName.trim()) return;
+                    await onSaveEstate(editingEstate);
+                    setEditingEstate(null);
+                  }}
+                  className="flex-1 py-1.5 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800"
+                >
+                  حفظ جدول العقار
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingEstate(null)}
+                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs rounded hover:bg-slate-100"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {estates.map((est) => (
+                <div
+                  key={est.id}
+                  className="border border-slate-200 rounded-md p-3 bg-white space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">
+                        {est.estateName}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {est.commune} {est.wilaya && `· ${est.wilaya}`} ·{' '}
+                        <span className="tabular-nums">{est.lots.length} حصة</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEstate(est)}
+                        className="px-2 py-0.5 text-[11px] text-blue-800 hover:bg-blue-50 rounded"
+                      >
+                        تعديل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteEstate(est.id)}
+                        className="p-1 text-slate-400 hover:text-red-600"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSaveSelectionBookmark();
+                    }}
+                    onClick={() => onInsertFullSubdivisionTableAtCaret(est)}
+                    className="w-full py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-medium rounded transition-colors"
+                  >
+                    إدراج جدول الوصف التقسيمي الكامل عند المؤشر
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

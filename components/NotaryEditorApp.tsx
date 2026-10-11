@@ -19,6 +19,7 @@ import {
   HelpCircle,
   History,
   ListChecks,
+  Lock,
   PanelRightClose,
   PanelRightOpen,
   Printer,
@@ -28,6 +29,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Unlock,
   UserCheck,
   X,
 } from 'lucide-react';
@@ -173,6 +175,7 @@ import {
   normalizePlaceholderKey,
 } from '@/lib/docx-engine';
 import { parseContractIntoClauses } from '@/lib/docx-template-engine';
+import { isContractOfficiallyIndexed } from '@/lib/indexing-engine';
 
 const INITIAL_EMPTY_PARAGRAPH = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
 
@@ -192,7 +195,12 @@ export default function NotaryEditorApp() {
   const [pageNumberingEnabled, setPageNumberingEnabled] = useState<boolean>(true);
   const [previewMergedMode, setPreviewMergedMode] = useState<boolean>(false);
   const [mergedPreviewHtml, setMergedPreviewHtml] = useState<string>('');
+  const [printPaginatedHtml, setPrintPaginatedHtml] = useState<string>('');
+  const [unlockIndexedBody, setUnlockIndexedBody] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(100);
+  useEffect(() => {
+    setUnlockIndexedBody(false);
+  }, [docId]);
 
   // Mode for editing a Derived Document Template or a Clause directly inside the A4 Editor
   const [editingDerivedTpl, setEditingDerivedTpl] = useState<DerivedDocTemplate | null>(null);
@@ -396,11 +404,14 @@ export default function NotaryEditorApp() {
       syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
 
+      const rawMergedForPagination = mergePlaceholdersIntoHtml(bodyHtml, activeValues);
+      const paginatedHtml = injectNotarialPaginationIntoHtml(
+        rawMergedForPagination,
+        pageNumberingEnabled
+      );
+      setPrintPaginatedHtml(paginatedHtml);
       if (previewMergedMode) {
-        const rawMerged = mergePlaceholdersIntoHtml(bodyHtml, activeValues);
-        setMergedPreviewHtml(
-          injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
-        );
+        setMergedPreviewHtml(paginatedHtml);
       }
 
       if (editingDerivedTpl || editingClauseObj) {
@@ -2919,7 +2930,16 @@ export default function NotaryEditorApp() {
           }
         }}
         onOpenSnapshotsHistoryModal={handleOpenSnapshotsHistoryModal}
-        onPrint={() => window.print()}
+        onPrint={() => {
+          const currentHtml =
+            bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+          const activeVals = fieldValuesRef.current || fieldValues;
+          const rawMerged = mergePlaceholdersIntoHtml(currentHtml, activeVals);
+          setPrintPaginatedHtml(
+            injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
+          );
+          setTimeout(() => window.print(), 60);
+        }}
         onExportCurrentToWord={handleExportCurrentToWord}
         onExportBackupJson={async () => {
           const bundle = await exportFullBackupBundle();
@@ -3080,6 +3100,54 @@ export default function NotaryEditorApp() {
               إلغاء والعودة للعقد
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Official Seal & Indexing Protection Banner */}
+      {isContractOfficiallyIndexed(activeDocument) && !editingDerivedTpl && !editingClauseObj && (
+        <div className="bg-emerald-950 text-white border-b border-emerald-800 px-6 py-2 flex flex-wrap items-center justify-between gap-3 no-print">
+          <div className="flex items-center gap-2 text-xs">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-bold">
+              عقد مفهرس ومختوم رسمياً — فهرس رقم:{' '}
+              <span className="font-mono tabular-nums text-emerald-300">
+                {activeDocument?.indexNumber}
+              </span>
+              {activeDocument?.depositNumber ? (
+                <>
+                  {' '}
+                  · إيداع رقم:{' '}
+                  <span className="font-mono tabular-nums text-emerald-300">
+                    {activeDocument.depositNumber}
+                  </span>
+                </>
+              ) : null}
+            </span>
+            <span className="text-emerald-200/90 hidden md:inline">
+              — المتن الأساسي محمي بعد الختم بينما تظل مراجع التسجيل والشهر والوثائق المشتقة متاحة للتحديث.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUnlockIndexedBody((v) => !v)}
+            className={`px-2.5 py-1 rounded text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
+              unlockIndexedBody
+                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                : 'bg-emerald-900 hover:bg-emerald-800 text-emerald-100 border border-emerald-700'
+            }`}
+          >
+            {unlockIndexedBody ? (
+              <>
+                <Lock className="w-3.5 h-3.5" />
+                <span>إعادة قفل المتن المختوم</span>
+              </>
+            ) : (
+              <>
+                <Unlock className="w-3.5 h-3.5" />
+                <span>فتح قفل المتن استثنائياً</span>
+              </>
+            )}
+          </button>
         </div>
       )}
 
@@ -3528,6 +3596,43 @@ export default function NotaryEditorApp() {
               }
             }}
             onSaveSelectionBookmark={saveSelectionBookmark}
+            onContractIndexedOrSynced={async (updatedDoc) => {
+              const [freshDocs, freshRevs, freshDownloads] = await Promise.all([
+                loadSavedDocuments(),
+                loadDocumentRevisions(),
+                loadDownloadArchive(),
+              ]);
+              setDocuments(freshDocs);
+              documentsRef.current = freshDocs;
+              setRevisions(freshRevs);
+              setDownloads(freshDownloads);
+              const target =
+                updatedDoc || freshDocs.find((d) => d.id === docId) || null;
+              if (target && target.id === docId) {
+                setActiveDocument(target);
+                activeDocumentRef.current = target;
+                setDocTitle(target.title);
+                const mergedVals = {
+                  ...fieldValuesRef.current,
+                  ...(target.fieldValues || {}),
+                };
+                fieldValuesRef.current = mergedVals;
+                setFieldValues(mergedVals);
+                syncSmartTagsFilledStateInDOM(bodyEditorRef.current, mergedVals);
+                if (previewMergedMode && bodyEditorRef.current) {
+                  const rawMerged = mergePlaceholdersIntoHtml(
+                    bodyEditorRef.current.innerHTML,
+                    mergedVals
+                  );
+                  setMergedPreviewHtml(
+                    injectNotarialPaginationIntoHtml(
+                      rawMerged,
+                      pageNumberingEnabled
+                    )
+                  );
+                }
+              }
+            }}
             showToast={showToast}
           />
         </div>
@@ -3742,30 +3847,46 @@ export default function NotaryEditorApp() {
                   }}
                 />
               ) : (
-                <div
-                  ref={bodyEditorRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  dir="rtl"
-                  onInput={() => syncPlaceholdersAndDraft()}
-                  onKeyUp={(e) => {
-                    if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
-                  }}
-                  onBlur={decorateEditorZonesPreservingSelection}
-                  onKeyDown={handleEditorKeyDown}
-                  onPaste={handleEditorPaste}
-                  onMouseDown={handleEditorMouseDown}
-                  onClick={handleEditorClick}
-                  onDoubleClick={handleEditorDoubleClick}
-                  className="notary-editor-zone relative z-10 outline-none min-h-[210mm]"
-                />
+                <>
+                  <div
+                    ref={bodyEditorRef}
+                    contentEditable={
+                      !isContractOfficiallyIndexed(activeDocument) || unlockIndexedBody
+                    }
+                    suppressContentEditableWarning
+                    dir="rtl"
+                    onInput={() => syncPlaceholdersAndDraft()}
+                    onKeyUp={(e) => {
+                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
+                    }}
+                    onBlur={decorateEditorZonesPreservingSelection}
+                    onKeyDown={handleEditorKeyDown}
+                    onPaste={handleEditorPaste}
+                    onMouseDown={handleEditorMouseDown}
+                    onClick={handleEditorClick}
+                    onDoubleClick={handleEditorDoubleClick}
+                    className={`notary-editor-zone relative z-10 outline-none min-h-[210mm] print:hidden ${
+                      isContractOfficiallyIndexed(activeDocument) && !unlockIndexedBody
+                        ? 'cursor-default select-text'
+                        : ''
+                    }`}
+                  />
+                  {/* Print-Only Paginated Layer with ../.. on non-final pages and الصفحة … والأخيرة on final page */}
+                  <div
+                    dir="rtl"
+                    className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
+                    dangerouslySetInnerHTML={{
+                      __html: printPaginatedHtml,
+                    }}
+                  />
+                </>
               )}
 
               {/* Inline Notarial Closing Line Marker at end of body text (before 6cm bottom margin) */}
               {pageNumberingEnabled && !previewMergedMode && (
                 <div
                   dir="rtl"
-                  className="text-left text-slate-900 font-bold select-none mt-1 relative z-10"
+                  className="text-left text-slate-900 font-bold select-none mt-1 relative z-10 no-print"
                   style={{
                     fontFamily: STRICT_FONT_FAMILY,
                     fontSize: `${STRICT_FONT_SIZE_PT}pt`,
@@ -3774,11 +3895,14 @@ export default function NotaryEditorApp() {
                   title="تُدرج علامة ../.. في آخر سطر من الصفحات غير الأخيرة، وعبارة الإغلاق هذه في آخر سطر من الصفحة الأخيرة تلقائياً عند الدمج والطباعة والتصدير"
                 >
                   {docMetrics.estimatedPages > 1 && (
-                    <span className="text-slate-400 font-normal text-[10pt] ml-3 no-print">
-                      [الصفحات 1..{docMetrics.estimatedPages - 1} تنتهي بـ: ../..]
-                    </span>
+                    <div className="text-left text-slate-900 font-bold mb-1">
+                      <span>../..</span>
+                      <span className="text-slate-400 font-normal text-[9.5pt] mr-2">
+                        (علامة آخر السطر للصفحات 1 إلى {docMetrics.estimatedPages - 1})
+                      </span>
+                    </div>
                   )}
-                  <span>{buildNotarialPaginationClosingText(docMetrics.estimatedPages)}</span>
+                  <div>{buildNotarialPaginationClosingText(docMetrics.estimatedPages)}</div>
                 </div>
               )}
 

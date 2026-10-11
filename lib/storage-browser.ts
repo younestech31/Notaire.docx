@@ -148,33 +148,37 @@ async function putInStore<T extends { id: string }>(
   lsFallbackKey: string,
   item: T
 ): Promise<void> {
+  let savedToIdb = false;
   try {
     const db = await openDatabase();
     if (db && db.objectStoreNames.contains(storeName)) {
-      await new Promise<void>((resolve) => {
+      savedToIdb = await new Promise<boolean>((resolve) => {
         try {
           const tx = db.transaction(storeName, 'readwrite');
           tx.objectStore(storeName).put(item);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => resolve();
-          tx.onabort = () => resolve();
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+          tx.onabort = () => resolve(false);
         } catch {
-          resolve();
+          resolve(false);
         }
       });
     }
   } catch {
-    // Fallback to localStorage mirror below
+    savedToIdb = false;
   }
-  if (typeof window !== 'undefined') {
+
+  // Only fall back to localStorage if IndexedDB was unavailable or failed
+  if (!savedToIdb && typeof window !== 'undefined') {
     try {
-      const existing = await getAllFromStore<T>(storeName, lsFallbackKey);
+      const raw = localStorage.getItem(lsFallbackKey);
+      const existing: T[] = raw ? (JSON.parse(raw) as T[]) : [];
       const idx = existing.findIndex((x) => x.id === item.id);
       if (idx >= 0) existing[idx] = item;
       else existing.unshift(item);
       localStorage.setItem(lsFallbackKey, JSON.stringify(existing));
     } catch {
-      // Secondary localStorage mirror may hit quota on large docs; primary IDB transaction already committed
+      // Ignore quota exceeded on emergency fallback
     }
   }
 }
@@ -184,13 +188,17 @@ async function deleteFromStore(
   lsFallbackKey: string,
   id: string
 ): Promise<void> {
+  let deletedFromIdb = false;
   const db = await openDatabase();
   if (db && db.objectStoreNames.contains(storeName)) {
     await new Promise<void>((resolve, reject) => {
       try {
         const tx = db.transaction(storeName, 'readwrite');
         tx.objectStore(storeName).delete(id);
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+          deletedFromIdb = true;
+          resolve();
+        };
         tx.onerror = () =>
           reject(
             new Error(
@@ -216,13 +224,16 @@ async function deleteFromStore(
       }
     });
   }
-  if (typeof window !== 'undefined') {
+  if (!deletedFromIdb && typeof window !== 'undefined') {
     try {
-      const existing = await getAllFromStore<{ id: string }>(storeName, lsFallbackKey);
-      const filtered = existing.filter((x) => x.id !== id);
-      localStorage.setItem(lsFallbackKey, JSON.stringify(filtered));
+      const raw = localStorage.getItem(lsFallbackKey);
+      if (raw) {
+        const existing = JSON.parse(raw) as { id: string }[];
+        const filtered = existing.filter((x) => x.id !== id);
+        localStorage.setItem(lsFallbackKey, JSON.stringify(filtered));
+      }
     } catch {
-      // Secondary localStorage mirror ignore
+      // Ignore localStorage fallback error
     }
   }
 }
@@ -320,7 +331,6 @@ export async function sealContractOriginal(
     sealedAt: new Date().toISOString(),
     byteLength: input.docxBytes.byteLength,
     bytes: new Uint8Array(input.docxBytes),
-    base64Data: uint8ArrayToBase64(input.docxBytes),
   };
 
   await putSealedOriginalRecord(record);
@@ -505,7 +515,22 @@ export async function importCustomTemplatesJson(templates: CustomTemplate[]): Pr
 // 6. Saved Documents CRUD
 export async function loadSavedDocuments(): Promise<SavedDocument[]> {
   const items = await getAllFromStore<SavedDocument>(STORE_DOCUMENTS, 'notary_documents_v1');
-  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const normalized = items.map((doc) => {
+    const hasIdx = Boolean(doc.indexNumber || doc.fieldValues?.['رقم_الفهرس']);
+    const normalizedStatus =
+      !doc.status
+        ? hasIdx
+          ? 'signed_indexed'
+          : 'draft'
+        : doc.status === 'signed' && hasIdx
+        ? 'signed_indexed'
+        : doc.status;
+    return {
+      ...doc,
+      status: normalizedStatus,
+    };
+  });
+  return normalized.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function saveDocumentRecord(doc: SavedDocument): Promise<void> {
@@ -618,7 +643,7 @@ export async function loadPublicationTracks(): Promise<PublicationTrack[]> {
     STORE_PUBLICATION_TRACKS,
     'notary_publication_tracks_v1'
   );
-  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return items.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 }
 
 export async function savePublicationTrack(track: PublicationTrack): Promise<void> {
@@ -862,8 +887,18 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   }
 
   if (Array.isArray(bundle.sealedOriginals)) {
+    const existingSealed = await getAllSealedOriginals();
     for (const so of bundle.sealedOriginals) {
       if (so && so.documentId && so.relativePath && so.sha256) {
+        const conflict = existingSealed.find(
+          (item) =>
+            (item.documentId === so.documentId || item.relativePath === so.relativePath) &&
+            item.sha256 !== so.sha256
+        );
+        if (conflict) {
+          // Never overwrite an already sealed original if the SHA-256 fingerprint differs
+          continue;
+        }
         const bytes = so.base64Data ? base64ToUint8Array(so.base64Data) : undefined;
         await putSealedOriginalRecord({
           documentId: so.documentId,
@@ -872,7 +907,6 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
           sealedAt: so.sealedAt || new Date().toISOString(),
           byteLength: so.byteLength || (bytes ? bytes.byteLength : 0),
           bytes,
-          base64Data: so.base64Data,
         });
       }
     }
