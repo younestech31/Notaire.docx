@@ -159,6 +159,18 @@ export async function officiallyIndexAndSealContract(params: {
   relativePath: string;
   sha256: string;
 }> {
+  const plainBody = (params.document.bodyHtml || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!plainBody) {
+    throw new Error(
+      'لا يمكن اعتماد أو فهرسة عقد فارغ بلا متن نصي محفوظ. يرجى كتابة متن العقد وحفظه في المكتب قبل ختم الأصل.'
+    );
+  }
+
   const currentYear = params.document.year || new Date().getFullYear();
   const parsedIndex = parseIndexNumberAndYear(
     params.indexNumberInput || suggestNextAnnualIndexNumber(params.allDocuments, currentYear),
@@ -256,7 +268,12 @@ export async function officiallyIndexAndSealContract(params: {
  */
 export function formatRegistrationReferenceText(batch: RegistrationBatch): string {
   const datePart = batch.registrationDate || batch.statusDate;
-  const receiptPart = batch.receiptNumber ? `حسب الوصل رقم ${batch.receiptNumber}` : 'قيد التسجيل';
+  const receiptPart =
+    batch.status === 'rejected'
+      ? 'مرفوض للتصحيح بالتسجيل'
+      : batch.receiptNumber
+      ? `حسب الوصل رقم ${batch.receiptNumber}`
+      : 'مودع للتسجيل';
   const feesPart = batch.totalFees
     ? `بحقوق قدرها ${batch.totalFees.toLocaleString('ar-DZ')} دج`
     : '';

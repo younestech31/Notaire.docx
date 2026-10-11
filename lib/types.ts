@@ -253,7 +253,7 @@ export interface RegistrationBatch {
   registrationDate?: string; // تاريخ التسجيل الفعلي عند رجوع الأوراق
   receiptNumber?: string; // رقم وصل المفتشية
   inspectorateName: string; // مفتشية التسجيل والطابع المختصة
-  status: 'pending' | 'deposited' | 'registered' | 'rejected';
+  status: 'deposited' | 'registered' | 'rejected';
   notes?: string;
   createdAt?: string;
   updatedAt?: string;

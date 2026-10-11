@@ -87,13 +87,92 @@ export function stripNotarialPaginationFromHtml(html: string): string {
 }
 
 /**
+ * Measures real rendered block heights inside a hidden offscreen 120mm net text column
+ * matching the official Algerian Notarial A4 specification:
+ * - Page width: 210mm, Right margin: 70mm, Left margin: 20mm -> Net column width = 120mm
+ * - Page height: 297mm, Top margin: 10mm, Bottom margin: 60mm -> Net printable height = 227mm
+ * - Font: Arial 13pt, line-height: 1.0
+ */
+function measureBlocksHeightsIn12cmProbe(blocks: HTMLElement[]): {
+  heightsPx: number[];
+  maxPageHeightPx: number;
+  lineHeightPx: number;
+} | null {
+  if (typeof document === 'undefined' || !document.body) return null;
+
+  const probe = document.createElement('div');
+  probe.setAttribute('dir', 'rtl');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.position = 'fixed';
+  probe.style.top = '-9999px';
+  probe.style.left = '-9999px';
+  probe.style.width = '120mm';
+  probe.style.minHeight = '227mm';
+  probe.style.visibility = 'hidden';
+  probe.style.pointerEvents = 'none';
+  probe.style.fontFamily = STRICT_FONT_FAMILY;
+  probe.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+  probe.style.lineHeight = '1';
+  probe.style.textAlign = 'justify';
+  probe.style.direction = 'rtl';
+  probe.style.boxSizing = 'border-box';
+  probe.style.padding = '0';
+  probe.style.margin = '0';
+
+  // Reference ruler element for exact 227mm printable height and 1 line height in current DPI
+  const heightRuler = document.createElement('div');
+  heightRuler.style.height = '227mm';
+  heightRuler.style.width = '1px';
+  heightRuler.style.padding = '0';
+  heightRuler.style.margin = '0';
+
+  const sampleLine = document.createElement('p');
+  sampleLine.style.margin = '0';
+  sampleLine.style.lineHeight = '1';
+  sampleLine.style.fontFamily = STRICT_FONT_FAMILY;
+  sampleLine.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+  sampleLine.textContent = '../..';
+
+  probe.appendChild(heightRuler);
+  probe.appendChild(sampleLine);
+
+  const clones: HTMLElement[] = blocks.map((el) => {
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.style.margin = '0';
+    if (!clone.style.lineHeight) clone.style.lineHeight = '1';
+    if (!clone.style.fontFamily) clone.style.fontFamily = STRICT_FONT_FAMILY;
+    if (!clone.style.fontSize) clone.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+    probe.appendChild(clone);
+    return clone;
+  });
+
+  document.body.appendChild(probe);
+
+  try {
+    const rawPageHeightPx = heightRuler.getBoundingClientRect().height || 858;
+    const lineHeightPx = sampleLine.getBoundingClientRect().height || 17.5;
+    // Reserve one standalone line height at the bottom of the 227mm printable area for `../..`
+    const maxPageHeightPx = Math.max(200, rawPageHeightPx - lineHeightPx * 1.25);
+    const heightsPx = clones.map((c) => {
+      const h = c.getBoundingClientRect().height;
+      return h > 0 ? h : lineHeightPx;
+    });
+    return { heightsPx, maxPageHeightPx, lineHeightPx };
+  } finally {
+    if (probe.parentNode) {
+      probe.parentNode.removeChild(probe);
+    }
+  }
+}
+
+/**
  * Injects official Algerian Notarial pagination markers into the contract HTML:
  * - As a standalone line (`<p dir="rtl" style="...text-align:left;">`) immediately BELOW the last line of text on each page
  * - Left-aligned within the 12cm net text column (`text-align: left; direction: rtl`)
  * - Non-final pages: `../..`
  * - Final page: `الصفحة {العدد بالحروف} والأخيرة`
  * - Never in headers/footers and never numeric `1/9`
- * Note: Used for Merged Preview, Print, and Word (.docx) Export so raw clause HTML stays clean.
+ * Uses real DOM height measurement inside an offscreen 120mm x 227mm probe (with fallback when SSR).
  */
 export function injectNotarialPaginationIntoHtml(
   html: string,
@@ -113,18 +192,18 @@ export function injectNotarialPaginationIntoHtml(
       const blocks = Array.from(
         root.querySelectorAll('p, li, table, div.page-break, [data-page-break="true"]')
       ).filter((el) => {
-        // Skip paragraphs inside table cells so we don't split inside a table cell
+        if (el.closest('[data-clause-disabled="true"]')) return false;
         const inTable = el.tagName.toUpperCase() !== 'TABLE' && el.closest('table');
         return !inTable;
       }) as HTMLElement[];
 
       if (blocks.length === 0) return cleanHtml;
 
-      // Official A4 printable height: 29.7cm - (1cm top + 6cm bottom) = 22.7cm
-      // At Arial 13pt with 1.0 line spacing (~17.3px per line, ~10-12 words per 12cm line),
-      // each A4 page holds ~42 lines (~320 words).
-      const MAX_LINES_PER_PAGE = 42;
-      let linesOnCurrentPage = 0;
+      const measured = measureBlocksHeightsIn12cmProbe(blocks);
+      const maxPageHeightPx = measured ? measured.maxPageHeightPx : 42 * 17.5;
+      const lineHeightPx = measured ? measured.lineHeightPx : 17.5;
+
+      let heightOnCurrentPagePx = 0;
       let totalPagesCount = 1;
       const pageEndElements: { element: HTMLElement; insertPageBreakAfter: boolean }[] = [];
       let lastContentElement: HTMLElement | null = null;
@@ -146,7 +225,7 @@ export function injectNotarialPaginationIntoHtml(
             });
           }
           totalPagesCount++;
-          linesOnCurrentPage = 0;
+          heightOnCurrentPagePx = 0;
           continue;
         }
 
@@ -154,16 +233,18 @@ export function injectNotarialPaginationIntoHtml(
         if (!text && el.tagName.toUpperCase() !== 'TABLE') continue;
 
         lastContentElement = el;
-        let estimatedBlockLines = 1;
-        if (el.tagName.toUpperCase() === 'TABLE') {
-          const rowCount = el.querySelectorAll('tr').length || 1;
-          estimatedBlockLines = rowCount * 2;
-        } else {
-          const words = text.split(' ').filter(Boolean).length;
-          estimatedBlockLines = Math.max(1, Math.ceil(words / 9));
+        let blockHeightPx = measured ? measured.heightsPx[i] : 0;
+        if (!blockHeightPx || blockHeightPx <= 0) {
+          if (el.tagName.toUpperCase() === 'TABLE') {
+            const rowCount = el.querySelectorAll('tr').length || 1;
+            blockHeightPx = rowCount * 2 * lineHeightPx;
+          } else {
+            const words = text.split(' ').filter(Boolean).length;
+            blockHeightPx = Math.max(1, Math.ceil(words / 9)) * lineHeightPx;
+          }
         }
 
-        linesOnCurrentPage += estimatedBlockLines;
+        heightOnCurrentPagePx += blockHeightPx;
 
         // Check if there is still non-empty content after this block
         const hasMoreContentAhead = blocks.slice(i + 1).some((nextEl) => {
@@ -176,13 +257,13 @@ export function injectNotarialPaginationIntoHtml(
           return (nextEl.textContent || '').trim().length > 0;
         });
 
-        if (linesOnCurrentPage >= MAX_LINES_PER_PAGE && hasMoreContentAhead) {
+        if (heightOnCurrentPagePx >= maxPageHeightPx && hasMoreContentAhead) {
           pageEndElements.push({
             element: el,
             insertPageBreakAfter: true,
           });
           totalPagesCount++;
-          linesOnCurrentPage = 0;
+          heightOnCurrentPagePx = 0;
         }
       }
 
@@ -244,28 +325,73 @@ export function injectNotarialPaginationIntoHtml(
 }
 
 /**
- * Counts words and estimated A4 pages from HTML string for the Bottom Status Bar.
+ * Counts words and measured A4 pages from HTML string for the Bottom Status Bar.
  */
 export function computeDocumentMetrics(html: string): {
   wordCount: number;
   charCount: number;
   estimatedPages: number;
 } {
-  const clean = stripNotarialPaginationFromHtml(html);
-  const plain = clean
+  const cleanHtml = stripNotarialPaginationFromHtml(html || '');
+  const plain = cleanHtml
+    .replace(/<div[^>]*data-clause-disabled="true"[^>]*>[\s\S]*?<\/div>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!plain) {
-    return { wordCount: 0, charCount: 0, estimatedPages: 1 };
+
+  const words = plain ? plain.split(' ').filter(Boolean) : [];
+  const wordCount = words.length;
+  const charCount = plain.length;
+
+  if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined' && cleanHtml.trim()) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${cleanHtml}</div>`, 'text/html');
+      const root = doc.body.firstElementChild as HTMLElement | null;
+      if (root) {
+        const blocks = Array.from(
+          root.querySelectorAll('p, li, table, div.page-break, [data-page-break="true"]')
+        ).filter((el) => {
+          if (el.closest('[data-clause-disabled="true"]')) return false;
+          const inTable = el.tagName.toUpperCase() !== 'TABLE' && el.closest('table');
+          return !inTable;
+        }) as HTMLElement[];
+
+        const measured = measureBlocksHeightsIn12cmProbe(blocks);
+        if (measured) {
+          let pages = 1;
+          let accHeight = 0;
+          for (let i = 0; i < blocks.length; i++) {
+            const el = blocks[i];
+            const isPb =
+              el.classList.contains('page-break') ||
+              el.getAttribute('data-page-break') === 'true';
+            if (isPb) {
+              pages++;
+              accHeight = 0;
+              continue;
+            }
+            const text = (el.textContent || '').trim();
+            if (!text && el.tagName.toUpperCase() !== 'TABLE') continue;
+            accHeight += measured.heightsPx[i] || measured.lineHeightPx;
+            if (accHeight >= measured.maxPageHeightPx && i < blocks.length - 1) {
+              pages++;
+              accHeight = 0;
+            }
+          }
+          return { wordCount, charCount, estimatedPages: Math.max(1, pages) };
+        }
+      }
+    } catch {
+      // Fallback below
+    }
   }
-  const words = plain.split(' ').filter(Boolean);
-  const pageBreakMatches = (clean.match(/data-page-break="true"/g) || []).length;
-  const estimatedPages = Math.max(1, Math.ceil(words.length / 320) + pageBreakMatches);
-  return {
-    wordCount: words.length,
-    charCount: plain.length,
-    estimatedPages,
-  };
+
+  const explicitBreaks = (
+    cleanHtml.match(/class="[^"]*page-break[^"]*"|data-page-break="true"/gi) || []
+  ).length;
+  const estimatedPages = Math.max(1, Math.ceil(wordCount / 320) + explicitBreaks);
+
+  return { wordCount, charCount, estimatedPages };
 }

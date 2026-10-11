@@ -30,6 +30,7 @@ import {
   deleteRegistrationBatch,
   loadPublicationTracks,
   loadRegistrationBatches,
+  loadSavedDocuments,
   readSealedOriginal,
   savePublicationTrack,
   saveRegistrationBatch,
@@ -179,35 +180,45 @@ export default function NotaryHubPanel({
 
     setIsSealing(true);
     try {
-      // Ensure active changes in the editor are saved first if needed
-      let targetDoc = activeSavedDoc;
+      // 1. Always flush and persist the live editor state first so bodyHtml is never stale or empty
+      await onSaveCurrentDocument();
+
+      // 2. Reload fresh documents from storage after saving
+      const freshDocs = await loadSavedDocuments();
+      const targetDoc =
+        (activeDocumentId ? freshDocs.find((d) => d.id === activeDocumentId) : null) ||
+        activeSavedDoc ||
+        freshDocs[0] ||
+        null;
+
       if (!targetDoc) {
-        await onSaveCurrentDocument();
+        showToast('تعذر العثور على سجل محفوظ للعقد الحالي. يرجى حفظ العقد أولاً قبل الفهرسة.');
+        return;
       }
-      // Reload latest saved documents via activeSavedDoc or fallback temporary record
-      const baseDoc: SavedDocument = targetDoc || {
-        id: activeDocumentId || `doc_${Date.now()}`,
-        title: documentTitle || 'عقد توثيقي',
-        bodyHtml: '',
-        headerHtml: '',
-        footerHtml: '',
-        showHeaderFooter: false,
-        pageNumberingEnabled: true,
-        fieldValues: { ...fieldValues },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+
+      const plainBody = (targetDoc.bodyHtml || '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!plainBody) {
+        showToast(
+          'لا يمكن اعتماد أو فهرسة عقد فارغ بلا متن نصي. يرجى تحرير نص العقد وحفظه قبل ختم الأصل.'
+        );
+        return;
+      }
 
       const result = await officiallyIndexAndSealContract({
         document: {
-          ...baseDoc,
-          title: documentTitle || baseDoc.title,
+          ...targetDoc,
+          title: documentTitle || targetDoc.title,
           fieldValues: {
-            ...(baseDoc.fieldValues || {}),
+            ...(targetDoc.fieldValues || {}),
             ...fieldValues,
           },
         },
-        allDocuments: savedDocuments,
+        allDocuments: freshDocs,
         indexNumberInput: indexNo.trim(),
         depositNumberInput: depositNo.trim(),
         contractDateInput: contractDate,

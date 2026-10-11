@@ -35,6 +35,12 @@ import {
 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
 import EditorTopBar from './EditorTopBar';
+import EditorA4Canvas from './editor/EditorA4Canvas';
+import {
+  EditorBottomStatusBar,
+  EditorFindReplaceBar,
+  EditorModeAndSealBanners,
+} from './editor/EditorStatusBars';
 import InlineVariablePopover, {
   InlineVariablePopoverState,
 } from './InlineVariablePopover';
@@ -342,6 +348,22 @@ export default function NotaryEditorApp() {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 3400);
   }, []);
+
+  const isBodyLocked =
+    isContractOfficiallyIndexed(activeDocument) &&
+    !unlockIndexedBody &&
+    !editingDerivedTpl &&
+    !editingClauseObj;
+
+  const ensureBodyEditable = useCallback(() => {
+    if (isBodyLocked) {
+      showToast(
+        'متن هذا العقد مقفول رسمياً بعد الفهرسة والختم — اضغط «فتح قفل المتن استثنائياً» في الشريط العلوي إن لزم التعديل'
+      );
+      return false;
+    }
+    return true;
+  }, [isBodyLocked, showToast]);
 
   const getEditorZonesHtml = useCallback(() => {
     return {
@@ -1170,6 +1192,7 @@ export default function NotaryEditorApp() {
 
   // Formatting Commands
   const applyInlineCommand = (command: string, value?: string) => {
+    if (!ensureBodyEditable()) return;
     restoreSelectionBookmarkIfNeeded();
     recordHistorySnapshot();
     document.execCommand(command, false, value);
@@ -1439,6 +1462,7 @@ export default function NotaryEditorApp() {
     }
 
     if (e.key === 'Tab') {
+      if (isBodyLocked) return;
       e.preventDefault();
       const cell = activeTableCellRef.current;
       if (cell) {
@@ -1491,6 +1515,7 @@ export default function NotaryEditorApp() {
   // Word Paste Sanitizer
   const handleEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
+    if (!ensureBodyEditable()) return;
     recordHistorySnapshot();
     const rawHtml = e.clipboardData.getData('text/html');
     const plainText = e.clipboardData.getData('text/plain');
@@ -1822,7 +1847,7 @@ export default function NotaryEditorApp() {
   };
 
   const handleToggleClauseInDoc = (clause: NotaryClause) => {
-    if (!bodyEditorRef.current) return;
+    if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
 
     const existing = bodyEditorRef.current.querySelector(
@@ -1849,7 +1874,7 @@ export default function NotaryEditorApp() {
   };
 
   const handleInsertClauseAtCaret = (clause: NotaryClause) => {
-    if (!bodyEditorRef.current) return;
+    if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
     const containerHtml = `<div class="clause-container" data-clause-id="${
       clause.id
@@ -3068,187 +3093,32 @@ export default function NotaryEditorApp() {
         onSaveSelectionBookmark={saveSelectionBookmark}
       />
 
-      {/* Contextual Banner when Editing a Derived Document Template or Clause inside the A4 Editor */}
-      {(editingDerivedTpl || editingClauseObj) && (
-        <div className="bg-amber-100 border-b border-amber-300 px-6 py-2 flex flex-wrap items-center justify-between gap-3 no-print">
-          <div className="text-xs font-bold text-amber-950">
-            {editingDerivedTpl
-              ? `وضع تعديل قالب الوثيقة المشتقة: "${editingDerivedTpl.name}" — يمكنك تعديل النص والجداول ووسوم [...] بحرية تامة.`
-              : `وضع تعديل صياغة البند الجاهز: "${editingClauseObj?.title}"`}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                editingDerivedTpl
-                  ? handleFinishEditingDerivedTemplate(true)
-                  : handleFinishEditingClause(true)
-              }
-              className="px-3 py-1 bg-amber-900 text-white text-xs font-semibold rounded hover:bg-amber-950"
-            >
-              حفظ التعديلات والعودة للعقد
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                editingDerivedTpl
-                  ? handleFinishEditingDerivedTemplate(false)
-                  : handleFinishEditingClause(false)
-              }
-              className="px-3 py-1 bg-white border border-amber-300 text-amber-950 text-xs font-medium rounded hover:bg-amber-50"
-            >
-              إلغاء والعودة للعقد
-            </button>
-          </div>
-        </div>
-      )}
+      <EditorModeAndSealBanners
+        editingDerivedTpl={editingDerivedTpl}
+        editingClauseObj={editingClauseObj}
+        activeDocument={activeDocument}
+        unlockIndexedBody={unlockIndexedBody}
+        onToggleUnlockIndexedBody={() => setUnlockIndexedBody((v) => !v)}
+        onFinishEditingDerivedTemplate={handleFinishEditingDerivedTemplate}
+        onFinishEditingClause={handleFinishEditingClause}
+      />
 
-      {/* Official Seal & Indexing Protection Banner */}
-      {isContractOfficiallyIndexed(activeDocument) && !editingDerivedTpl && !editingClauseObj && (
-        <div className="bg-emerald-950 text-white border-b border-emerald-800 px-6 py-2 flex flex-wrap items-center justify-between gap-3 no-print">
-          <div className="flex items-center gap-2 text-xs">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="font-bold">
-              عقد مفهرس ومختوم رسمياً — فهرس رقم:{' '}
-              <span className="font-mono tabular-nums text-emerald-300">
-                {activeDocument?.indexNumber}
-              </span>
-              {activeDocument?.depositNumber ? (
-                <>
-                  {' '}
-                  · إيداع رقم:{' '}
-                  <span className="font-mono tabular-nums text-emerald-300">
-                    {activeDocument.depositNumber}
-                  </span>
-                </>
-              ) : null}
-            </span>
-            <span className="text-emerald-200/90 hidden md:inline">
-              — المتن الأساسي محمي بعد الختم بينما تظل مراجع التسجيل والشهر والوثائق المشتقة متاحة للتحديث.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setUnlockIndexedBody((v) => !v)}
-            className={`px-2.5 py-1 rounded text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
-              unlockIndexedBody
-                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
-                : 'bg-emerald-900 hover:bg-emerald-800 text-emerald-100 border border-emerald-700'
-            }`}
-          >
-            {unlockIndexedBody ? (
-              <>
-                <Lock className="w-3.5 h-3.5" />
-                <span>إعادة قفل المتن المختوم</span>
-              </>
-            ) : (
-              <>
-                <Unlock className="w-3.5 h-3.5" />
-                <span>فتح قفل المتن استثنائياً</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* Multi-Node Arabic-Aware Find & Replace Bar */}
       {showFindReplace && (
-        <div className="bg-amber-50/95 border-b border-amber-200 px-4 py-2 flex flex-wrap items-center gap-2.5 text-xs no-print">
-          <div className="flex items-center gap-1.5 font-semibold text-amber-950 shrink-0">
-            <Search className="w-3.5 h-3.5 text-amber-900" />
-            <span>بحث واستبدال عربي:</span>
-          </div>
-          <input
-            type="text"
-            value={findQuery}
-            onChange={(e) => setFindQuery(e.target.value)}
-            placeholder="ابحث عن نص (مثال: البائع)..."
-            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-900 focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (e.shiftKey) handlePrevMatch();
-                else handleNextMatch();
-              } else if (e.key === 'Escape') {
-                setShowFindReplace(false);
-              }
-            }}
-          />
-          <input
-            type="text"
-            value={replaceQuery}
-            onChange={(e) => setReplaceQuery(e.target.value)}
-            placeholder="استبدال بـ..."
-            className="px-2.5 py-1 bg-white border border-slate-300 rounded w-44 focus:border-blue-900 focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRunReplace(false);
-              else if (e.key === 'Escape') setShowFindReplace(false);
-            }}
-          />
-
-          <label className="flex items-center gap-1.5 text-[11px] text-amber-950 bg-white/70 px-2 py-1 rounded border border-amber-200 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={ignoreArabicHamzaAndDiacritics}
-              onChange={(e) => setIgnoreArabicHamzaAndDiacritics(e.target.checked)}
-              className="rounded border-slate-300 text-blue-900"
-            />
-            <span>تجاهل الهمزات والتشكيل (أ/إ/آ، ة/ه)</span>
-          </label>
-
-          <span className="text-slate-600 tabular-nums text-xs">
-            {matchCount > 0
-              ? `${activeMatchIdx + 1} من ${matchCount}`
-              : '0 نتائج'}
-          </span>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={handlePrevMatch}
-              disabled={matchCount === 0}
-              className="p-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40"
-              title="التطابق السابق (Shift+Enter)"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleNextMatch}
-              disabled={matchCount === 0}
-              className="p-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40"
-              title="التطابق التالي (Enter)"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => handleRunReplace(false)}
-            disabled={matchCount === 0}
-            className="px-2.5 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 inline-flex items-center gap-1"
-          >
-            <Replace className="w-3.5 h-3.5" />
-            <span>استبدال الحالي</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRunReplace(true)}
-            disabled={matchCount === 0}
-            className="px-2.5 py-1 bg-blue-900 text-white rounded hover:bg-blue-800 disabled:opacity-40 font-medium"
-            title="استبدال كل المطابقات مع أخذ لقطة أمان تلقائية"
-          >
-            استبدال الكل ({matchCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFindReplace(false)}
-            className="mr-auto p-1 text-slate-500 hover:text-slate-800"
-            title="إغلاق (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <EditorFindReplaceBar
+          findQuery={findQuery}
+          replaceQuery={replaceQuery}
+          ignoreArabicHamzaAndDiacritics={ignoreArabicHamzaAndDiacritics}
+          matchCount={matchCount}
+          activeMatchIdx={activeMatchIdx}
+          isBodyLocked={isBodyLocked}
+          onChangeFindQuery={setFindQuery}
+          onChangeReplaceQuery={setReplaceQuery}
+          onToggleIgnoreHamza={setIgnoreArabicHamzaAndDiacritics}
+          onPrevMatch={handlePrevMatch}
+          onNextMatch={handleNextMatch}
+          onRunReplace={handleRunReplace}
+          onClose={() => setShowFindReplace(false)}
+        />
       )}
 
       {/* Toast Notification Banner */}
@@ -3714,276 +3584,40 @@ export default function NotaryEditorApp() {
         </aside>
       )}
 
-        {/* CENTER A4 CANVAS AREA WITH HORIZONTAL & VERTICAL RULERS */}
-        <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-[#F7F5F0]">
-          {/* Top Horizontal A4 Margin Ruler Indicator (21cm total: 7cm Right | 12cm Content | 2cm Left) */}
-          <div
-            className="mb-2 bg-white border border-[#C4A46A]/45 rounded-t shadow-2xs text-[10px] font-mono text-[#5C6B7A] flex items-center select-none overflow-hidden no-print"
-            style={{
-              width: '210mm',
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: 'top center',
-            }}
-            dir="rtl"
-          >
-            <div
-              style={{ width: '70mm' }}
-              className="bg-[#F1F5F9] border-l border-dashed border-[#C4A46A] py-1 text-center text-[#5C6B7A] tabular-nums"
-              title="هامش أيمن توثيقي ثابت: 7 سنتيمتر"
-            >
-              هامش يمين: 7 سم
-            </div>
-            <div
-              style={{ width: '120mm' }}
-              className="py-1 text-center font-semibold text-[#0F2744] tabular-nums flex items-center justify-between px-2"
-            >
-              <span>0</span>
-              <span>المساحة النصية الصافية (12 سم · Arial 13pt · تباعد 1.0)</span>
-              <span>12</span>
-            </div>
-            <div
-              style={{ width: '20mm' }}
-              className="bg-[#F1F5F9] border-r border-dashed border-[#C4A46A] py-1 text-center text-[#5C6B7A] tabular-nums"
-              title="هامش أيسر توثيقي ثابت: 2 سنتيمتر"
-            >
-              2 سم
-            </div>
-          </div>
-
-          {/* A4 Sheet + Vertical Margin Ruler Wrapper */}
-          <div
-            className="flex items-stretch gap-1.5"
-            style={{
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: 'top center',
-              marginBottom: zoom < 100 ? `-${(100 - zoom) * 2.2}px` : '2rem',
-            }}
-          >
-            {/* Vertical Ruler (29.7cm height: 1cm Top | 22.7cm Net Height | 6cm Bottom) */}
-            <div
-              className="hidden xl:flex flex-col justify-between bg-white border border-slate-300 rounded-r text-[9px] font-mono text-slate-500 w-6 select-none overflow-hidden no-print"
-              style={{ minHeight: '297mm' }}
-            >
-              <div
-                style={{ height: '10mm' }}
-                className="bg-slate-100 border-b border-dashed border-slate-400 flex items-center justify-center tabular-nums"
-                title="هامش علوي ثابت: 1 سم"
-              >
-                1سم
-              </div>
-              <div className="flex-1 flex flex-col items-center justify-around py-2 text-slate-400 tabular-nums">
-                <span>2</span>
-                <span>6</span>
-                <span>10</span>
-                <span>14</span>
-                <span>18</span>
-                <span>22</span>
-              </div>
-              <div
-                style={{ height: '60mm' }}
-                className="bg-slate-100 border-t border-dashed border-slate-400 flex items-center justify-center tabular-nums [writing-mode:vertical-rl]"
-                title="هامش سفلي توثيقي ثابت: 6 سم"
-              >
-                هامش سفلي: 6 سم
-              </div>
-            </div>
-
-            {/* TRUE A4 SHEET CONTAINER */}
-            <div className="notary-a4-sheet shadow-xl border border-slate-300 transition-transform">
-              {/* Visual Subtle Margin Guides on the A4 Sheet (Hidden on Print) */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 no-print"
-              >
-                <div
-                  style={{ right: '70mm' }}
-                  className="absolute top-0 bottom-0 border-l border-dashed border-slate-200/80"
-                />
-                <div
-                  style={{ left: '20mm' }}
-                  className="absolute top-0 bottom-0 border-r border-dashed border-slate-200/80"
-                />
-                <div
-                  style={{ top: '10mm' }}
-                  className="absolute right-0 left-0 border-b border-dashed border-slate-200/80"
-                />
-                <div
-                  style={{ bottom: '60mm' }}
-                  className="absolute right-0 left-0 border-t border-dashed border-slate-200/80"
-                />
-              </div>
-
-              {/* Optional Document Header Zone */}
-              {showHeaderFooter && (
-                <div className="mb-2 pb-1 border-b border-dashed border-slate-300 relative z-10">
-                  <div className="text-[9px] text-slate-400 mb-0.5 select-none no-print">
-                    ترويسة العقد (Header)
-                  </div>
-                  <div
-                    ref={headerEditorRef}
-                    contentEditable={!previewMergedMode}
-                    suppressContentEditableWarning
-                    dir="rtl"
-                    onInput={() => syncPlaceholdersAndDraft()}
-                    onKeyUp={(e) => {
-                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
-                    }}
-                    onBlur={decorateEditorZonesPreservingSelection}
-                    onKeyDown={handleEditorKeyDown}
-                    onPaste={handleEditorPaste}
-                    onClick={handleEditorClick}
-                    className="notary-editor-zone outline-none min-h-[18px]"
-                  />
-                </div>
-              )}
-
-              {/* MAIN CONTRACT BODY EDITABLE ZONE */}
-              {previewMergedMode ? (
-                <div
-                  dir="rtl"
-                  className="notary-editor-zone relative z-10 min-h-[210mm]"
-                  dangerouslySetInnerHTML={{
-                    __html: mergedPreviewHtml,
-                  }}
-                />
-              ) : (
-                <>
-                  <div
-                    ref={bodyEditorRef}
-                    contentEditable={
-                      !isContractOfficiallyIndexed(activeDocument) || unlockIndexedBody
-                    }
-                    suppressContentEditableWarning
-                    dir="rtl"
-                    onInput={() => syncPlaceholdersAndDraft()}
-                    onKeyUp={(e) => {
-                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
-                    }}
-                    onBlur={decorateEditorZonesPreservingSelection}
-                    onKeyDown={handleEditorKeyDown}
-                    onPaste={handleEditorPaste}
-                    onMouseDown={handleEditorMouseDown}
-                    onClick={handleEditorClick}
-                    onDoubleClick={handleEditorDoubleClick}
-                    className={`notary-editor-zone relative z-10 outline-none min-h-[210mm] print:hidden ${
-                      isContractOfficiallyIndexed(activeDocument) && !unlockIndexedBody
-                        ? 'cursor-default select-text'
-                        : ''
-                    }`}
-                  />
-                  {/* Print-Only Paginated Layer with ../.. on non-final pages and الصفحة … والأخيرة on final page */}
-                  <div
-                    dir="rtl"
-                    className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
-                    dangerouslySetInnerHTML={{
-                      __html: printPaginatedHtml,
-                    }}
-                  />
-                </>
-              )}
-
-              {/* Inline Notarial Closing Line Marker at end of body text (before 6cm bottom margin) */}
-              {pageNumberingEnabled && !previewMergedMode && (
-                <div
-                  dir="rtl"
-                  className="text-left text-slate-900 font-bold select-none mt-1 relative z-10 no-print"
-                  style={{
-                    fontFamily: STRICT_FONT_FAMILY,
-                    fontSize: `${STRICT_FONT_SIZE_PT}pt`,
-                    lineHeight: 1,
-                  }}
-                  title="تُدرج علامة ../.. في آخر سطر من الصفحات غير الأخيرة، وعبارة الإغلاق هذه في آخر سطر من الصفحة الأخيرة تلقائياً عند الدمج والطباعة والتصدير"
-                >
-                  {docMetrics.estimatedPages > 1 && (
-                    <div className="text-left text-slate-900 font-bold mb-1">
-                      <span>../..</span>
-                      <span className="text-slate-400 font-normal text-[9.5pt] mr-2">
-                        (علامة آخر السطر للصفحات 1 إلى {docMetrics.estimatedPages - 1})
-                      </span>
-                    </div>
-                  )}
-                  <div>{buildNotarialPaginationClosingText(docMetrics.estimatedPages)}</div>
-                </div>
-              )}
-
-              {/* Optional Document Footer */}
-              {showHeaderFooter && (
-                <div className="mt-4 pt-1 border-t border-dashed border-slate-300 relative z-10">
-                  <div className="text-[9px] text-slate-400 mb-0.5 select-none no-print">
-                    تذييل العقد (Footer)
-                  </div>
-                  <div
-                    ref={footerEditorRef}
-                    contentEditable={!previewMergedMode}
-                    suppressContentEditableWarning
-                    dir="rtl"
-                    onInput={() => syncPlaceholdersAndDraft()}
-                    onKeyUp={(e) => {
-                      if (e.key === ']' || e.key === '}') decorateEditorZonesPreservingSelection();
-                    }}
-                    onBlur={decorateEditorZonesPreservingSelection}
-                    onKeyDown={handleEditorKeyDown}
-                    onPaste={handleEditorPaste}
-                    onClick={handleEditorClick}
-                    className="notary-editor-zone outline-none min-h-[18px]"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </main>
+        <EditorA4Canvas
+          zoom={zoom}
+          showHeaderFooter={showHeaderFooter}
+          pageNumberingEnabled={pageNumberingEnabled}
+          previewMergedMode={previewMergedMode}
+          mergedPreviewHtml={mergedPreviewHtml}
+          printPaginatedHtml={printPaginatedHtml}
+          isBodyLocked={isBodyLocked}
+          estimatedPages={docMetrics.estimatedPages}
+          headerEditorRef={headerEditorRef}
+          bodyEditorRef={bodyEditorRef}
+          footerEditorRef={footerEditorRef}
+          onSyncPlaceholdersAndDraft={() => syncPlaceholdersAndDraft()}
+          onDecorateEditorZonesPreservingSelection={
+            decorateEditorZonesPreservingSelection
+          }
+          onEditorKeyDown={handleEditorKeyDown}
+          onEditorPaste={handleEditorPaste}
+          onEditorMouseDown={handleEditorMouseDown}
+          onEditorClick={handleEditorClick}
+          onEditorDoubleClick={handleEditorDoubleClick}
+        />
       </div>
 
-      {/* BOTTOM STATUS BAR (شريط الحالة التوثيقي) */}
-      <footer className="bg-white border-t border-[#C4A46A]/35 px-4 py-1.5 text-[11px] text-[#5C6B7A] flex flex-wrap items-center justify-between gap-4 select-none no-print">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 font-medium text-[#0F2744]">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                autoSaveState === 'saved'
-                  ? 'bg-emerald-500'
-                  : autoSaveState === 'error'
-                  ? 'bg-[#8C1D2C]'
-                  : 'bg-[#C4A46A] animate-pulse'
-              }`}
-            />
-            {autoSaveState === 'saved'
-              ? 'تم الحفظ تلقائياً في قاعدة المكتب'
-              : autoSaveState === 'error'
-              ? 'تعذر الحفظ في مخزن المكتب — راجع التنبيه'
-              : 'جارٍ الحفظ التلقائي...'}
-          </span>
-
-          <span className="text-slate-300">|</span>
-
-          <button
-            type="button"
-            onClick={() => {
-              setFocusedVarKey(null);
-              setShowSmartVarsModal(true);
-            }}
-            className={`font-semibold hover:underline ${
-              unfilledCount > 0 ? 'text-[#8C1D2C]' : 'text-emerald-700'
-            }`}
-          >
-            {unfilledCount > 0
-              ? `المتغيرات غير المعبأة: ${unfilledCount} (اضغط للتعبئة)`
-              : `جميع متغيرات العقد مكتملة (${extractedPlaceholders.length})`}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 tabular-nums">
-          <span>الكلمات: {docMetrics.wordCount}</span>
-          <span className="text-slate-300">·</span>
-          <span>الأحرف: {docMetrics.charCount}</span>
-          <span className="text-slate-300">·</span>
-          <span>الصفحات المقدرة: {docMetrics.estimatedPages}</span>
-          <span className="text-slate-300">·</span>
-          <span className="font-semibold text-[#0F2744]">
-            Arial 13pt · تباعد 1.0 · هوامش 7/2/1/6 سم
-          </span>
-        </div>
-      </footer>
+      <EditorBottomStatusBar
+        autoSaveState={autoSaveState}
+        unfilledCount={unfilledCount}
+        totalVariablesCount={extractedPlaceholders.length}
+        docMetrics={docMetrics}
+        onOpenSmartVariablesModal={() => {
+          setFocusedVarKey(null);
+          setShowSmartVarsModal(true);
+        }}
+      />
 
       {/* INLINE FLOATING VARIABLE POPOVER (Phase 3) */}
       <InlineVariablePopover
