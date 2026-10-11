@@ -123,9 +123,16 @@ export async function readSealedOriginal(
     return null;
   }
 
+  const actualSha = await computeSha256Hex(bytes);
+  if (res.sha256 && actualSha !== res.sha256) {
+    throw new Error(
+      `فشل التحقق من سلامة الأصل المختوم (${res.relativePath}): بصمة SHA-256 غير مطابقة`
+    );
+  }
+
   return {
     relativePath: res.relativePath,
-    sha256: res.sha256,
+    sha256: res.sha256 || actualSha,
     bytes,
   };
 }

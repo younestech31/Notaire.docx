@@ -418,7 +418,7 @@ export async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' || typeof window.btoa !== 'function') {
     return Buffer.from(bytes).toString('base64');
   }
   let binary = '';
@@ -431,7 +431,7 @@ export function uint8ArrayToBase64(bytes: Uint8Array): string {
 }
 
 export function base64ToUint8Array(base64: string): Uint8Array {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' || typeof window.atob !== 'function') {
     return new Uint8Array(Buffer.from(base64, 'base64'));
   }
   const binary = window.atob(base64);

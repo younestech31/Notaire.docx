@@ -927,7 +927,6 @@ function buildSettingsXml(): string {
  */
 export async function generateNotaryDocxBlob(options: DocxExportOptions): Promise<Blob> {
   const zip = new JSZip();
-  const parser = new DOMParser();
 
   const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, options.fieldValues);
   const mergedBodyHtml = injectNotarialPaginationIntoHtml(
@@ -937,19 +936,73 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', options.fieldValues);
   const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', options.fieldValues);
 
-  const bodyDoc = parser.parseFromString(`<div>${mergedBodyHtml}</div>`, 'text/html');
-  const bodyRoot = bodyDoc.body.firstElementChild as HTMLElement;
-
   const mediaList: MediaRelationship[] = [];
-  let bodyElementsXml = serializeBlockContainerToXml(bodyRoot, mediaList, NET_CONTENT_WIDTH_TWIPS);
+  let bodyElementsXml = '';
+
+  if (typeof DOMParser !== 'undefined') {
+    const parser = new DOMParser();
+    const bodyDoc = parser.parseFromString(`<div>${mergedBodyHtml}</div>`, 'text/html');
+    const bodyRoot = bodyDoc.body.firstElementChild as HTMLElement;
+    bodyElementsXml = serializeBlockContainerToXml(
+      bodyRoot,
+      mediaList,
+      NET_CONTENT_WIDTH_TWIPS
+    );
+  } else {
+    // Fallback XML serializer for Node.js / headless test environments without DOMParser
+    const blockTokens =
+      mergedBodyHtml.match(
+        /<table\b[\s\S]*?<\/table>|<div\b[^>]*page-break[^>]*>[\s\S]*?<\/div>|<p\b[^>]*>[\s\S]*?<\/p>/gi
+      ) || [];
+    for (const token of blockTokens) {
+      if (/^<table\b/i.test(token)) {
+        const rows = token.match(/<tr\b[\s\S]*?<\/tr>/gi) || [];
+        const rowsXml = rows
+          .map((row) => {
+            const cells = row.match(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi) || [];
+            const cellsXml = cells
+              .map((cell) => {
+                const text = cell.replace(/<[^>]+>/g, '').trim();
+                return `<w:tc><w:p>${buildParagraphPropertiesXml({
+                  isRtl: true,
+                })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(
+                  text
+                )}</w:t></w:r></w:p></w:tc>`;
+              })
+              .join('');
+            return `<w:tr>${cellsXml}</w:tr>`;
+          })
+          .join('');
+        bodyElementsXml += `<w:tbl><w:tblPr><w:bidiVisual/></w:tblPr>${rowsXml}</w:tbl>`;
+      } else if (/page-break/i.test(token)) {
+        bodyElementsXml += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+      } else {
+        const isLeft = /align=["']left["']|text-align\s*:\s*left/i.test(token);
+        const text = token.replace(/<[^>]+>/g, '').trim();
+        bodyElementsXml += `<w:p>${buildParagraphPropertiesXml({
+          isRtl: true,
+          align: isLeft ? 'left' : 'both',
+        })}<w:r>${buildRunPropertiesXml(
+          {
+            bold: /<strong|<b\b|font-weight\s*:\s*bold/i.test(token),
+          },
+          true
+        )}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+      }
+    }
+  }
 
   // OpenXML requires <w:body> to have at least one <w:p> and not end directly with <w:tbl>
   if (!bodyElementsXml.trim() || bodyElementsXml.trim().endsWith('</w:tbl>')) {
     bodyElementsXml += `<w:p>${buildParagraphPropertiesXml({ isRtl: true })}</w:p>`;
   }
 
-  const hasHeader = mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter = mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
+  const hasHeader =
+    typeof DOMParser !== 'undefined' &&
+    mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
+  const hasFooter =
+    typeof DOMParser !== 'undefined' &&
+    mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -983,11 +1036,19 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
 
   // Header & Footer XML
   if (hasHeader) {
-    const hDoc = parser.parseFromString(`<div>${mergedHeaderHtml}</div>`, 'text/html');
-    const hRoot = hDoc.body.firstElementChild as HTMLElement;
-    const hInnerXml =
-      serializeBlockContainerToXml(hRoot, [], NET_CONTENT_WIDTH_TWIPS) ||
-      `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
+    let hInnerXml = '';
+    if (typeof DOMParser !== 'undefined') {
+      const parser = new DOMParser();
+      const hDoc = parser.parseFromString(`<div>${mergedHeaderHtml}</div>`, 'text/html');
+      const hRoot = hDoc.body.firstElementChild as HTMLElement;
+      hInnerXml = serializeBlockContainerToXml(hRoot, [], NET_CONTENT_WIDTH_TWIPS);
+    } else {
+      const text = mergedHeaderHtml.replace(/<[^>]+>/g, '').trim();
+      hInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    }
+    if (!hInnerXml) {
+      hInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
+    }
     zip.file(
       'word/header1.xml',
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -998,11 +1059,19 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   }
 
   if (hasFooter) {
-    const fDoc = parser.parseFromString(`<div>${mergedFooterHtml}</div>`, 'text/html');
-    const fRoot = fDoc.body.firstElementChild as HTMLElement;
-    const fInnerXml =
-      serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS) ||
-      `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
+    let fInnerXml = '';
+    if (typeof DOMParser !== 'undefined') {
+      const parser = new DOMParser();
+      const fDoc = parser.parseFromString(`<div>${mergedFooterHtml}</div>`, 'text/html');
+      const fRoot = fDoc.body.firstElementChild as HTMLElement;
+      fInnerXml = serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS);
+    } else {
+      const text = mergedFooterHtml.replace(/<[^>]+>/g, '').trim();
+      fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    }
+    if (!fInnerXml) {
+      fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
+    }
     zip.file(
       'word/footer1.xml',
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

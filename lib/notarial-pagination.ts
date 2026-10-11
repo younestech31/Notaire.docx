@@ -6,7 +6,7 @@ import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
  */
 export function getArabicOrdinalPageWord(pageNumber: number): string {
   const n = Math.max(1, Math.floor(pageNumber));
-  const ordinals: Record<number, string> = {
+  const firstTwenty: Record<number, string> = {
     1: 'الأولى',
     2: 'الثانية',
     3: 'الثالثة',
@@ -27,18 +27,45 @@ export function getArabicOrdinalPageWord(pageNumber: number): string {
     18: 'الثامنة عشرة',
     19: 'التاسعة عشرة',
     20: 'العشرون',
-    21: 'الحادية والعشرون',
-    22: 'الثانية والعشرون',
-    23: 'الثالثة والعشرون',
-    24: 'الرابعة والعشرون',
-    25: 'الخامسة والعشرون',
-    26: 'السادسة والعشرون',
-    27: 'السابعة والعشرون',
-    28: 'الثامنة والعشرون',
-    29: 'التاسعة والعشرون',
-    30: 'الثلاثون',
   };
-  return ordinals[n] || `رقم ${n}`;
+  if (firstTwenty[n]) return firstTwenty[n];
+
+  const compoundUnits: Record<number, string> = {
+    1: 'الحادية',
+    2: 'الثانية',
+    3: 'الثالثة',
+    4: 'الرابعة',
+    5: 'الخامسة',
+    6: 'السادسة',
+    7: 'السابعة',
+    8: 'الثامنة',
+    9: 'التاسعة',
+  };
+  const tensWords: Record<number, string> = {
+    20: 'العشرون',
+    30: 'الثلاثون',
+    40: 'الأربعون',
+    50: 'الخمسون',
+    60: 'الستون',
+    70: 'السبعون',
+    80: 'الثمانون',
+    90: 'التسعون',
+  };
+
+  if (n >= 21 && n <= 99) {
+    const unit = n % 10;
+    const ten = Math.floor(n / 10) * 10;
+    if (unit === 0) return tensWords[ten];
+    return `${compoundUnits[unit]} و${tensWords[ten]}`;
+  }
+
+  if (n === 100) return 'المائة';
+  if (n >= 101 && n <= 199) {
+    return `المائة و${getArabicOrdinalPageWord(n - 100)}`;
+  }
+  if (n === 200) return 'المائتان';
+
+  return `رقم ${n}`;
 }
 
 export function buildNotarialPaginationClosingText(totalPages: number): string {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import JSZip from 'jszip';
 import {
   buildNotarialPaginationClosingText,
   countLogicalWordsInHtml,
@@ -16,7 +17,14 @@ import {
   officiallyIndexAndSealContract,
   parseIndexNumberAndYear,
   suggestNextAnnualIndexNumber,
+  syncRegistrationBatchToContracts,
 } from '../lib/indexing-engine.ts';
+import {
+  createLocalFileSystemBridge,
+  type FileSystemDirectoryHandleLike,
+} from '../lib/desktop-bridge.ts';
+import { desktopOfficeStore } from '../lib/storage-desktop.ts';
+import { generateNotaryDocxBlob } from '../lib/docx-engine.ts';
 import type {
   PublicationTrack,
   RegistrationBatch,
@@ -38,12 +46,80 @@ function makeDummyDoc(overrides: Partial<SavedDocument> = {}): SavedDocument {
   };
 }
 
-test('Notarial Pagination: Arabic feminine ordinal closing line', () => {
+function createInMemoryDirHandle(name = 'notary_office'): FileSystemDirectoryHandleLike {
+  const dirs = new Map<string, FileSystemDirectoryHandleLike>();
+  const files = new Map<string, Uint8Array>();
+
+  const toUint8 = async (data: string | BufferSource | Blob): Promise<Uint8Array> => {
+    if (typeof data === 'string') return new TextEncoder().encode(data);
+    if (data instanceof Uint8Array) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+      return new Uint8Array(await data.arrayBuffer());
+    }
+    return new Uint8Array(0);
+  };
+
+  return {
+    name,
+    async getDirectoryHandle(subName: string, options?: { create?: boolean }) {
+      const existing = dirs.get(subName);
+      if (existing) return existing;
+      if (!options?.create) throw new Error(`Directory not found: ${subName}`);
+      const created = createInMemoryDirHandle(subName);
+      dirs.set(subName, created);
+      return created;
+    },
+    async getFileHandle(fileName: string, options?: { create?: boolean }) {
+      if (!files.has(fileName) && !options?.create) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+      return {
+        async getFile() {
+          const bytes = files.get(fileName) || new Uint8Array(0);
+          return {
+            async text() {
+              return new TextDecoder().decode(bytes);
+            },
+            async arrayBuffer() {
+              return bytes.buffer.slice(
+                bytes.byteOffset,
+                bytes.byteOffset + bytes.byteLength
+              );
+            },
+          };
+        },
+        async createWritable() {
+          let pending = new Uint8Array(0);
+          return {
+            async write(data: string | BufferSource | Blob) {
+              pending = await toUint8(data);
+            },
+            async close() {
+              files.set(fileName, pending);
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+test('Notarial Pagination: Arabic feminine ordinal closing line (1 to 200)', () => {
   assert.equal(getArabicOrdinalPageWord(1), 'الأولى');
   assert.equal(getArabicOrdinalPageWord(9), 'التاسعة');
+  assert.equal(getArabicOrdinalPageWord(30), 'الثلاثون');
+  assert.equal(getArabicOrdinalPageWord(31), 'الحادية والثلاثون');
+  assert.equal(getArabicOrdinalPageWord(45), 'الخامسة والأربعون');
+  assert.equal(getArabicOrdinalPageWord(99), 'التاسعة والتسعون');
+  assert.equal(getArabicOrdinalPageWord(100), 'المائة');
+  assert.equal(getArabicOrdinalPageWord(105), 'المائة والخامسة');
   assert.equal(
-    buildNotarialPaginationClosingText(5),
-    'الصفحة الخامسة والأخيرة'
+    buildNotarialPaginationClosingText(35),
+    'الصفحة الخامسة والثلاثون والأخيرة'
   );
 });
 
@@ -54,19 +130,15 @@ test('Notarial Pagination: splitHtmlParagraphPreservingTags preserves bold, unde
   const totalWords = countLogicalWordsInHtml(html);
   assert.ok(totalWords >= 16);
 
-  // Split right inside the <strong> and <u> block (around word 10)
   const split = splitHtmlParagraphPreservingTags(html, 10);
   assert.ok(split !== null);
 
-  // First part must close <u> and <strong> properly and keep smart-tag intact
   assert.ok(
     split.firstHtml.includes(
       '<span class="smart-tag" data-var="اسم_البائع">[اسم_البائع]</span>'
     )
   );
   assert.ok(split.firstHtml.endsWith('</u></strong>'));
-
-  // Second part must reopen <strong><u> and close them properly
   assert.ok(split.secondHtml.startsWith('<strong><u>'));
   assert.ok(split.secondHtml.includes('</strong>'));
 });
@@ -81,16 +153,13 @@ test('Notarial Pagination: injectNotarialPaginationIntoHtml splits multi-page co
   const inputHtml = `<p dir="rtl">${repeatedFormattedClause}</p>`;
   const paginated = injectNotarialPaginationIntoHtml(inputHtml, true, true);
 
-  // Should inject ../.. for page 1 and الصفحة الثانية والأخيرة at the end
   assert.ok(paginated.includes('../..'));
   assert.ok(paginated.includes('الصفحة الثانية والأخيرة'));
-  // Must preserve the smart-tag and underline/strong tags across the split
   assert.ok(
     paginated.includes('<span class="smart-tag" data-var="البائع">[البائع]</span>')
   );
   assert.ok(paginated.includes('<u>تحتوي فقرته على التزام صريح</u>'));
 
-  // Stripping pagination restores clean content without pagination markers
   const stripped = stripNotarialPaginationFromHtml(paginated);
   assert.ok(!stripped.includes('data-notary-pagination="true"'));
 });
@@ -113,10 +182,8 @@ test('Indexing Engine: annual sequence suggestion and duplicate conflict detecti
     formatted: '35/2026',
   });
 
-  // Next index for 2026 must be 36/2026 (ignoring 99/2025)
   assert.equal(suggestNextAnnualIndexNumber(docs, 2026), '36/2026');
 
-  // Conflict detection finds doc_2 when attempting to use 35/2026 on doc_new
   const conflict = findConflictingIndexedDocument(
     docs,
     'doc_new',
@@ -125,7 +192,6 @@ test('Indexing Engine: annual sequence suggestion and duplicate conflict detecti
   );
   assert.equal(conflict?.id, 'doc_2');
 
-  // Same index in a different year (2027) is allowed
   const noConflictOtherYear = findConflictingIndexedDocument(
     docs,
     'doc_new',
@@ -169,6 +235,7 @@ test('Indexing Engine: lifecycle lock and rejection formatting for Registration 
 
   const rejectedBatch: RegistrationBatch = {
     id: 'reg_1',
+    batchNumber: 1,
     batchReference: 'دفعة مارس',
     year: 2026,
     inspectorateName: 'مفتشية التسجيل والطابع - الجزائر',
@@ -199,4 +266,134 @@ test('Indexing Engine: lifecycle lock and rejection formatting for Registration 
   const pubRef = formatPublicationReferenceText(rejectedTrack);
   assert.ok(pubRef.includes('رفض/تحفظ بالشهر العقاري'));
   assert.ok(pubRef.includes('خطأ في رقم القسم المساحي'));
+});
+
+test('Desktop Bridge & Multi-Contract Batch Sync: storage_save, seal_original, read_original, and syncRegistrationBatchToContracts', async () => {
+  const memDir = createInMemoryDirHandle('notaire_disk_test');
+  const bridge = createLocalFileSystemBridge(memDir);
+  (globalThis as unknown as { window: Record<string, unknown> }).window = {
+    __NOTAIRE_DESKTOP__: bridge,
+  };
+
+  try {
+    const docA = makeDummyDoc({
+      id: 'doc_a',
+      title: 'عقد بيع شقة رقم 1',
+      indexNumber: '10/2026',
+      year: 2026,
+      status: 'signed_indexed',
+    });
+    const docB = makeDummyDoc({
+      id: 'doc_b',
+      title: 'عقد هبة عقارية رقم 2',
+      indexNumber: '11/2026',
+      year: 2026,
+      status: 'signed_indexed',
+    });
+
+    await desktopOfficeStore.saveDocumentRecord(docA);
+    await desktopOfficeStore.saveDocumentRecord(docB);
+
+    const loaded = await desktopOfficeStore.loadSavedDocuments();
+    assert.equal(loaded.length, 2);
+
+    // Test sealing and reading back original with SHA-256 verification
+    const sampleBytes = new TextEncoder().encode('NOTAIRE-DOCX-SEAL-TEST');
+    const sealed = await desktopOfficeStore.sealContractOriginal({
+      documentId: 'doc_a',
+      year: 2026,
+      indexNumber: '10/2026',
+      docxBytes: sampleBytes,
+    });
+    assert.ok(sealed.sha256.length === 64);
+
+    const readBack = await desktopOfficeStore.readSealedOriginal('doc_a');
+    assert.ok(readBack !== null);
+    assert.equal(readBack.sha256, sealed.sha256);
+    assert.deepEqual(readBack.bytes, sampleBytes);
+
+    // Test multi-contract RegistrationBatch synchronization (registered -> rejected)
+    const batchRegistered: RegistrationBatch = {
+      id: 'batch_10_11',
+      batchNumber: 5,
+      year: 2026,
+      inspectorateName: 'مفتشية التسجيل والطابع بئر مراد رايس',
+      contractIds: ['doc_a'],
+      indexNumbers: ['10/2026', '11/2026'],
+      totalFees: 45000,
+      receiptNumber: 'W-9988',
+      registrationDate: '2026-04-02',
+      status: 'registered',
+      statusDate: '2026-04-02',
+    };
+
+    const syncedRegistered = await syncRegistrationBatchToContracts(
+      batchRegistered,
+      'الأستاذ الموثق'
+    );
+    assert.equal(syncedRegistered.length, 2);
+    for (const d of syncedRegistered) {
+      assert.equal(d.status, 'registered');
+      assert.equal(d.registrationBatchId, 'batch_10_11');
+      assert.ok(d.fieldValues['مراجع_التسجيل']?.includes('W-9988'));
+    }
+
+    const batchRejected: RegistrationBatch = {
+      ...batchRegistered,
+      status: 'rejected',
+      receiptNumber: undefined,
+      notes: 'مطلوب استكمال شهادة السلبية',
+    };
+    const syncedRejected = await syncRegistrationBatchToContracts(
+      batchRejected,
+      'الأستاذ الموثق'
+    );
+    assert.equal(syncedRejected.length, 2);
+    for (const d of syncedRejected) {
+      assert.equal(d.status, 'registration_rejected');
+      assert.ok(
+        d.fieldValues['مراجع_التسجيل']?.includes('مطلوب استكمال شهادة السلبية')
+      );
+    }
+  } finally {
+    delete (globalThis as unknown as { window?: unknown }).window;
+  }
+});
+
+test('DOCX Engine: generates valid .docx with multi-page ../.. pagination, table, and merged variables', async () => {
+  const longParagraph = Array.from({ length: 50 }, () =>
+    'فقرة توثيقية رسمية محررة بمكتب التوثيق لبيان التزامات المتعاقدين'
+  ).join(' ');
+
+  const bodyHtml = `
+    <p dir="rtl">حضر السيد <strong>[البائع]</strong> وباع العقار المبين في الجدول أدناه:</p>
+    <table dir="rtl">
+      <tbody>
+        <tr><td>رقم الحصة</td><td>المساحة</td></tr>
+        <tr><td>[رقم_الحصة]</td><td>120 م²</td></tr>
+      </tbody>
+    </table>
+    <p dir="rtl">${longParagraph}</p>
+  `;
+
+  const blob = await generateNotaryDocxBlob({
+    title: 'عقد بيع تجريبي متعدد الصفحات',
+    bodyHtml,
+    pageNumberingEnabled: true,
+    fieldValues: {
+      البائع: 'أحمد بن محمد',
+      رقم_الحصة: '14',
+    },
+  });
+
+  const arrayBuffer = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXmlFile = zip.file('word/document.xml');
+  assert.ok(docXmlFile !== null);
+
+  const docXml = await docXmlFile.async('string');
+  assert.ok(docXml.includes('أحمد بن محمد'));
+  assert.ok(docXml.includes('<w:tbl>'));
+  assert.ok(docXml.includes('../..'));
+  assert.ok(docXml.includes('الصفحة الثانية والأخيرة'));
 });

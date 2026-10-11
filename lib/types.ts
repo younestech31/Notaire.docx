@@ -245,6 +245,7 @@ export interface ContractFinancialTracking {
 export interface RegistrationBatch {
   id: string;
   batchNumber?: number; // رقم الدفعة التسلسلي السنوي
+  batchReference?: string; // تسمية أو مرجع إضافي للدفعة
   year: number;
   statusDate: string; // تاريخ حالة الإيداع (YYYY-MM-DD)
   contractIds: string[]; // معرّفات العقود المضمنة في الدفعة

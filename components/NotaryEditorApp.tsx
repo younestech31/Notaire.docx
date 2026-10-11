@@ -148,6 +148,11 @@ import {
   importTemplatesJsonFile,
 } from '@/lib/document-io-workflows';
 import { isContractOfficiallyIndexed } from '@/lib/indexing-engine';
+import {
+  type LocalOfficeDirectoryState,
+  reconnectPersistedOfficeDirectory,
+  tryRestorePersistedOfficeDirectory,
+} from '@/lib/desktop-bridge';
 
 const INITIAL_EMPTY_PARAGRAPH = `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;"><br></p>`;
 
@@ -202,6 +207,10 @@ export default function NotaryEditorApp() {
     contractConditionsRef.current = contractConditions;
   }, [contractConditions]);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
+  const [localDirState, setLocalDirState] = useState<LocalOfficeDirectoryState>({
+    status: 'disconnected',
+    folderName: null,
+  });
   const [partyCards, setPartyCards] = useState<ContractPartyCard[]>([]);
   const partyCardsRef = useRef<ContractPartyCard[]>([]);
   useEffect(() => {
@@ -807,6 +816,10 @@ export default function NotaryEditorApp() {
     let mounted = true;
     async function initWorkspace() {
       try {
+        const restoredDir = await tryRestorePersistedOfficeDirectory();
+        if (mounted) {
+          setLocalDirState(restoredDir);
+        }
         await getRuntimeInfo();
       } catch (err) {
         if (mounted) {
@@ -2810,6 +2823,67 @@ export default function NotaryEditorApp() {
         previewMergedMode={previewMergedMode}
         revisionsCount={revisions.filter((r) => r.documentId === docId).length}
         lastBackupAt={lastBackupAt}
+        localDirState={localDirState}
+        onConnectLocalDirectory={async () => {
+          try {
+            const nextState = await reconnectPersistedOfficeDirectory();
+            setLocalDirState(nextState);
+            if (nextState.status === 'connected') {
+              const [
+                loadedTemplates,
+                loadedDocs,
+                loadedEstates,
+                loadedClauses,
+                loadedDerived,
+                loadedRevs,
+                loadedDownloads,
+                loadedSavedParties,
+                loadedSavedProps,
+                loadedClerks,
+                loadedFolders,
+                loadedWordTpls,
+                loadedFields,
+              ] = await Promise.all([
+                loadCustomTemplates(),
+                loadSavedDocuments(),
+                loadSubdivisionEstates(),
+                loadNotaryClauses(),
+                loadDerivedDocTemplates(),
+                loadDocumentRevisions(),
+                loadDownloadArchive(),
+                loadSavedParties(),
+                loadSavedProperties(),
+                loadNotaryClerks(),
+                loadContractFolders(),
+                loadWordTemplates(),
+                loadPartyFields(),
+              ]);
+              setTemplates(loadedTemplates);
+              setDocuments(loadedDocs);
+              documentsRef.current = loadedDocs;
+              setEstates(loadedEstates);
+              setClauses(loadedClauses);
+              setDerivedTemplates(loadedDerived);
+              setRevisions(loadedRevs);
+              setDownloads(loadedDownloads);
+              setSavedParties(loadedSavedParties);
+              setSavedProperties(loadedSavedProps);
+              setClerks(loadedClerks);
+              setFolders(loadedFolders);
+              setWordTemplates(loadedWordTpls);
+              setPartyFields(loadedFields);
+              showToast(
+                `تم ربط مجلد المكتب المحلي (${nextState.folderName}) بنجاح — الحفظ والأصول المختومة على القرص مباشرة`
+              );
+            }
+          } catch (err) {
+            showToast(
+              err instanceof Error
+                ? err.message
+                : 'تعذر ربط مجلد المكتب المحلي'
+            );
+          }
+        }}
         onOpenNewContractModal={() => setShowMultiSourceModal(true)}
         onImportWordFile={handleImportDocxDirectlyToEditor}
         onTogglePreviewMergedMode={() => {
