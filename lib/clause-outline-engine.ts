@@ -148,138 +148,41 @@ export function detectNotaryClauseHeading(el: HTMLElement): ClauseHeadingMatch {
     return { isHeading: false, kind: 'clause', cleanTitle: '' };
   }
 
-  // If already tagged as container or has explicit clause id
-  if (el.classList.contains('clause-container') || el.hasAttribute('data-clause-id')) {
-    const rawTitle =
-      el.getAttribute('data-clause-title') ||
-      el.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
-      '';
-    const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
-    const kindAttr = el.getAttribute('data-clause-kind') as ClauseRecognitionKind | null;
-    return {
-      isHeading: true,
-      kind: kindAttr || (el.classList.contains('clause-container') ? 'container' : 'clause'),
-      cleanTitle,
-    };
-  }
-
-  // Remove zero-width characters and normalize whitespace
+  const isContainer = el.classList.contains('clause-container');
   const plainText = (el.textContent || '')
     .replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u061C]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!plainText || plainText.length === 0) {
-    return { isHeading: false, kind: 'clause', cleanTitle: '' };
+  // Rule 1: div.clause-container is a closed container
+  if (isContainer) {
+    const rawTitle =
+      el.getAttribute('data-clause-title') ||
+      el.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
+      'بند';
+    const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    const kindAttr = el.getAttribute('data-clause-kind') as ClauseRecognitionKind | null;
+    return {
+      isHeading: true,
+      kind: kindAttr || 'container',
+      cleanTitle,
+    };
   }
 
-  // 1. Hash syntax (# عنوان البند)
+  // Rule 2: Paragraph starting with # (with or without data-clause-id)
   if (plainText.startsWith('#')) {
-    const clean = plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    const rawTitle = el.getAttribute('data-clause-title') || plainText;
+    const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    const kindAttr = (el.getAttribute('data-clause-kind') as ClauseRecognitionKind) || 'hash';
     return {
       isHeading: true,
-      kind: 'hash',
-      cleanTitle: clean || 'بند غير معنون',
+      kind: kindAttr,
+      cleanTitle: cleanTitle || 'بند غير معنون',
     };
   }
 
-  // 2. Law Article pattern: المادة الأولى، المادة 1، المادة الثانية...
-  const articleRegex =
-    /^(المادة\s+(الأولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|الثامنة|التاسعة|العاشرة|الحادية\s+عشرة|الثانية\s+عشرة|الثالثة\s+عشرة|الرابعة\s+عشرة|الخامسة\s+عشرة|السادسة\s+عشرة|السابعة\s+عشرة|الثامنة\s+عشرة|التاسعة\s+عشرة|العشرون|\d+))(?:\s*[:\-–.]?\s*(.*))?$/i;
-  const articleMatch = plainText.match(articleRegex);
-  if (articleMatch) {
-    const mainNum = articleMatch[1].trim();
-    const rest = (articleMatch[3] || '').trim();
-    const cleanTitle = rest ? `${mainNum}: ${rest.slice(0, 60)}` : mainNum;
-    return {
-      isHeading: true,
-      kind: 'article',
-      cleanTitle,
-    };
-  }
-
-  // 3. Clause pattern: البند الأول، البند 1، البند الثاني...
-  const clauseRegex =
-    /^(البند\s+(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|الحادي\s+عشر|الثاني\s+عشر|الثالث\s+عشر|الرابع\s+عشر|الخامس\s+عشر|السادس\s+عشر|السابع\s+عشر|الثامن\s+عشر|التاسع\s+عشر|العشرون|\d+))(?:\s*[:\-–.]?\s*(.*))?$/i;
-  const clauseMatch = plainText.match(clauseRegex);
-  if (clauseMatch) {
-    const mainNum = clauseMatch[1].trim();
-    const rest = (clauseMatch[3] || '').trim();
-    const cleanTitle = rest ? `${mainNum}: ${rest.slice(0, 60)}` : mainNum;
-    return {
-      isHeading: true,
-      kind: 'clause',
-      cleanTitle,
-    };
-  }
-
-  // 4. Verbal ordinal ranking: أولاً، ثانياً، ثالثاً...
-  const verbalRegex =
-    /^(أولاً|ثانياً|ثالثاً|رابعاً|خامساً|سادساً|سابعاً|ثامناً|تاسعاً|عاشراً|حادي\s+عشر|ثاني\s+عشر|ثالث\s+عشر|رابع\s+عشر|خامس\s+عشر|أولا|ثانيا|ثالثا|رابعا|خامسا|سادسا|سابعا|ثامنا|تاسعا|عاشرا)\s*[:\-–.]\s*(.*)$/i;
-  const verbalMatch = plainText.match(verbalRegex);
-  if (verbalMatch) {
-    const mainWord = verbalMatch[1].trim();
-    const rest = (verbalMatch[2] || '').trim();
-    const cleanTitle = rest ? `${mainWord}: ${rest.slice(0, 60)}` : mainWord;
-    return {
-      isHeading: true,
-      kind: 'verbal',
-      cleanTitle,
-    };
-  }
-
-  // 5. Standard Notarial Headings
-  for (const kw of NOTARIAL_HEADING_KEYWORDS) {
-    if (plainText === kw || plainText === `${kw}:` || plainText === `${kw} -`) {
-      return {
-        isHeading: true,
-        kind: 'heading',
-        cleanTitle: kw,
-      };
-    }
-    if (
-      plainText.startsWith(`${kw}:`) ||
-      plainText.startsWith(`${kw} :`) ||
-      plainText.startsWith(`${kw} -`) ||
-      plainText.startsWith(`${kw} –`)
-    ) {
-      const rest = plainText.slice(kw.length).replace(/^[\s:\-–.]+/, '').trim();
-      const cleanTitle = rest.length > 0 && rest.length <= 60 ? `${kw}: ${rest}` : kw;
-      return {
-        isHeading: true,
-        kind: 'heading',
-        cleanTitle,
-      };
-    }
-  }
-
-  // 6. Explicit HTML heading tags (H1-H4) or paragraph purely in bold
-  const tagName = el.tagName.toUpperCase();
-  if (['H1', 'H2', 'H3', 'H4'].includes(tagName)) {
-    if (plainText.length >= 2 && plainText.length <= 80 && !plainText.includes('[')) {
-      return {
-        isHeading: true,
-        kind: 'heading',
-        cleanTitle: plainText.replace(/:$/, '').trim(),
-      };
-    }
-  }
-
-  const boldChild = el.querySelector('strong, b, span[style*="bold"]');
-  if (
-    boldChild &&
-    (el.children.length === 1 ||
-      (el.textContent || '').trim() === (boldChild.textContent || '').trim())
-  ) {
-    if (plainText.length >= 3 && plainText.length <= 65 && !plainText.includes('[')) {
-      return {
-        isHeading: true,
-        kind: 'heading',
-        cleanTitle: plainText.replace(/:$/, '').trim(),
-      };
-    }
-  }
-
+  // Rule 3: Any other element with data-clause-id that does NOT start with # is NOT a clause/heading.
+  // Ignore stamp and treat as normal text.
   return { isHeading: false, kind: 'clause', cleanTitle: '' };
 }
 
@@ -318,21 +221,14 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       return;
     }
 
-    if (
-      child.classList.contains('clause-container') ||
-      child.hasAttribute('data-clause-id')
-    ) {
+    if (child.classList.contains('clause-container')) {
       flushSegment();
       const rawTitle =
         child.getAttribute('data-clause-title') ||
         child.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
         `بند رقم ${segments.length + 1}`;
       const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
-      let cId = child.getAttribute('data-clause-id');
-      if (!cId) {
-        cId = `dom_clause_${idx}_${Date.now().toString(36)}`;
-        child.setAttribute('data-clause-id', cId);
-      }
+      const cId = child.getAttribute('data-clause-id') || `dom_container_${idx}`;
       const locked =
         child.getAttribute('data-clause-locked') === 'true' ||
         child.getAttribute('contenteditable') === 'false';
@@ -342,32 +238,26 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
           ? Number(orderAttr)
           : undefined;
       const detectedKind =
-        (child.getAttribute('data-clause-kind') as ClauseRecognitionKind) ||
-        (child.classList.contains('clause-container') ? 'container' : 'clause');
+        (child.getAttribute('data-clause-kind') as ClauseRecognitionKind) || 'container';
 
-      segments.push({
+      currentSegment = {
         id: cId,
         title: cleanTitle || `بند رقم ${segments.length + 1}`,
         domIndex: idx,
-        isContainer: child.classList.contains('clause-container'),
+        isContainer: true,
         locked,
         explicitOrder,
         clauseKind: detectedKind,
         elements: [child],
-      });
+      };
       return;
     }
 
     const headingInfo = detectNotaryClauseHeading(child);
     if (headingInfo.isHeading) {
       flushSegment();
-      let cId = child.getAttribute('data-clause-id');
-      if (!cId) {
-        cId = `live_clause_${idx}_${Math.random().toString(36).slice(2, 8)}`;
-        child.setAttribute('data-clause-id', cId);
-      }
-      child.setAttribute('data-clause-title', headingInfo.cleanTitle);
-      child.setAttribute('data-clause-kind', headingInfo.kind);
+      // Read existing id or fallback (do NOT create new IDs during read)
+      const cId = child.getAttribute('data-clause-id') || `live_clause_${idx}`;
 
       currentSegment = {
         id: cId,
@@ -380,6 +270,18 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       };
     } else if (currentSegment) {
       currentSegment.elements.push(child);
+    } else {
+      if (!currentSegment && (child.textContent || '').trim().length > 0) {
+        currentSegment = {
+          id: `intro_segment_${idx}`,
+          title: 'التمهيد أو المقدمة',
+          domIndex: idx,
+          isContainer: false,
+          locked: false,
+          clauseKind: 'heading',
+          elements: [child],
+        };
+      }
     }
   });
 
