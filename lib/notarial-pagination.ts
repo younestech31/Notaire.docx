@@ -68,6 +68,10 @@ export function getArabicOrdinalPageWord(pageNumber: number): string {
   return `رقم ${n}`;
 }
 
+export function buildNotarialPaginationContinueText(pageNumber: number): string {
+  return `الصفحة ${getArabicOrdinalPageWord(pageNumber)} ../..`;
+}
+
 export function buildNotarialPaginationClosingText(totalPages: number): string {
   return `الصفحة ${getArabicOrdinalPageWord(totalPages)} والأخيرة`;
 }
@@ -503,7 +507,7 @@ function injectNotarialPaginationFallback(
     }
 
     if (b.isPageBreak) {
-      outputBlocks.push(makeMarkerP('../..'));
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
       outputBlocks.push(b.fullMatch);
       totalPages++;
       linesOnCurrentPage = 0;
@@ -537,7 +541,7 @@ function injectNotarialPaginationFallback(
         const splitRes = splitHtmlParagraphPreservingTags(b.inner, targetWords);
         if (splitRes) {
           outputBlocks.push(`<${b.tag}${b.attrs}>${splitRes.firstHtml}</${b.tag}>`);
-          outputBlocks.push(makeMarkerP('../..'));
+          outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
           outputBlocks.push(makePageBreakDiv(totalPages));
           totalPages++;
           linesOnCurrentPage = 0;
@@ -556,7 +560,7 @@ function injectNotarialPaginationFallback(
     }
 
     if (linesOnCurrentPage > 0) {
-      outputBlocks.push(makeMarkerP('../..'));
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
       outputBlocks.push(makePageBreakDiv(totalPages));
       totalPages++;
       linesOnCurrentPage = 0;
@@ -565,7 +569,7 @@ function injectNotarialPaginationFallback(
 
     outputBlocks.push(b.fullMatch);
     if (i < blocks.length - 1) {
-      outputBlocks.push(makeMarkerP('../..'));
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
       outputBlocks.push(makePageBreakDiv(totalPages));
       totalPages++;
       linesOnCurrentPage = 0;
@@ -584,7 +588,7 @@ function injectNotarialPaginationFallback(
  * Injects official Algerian Notarial pagination markers into the contract HTML:
  * - As a standalone line (`<p dir="rtl" style="...text-align:left;">`) immediately BELOW the last line of text on each page
  * - Left-aligned within the 12cm net text column (`text-align: left; direction: rtl`)
- * - Non-final pages: `../..`
+ * - Non-final pages: `الصفحة {العدد بالحروف} ../..`
  * - Final page: `الصفحة {العدد بالحروف} والأخيرة`
  * - Never in headers/footers and never numeric `1/9`
  *
@@ -811,9 +815,11 @@ export function injectNotarialPaginationIntoHtml(
         return p;
       };
 
-      // 1. Insert standalone `../..` paragraph directly BELOW the last content element of each non-final page
+      // 1. Insert standalone marker paragraph directly BELOW the last content element of each non-final page
       for (const { element, insertPageBreakAfter, pageNumber } of pageEndElements) {
-        const markerP = createStandalonePaginationParagraph('../..');
+        const markerP = createStandalonePaginationParagraph(
+          buildNotarialPaginationContinueText(pageNumber)
+        );
         element.insertAdjacentElement('afterend', markerP);
         if (insertPageBreakAfter) {
           const pbDiv = doc.createElement('div');
