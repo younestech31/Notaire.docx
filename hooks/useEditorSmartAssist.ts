@@ -40,6 +40,7 @@ interface UseEditorSmartAssistParams {
   handleConvertSelectionToSmartTag: () => void;
   syncPlaceholdersAndDraft: () => void;
   flushSyncPlaceholdersAndDraft: () => void;
+  triggerFastClauseScan?: () => void;
   setShowFindReplace: React.Dispatch<React.SetStateAction<boolean>>;
   setInlinePopover: React.Dispatch<
     React.SetStateAction<InlineVariablePopoverState | null>
@@ -68,6 +69,7 @@ export function useEditorSmartAssist({
   handleConvertSelectionToSmartTag,
   syncPlaceholdersAndDraft,
   flushSyncPlaceholdersAndDraft,
+  triggerFastClauseScan,
   setShowFindReplace,
   setInlinePopover,
   setSidebarTab,
@@ -143,6 +145,7 @@ export function useEditorSmartAssist({
   const scheduleSyncPlaceholdersAndDraft = useCallback(() => {
     clearAtomicSelectedTag();
     refreshInlineQuickAssistTrigger();
+    triggerFastClauseScan?.();
     if (debouncedSyncTimerRef.current) {
       clearTimeout(debouncedSyncTimerRef.current);
     }
@@ -155,6 +158,7 @@ export function useEditorSmartAssist({
     debouncedSyncTimerRef,
     refreshInlineQuickAssistTrigger,
     syncPlaceholdersAndDraft,
+    triggerFastClauseScan,
   ]);
 
   const quickAssistOptions = useMemo<QuickAssistOption[]>(() => {

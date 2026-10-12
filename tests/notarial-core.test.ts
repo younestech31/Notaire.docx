@@ -25,6 +25,7 @@ import {
 } from '../lib/desktop-bridge.ts';
 import { desktopOfficeStore } from '../lib/storage-desktop.ts';
 import { generateNotaryDocxBlob } from '../lib/docx-engine.ts';
+import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
 import type {
   PublicationTrack,
   RegistrationBatch,
@@ -516,5 +517,95 @@ test('Unified OfficeTemplate Migration & Lightweight Export Revisions: migrates 
   } finally {
     delete (globalThis as unknown as { window?: unknown }).window;
   }
+});
+
+test('Clause Outline Engine: hybrid detection of legal articles, clauses, verbal rankings, and notarial headings', () => {
+  function makeMockElement(tagName: string, text: string, attrs: Record<string, string> = {}): any {
+    return {
+      nodeType: 1,
+      tagName: tagName.toUpperCase(),
+      textContent: text,
+      classList: {
+        contains(cls: string) {
+          return Boolean(attrs['class']?.split(' ').includes(cls));
+        },
+      },
+      hasAttribute(attr: string) {
+        return Boolean(attrs[attr] !== undefined);
+      },
+      getAttribute(attr: string) {
+        return attrs[attr] ?? null;
+      },
+      setAttribute(attr: string, val: string) {
+        attrs[attr] = val;
+      },
+      querySelector() {
+        return null;
+      },
+      children: [],
+    };
+  }
+
+  // 1. Law Article syntax
+  const art1 = detectNotaryClauseHeading(
+    makeMockElement('p', 'المادة الأولى: التمهيد وأطراف العقد')
+  );
+  assert.equal(art1.isHeading, true);
+  assert.equal(art1.kind, 'article');
+  assert.equal(art1.cleanTitle, 'المادة الأولى: التمهيد وأطراف العقد');
+
+  const artNum = detectNotaryClauseHeading(
+    makeMockElement('p', 'المادة 2: أصل الملكية والمستندات')
+  );
+  assert.equal(artNum.isHeading, true);
+  assert.equal(artNum.kind, 'article');
+
+  // 2. Clause syntax
+  const clause1 = detectNotaryClauseHeading(
+    makeMockElement('p', 'البند الأول: موضوع البيع والتعيين')
+  );
+  assert.equal(clause1.isHeading, true);
+  assert.equal(clause1.kind, 'clause');
+
+  // 3. Verbal enumeration syntax
+  const verbal1 = detectNotaryClauseHeading(
+    makeMockElement('p', 'أولاً: أصل الملكية والوثائق المشهرة')
+  );
+  assert.equal(verbal1.isHeading, true);
+  assert.equal(verbal1.kind, 'verbal');
+
+  const verbal2 = detectNotaryClauseHeading(
+    makeMockElement('p', 'ثانياً: الثمن والوفاء')
+  );
+  assert.equal(verbal2.isHeading, true);
+  assert.equal(verbal2.kind, 'verbal');
+
+  // 4. Standard notarial headings
+  const notarialHead = detectNotaryClauseHeading(
+    makeMockElement('p', 'شروط البيع: اتفق الطرفان على الشروط التالية')
+  );
+  assert.equal(notarialHead.isHeading, true);
+  assert.equal(notarialHead.kind, 'heading');
+
+  const notarialTahmeed = detectNotaryClauseHeading(
+    makeMockElement('p', 'التمهيد:')
+  );
+  assert.equal(notarialTahmeed.isHeading, true);
+  assert.equal(notarialTahmeed.kind, 'heading');
+  assert.equal(notarialTahmeed.cleanTitle, 'التمهيد');
+
+  // 5. Rapid Hash syntax
+  const hashClause = detectNotaryClauseHeading(
+    makeMockElement('p', '# تعيين الحصة المفرزة والمساحة')
+  );
+  assert.equal(hashClause.isHeading, true);
+  assert.equal(hashClause.kind, 'hash');
+  assert.equal(hashClause.cleanTitle, 'تعيين الحصة المفرزة والمساحة');
+
+  // 6. Regular narrative text should NOT be flagged as a clause heading
+  const normalText = detectNotaryClauseHeading(
+    makeMockElement('p', 'بمقتضى هذا العقد التوثيقي حضر أمام الأستاذ الموثق الأطراف التالية أسماؤهم')
+  );
+  assert.equal(normalText.isHeading, false);
 });
 

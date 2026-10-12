@@ -1,7 +1,9 @@
-import {
+import type {
   ClauseVariableGroup,
   ListNumberingStyle,
   SerializedSelectionPath,
+} from './types';
+import {
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
 } from './types';

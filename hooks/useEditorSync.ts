@@ -153,6 +153,20 @@ export function useEditorSync({
     [bodyEditorRef, outlineClausesRef, setActiveClauseIdsInDoc, setOutlineClauses]
   );
 
+  const fastClauseScanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerFastClauseScan = useCallback(() => {
+    if (!bodyEditorRef.current) return;
+    if (fastClauseScanTimerRef.current) {
+      clearTimeout(fastClauseScanTimerRef.current);
+    }
+    fastClauseScanTimerRef.current = setTimeout(() => {
+      fastClauseScanTimerRef.current = null;
+      refreshActiveClausesInDOM();
+    }, 40);
+  }, [bodyEditorRef, refreshActiveClausesInDOM]);
+
+
   const syncPlaceholdersAndDraft = useCallback(
     (
       customFieldValues?: Record<string, string>,
@@ -360,6 +374,7 @@ export function useEditorSync({
     debouncedSyncTimerRef,
     clearAutoSaveTimer,
     refreshActiveClausesInDOM,
+    triggerFastClauseScan,
     syncPlaceholdersAndDraft,
     flushSyncPlaceholdersAndDraft,
     decorateEditorZonesPreservingSelection,

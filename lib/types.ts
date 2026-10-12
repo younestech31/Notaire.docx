@@ -242,6 +242,14 @@ export interface ClauseCondition {
   value: string | boolean;
 }
 
+export type ClauseRecognitionKind =
+  | 'article'
+  | 'clause'
+  | 'verbal'
+  | 'heading'
+  | 'hash'
+  | 'container';
+
 export interface ContractOutlineClause {
   id: string;
   index: number;
@@ -255,6 +263,7 @@ export interface ContractOutlineClause {
   domIndex: number;
   isContainer: boolean;
   condition?: ClauseCondition;
+  clauseKind?: ClauseRecognitionKind;
 }
 
 export type ContractLifecycleStatus =

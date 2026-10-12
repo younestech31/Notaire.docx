@@ -56,6 +56,38 @@ export interface ClausesPanelProps {
   onSaveSelectionBookmark: () => void;
 }
 
+function getClauseKindBadge(kind?: string) {
+  switch (kind) {
+    case 'article':
+      return {
+        label: 'مادة قانونية',
+        className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+      };
+    case 'clause':
+      return {
+        label: 'بند توثيقي',
+        className: 'bg-blue-50 text-blue-700 border border-blue-200',
+      };
+    case 'verbal':
+      return {
+        label: 'ترقيم لفظي',
+        className: 'bg-amber-50 text-amber-700 border border-amber-200',
+      };
+    case 'heading':
+      return {
+        label: 'عنوان رئيسي',
+        className: 'bg-purple-50 text-purple-700 border border-purple-200',
+      };
+    case 'hash':
+      return {
+        label: 'شباك #',
+        className: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+      };
+    default:
+      return null;
+  }
+}
+
 export default function ClausesPanel({
   liveContractClauses,
   contractConditions = {},
@@ -161,13 +193,21 @@ export default function ClausesPanel({
         </div>
 
         {liveContractClauses.length === 0 ? (
-          <div className="border border-dashed border-blue-200 rounded p-3 text-center bg-white/80 space-y-1">
-            <div className="text-xs font-semibold text-slate-700">
-              لا توجد عناوين بنود (`#`) في هذا العقد بعد
+          <div className="border border-dashed border-blue-200 rounded p-3 text-center bg-white/80 space-y-1.5">
+            <div className="text-xs font-semibold text-slate-800 flex items-center justify-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-900" />
+              <span>كاشف البنود الهجين التوثيقي جاهز</span>
             </div>
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              اكتب بحرية <code className="font-mono font-bold text-blue-900">#حضر</code> ثم <code className="font-mono font-bold text-blue-900">#التعيين</code> في بداية أي سطر بالورقة (أو اضغط <strong>«# بند بالعقد»</strong> أعلاه) — يكفي العنوان أولاً ويمكنك كتابة المحتوى تحته لاحقاً.
+            <p className="text-[11px] text-slate-600 leading-relaxed text-right">
+              يتعرف المحرر تلقائياً وفورياً أثناء الكتابة أو اللصق على:
             </p>
+            <ul className="text-[10px] text-slate-500 text-right space-y-1 list-disc pr-4">
+              <li>المواد القانونية: <span className="font-semibold text-slate-700 font-mono">المادة الأولى: التمهيد</span> أو <span className="font-semibold text-slate-700 font-mono">المادة 1</span></li>
+              <li>الترقيم اللفظي: <span className="font-semibold text-slate-700 font-mono">أولاً: أصل الملكية</span>، <span className="font-semibold text-slate-700 font-mono">ثانياً: الثمن</span></li>
+              <li>صيغ البنود: <span className="font-semibold text-slate-700 font-mono">البند الأول: موضوع البيع</span></li>
+              <li>العناوين التوثيقية: <span className="font-semibold text-slate-700 font-mono">التمهيد:</span>، <span className="font-semibold text-slate-700 font-mono">شروط البيع:</span>، <span className="font-semibold text-slate-700 font-mono">أصل الملكية:</span></li>
+              <li>أو علامة الشباك السريعة: <span className="font-semibold text-slate-700 font-mono"># التعيين</span></li>
+            </ul>
           </div>
         ) : (
           <div className="space-y-2 max-h-85 overflow-y-auto pr-0.5">
@@ -321,10 +361,21 @@ export default function ClausesPanel({
                             : 'هذا البند معطل ومخفي — انقر لإعادة تفعيله في موضعه'
                         }
                       >
-                        <div className="text-xs font-bold text-slate-900 group-hover:text-blue-900 flex items-center gap-1 flex-wrap">
+                        <div className="text-xs font-bold text-slate-900 group-hover:text-blue-900 flex items-center gap-1.5 flex-wrap">
                           <span className="text-blue-900 font-mono tabular-nums shrink-0">
                             #{c.index}
                           </span>
+                          {(() => {
+                            const badge = getClauseKindBadge(c.clauseKind);
+                            if (!badge) return null;
+                            return (
+                              <span
+                                className={`text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0 ${badge.className}`}
+                              >
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
                           <span
                             className={`truncate ${
                               !isEnabled ? 'line-through text-slate-500' : ''

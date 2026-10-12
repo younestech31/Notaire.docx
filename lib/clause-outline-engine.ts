@@ -1,6 +1,9 @@
-import {
+import type {
+  ClauseRecognitionKind,
   ContractOutlineClause,
   ContractPartyCard,
+} from './types';
+import {
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
 } from './types';
@@ -72,10 +75,214 @@ export function insertOrWrapNewClauseAtSelection(
 }
 
 /**
- * Helper to segment rootEl.children into logical contract clauses based on:
- * 1. Explicit .clause-container[data-clause-id] elements
- * 2. Paragraphs starting with `#` (Notaire Local Layer 2 syntax: `# عنوان البند`)
+ * Notarial standard section keywords for Algerian/Arab contract drafting:
  */
+export const NOTARIAL_HEADING_KEYWORDS = [
+  'التمهيد',
+  'تمهيد',
+  'مقدمة العقد',
+  'أصل الملكية',
+  'سند الملكية',
+  'بيان أصل الملكية',
+  'تعيين العقار',
+  'بيان العقار',
+  'وصف المبيع',
+  'موضوع العقد',
+  'موضوع البيع',
+  'موضوع الاتفاق',
+  'موضوع الوكالة',
+  'شروط البيع',
+  'شروط الاتفاق',
+  'شروط الإيجار',
+  'الشروط والأحكام',
+  'شروط العقد',
+  'الثمن وطريقة السداد',
+  'الثمن والوفاء',
+  'الأجرة وطريقة الدفع',
+  'بدل الإيجار',
+  'الثمن',
+  'التزامات البائع',
+  'التزامات المشتري',
+  'التزامات الطرفين',
+  'التزامات المستأجر',
+  'التزامات المؤجر',
+  'الشرط الجزائي',
+  'شرط الفسخ',
+  'الفسخ والشرط الجزائي',
+  'فسخ العقد',
+  'النزاعات والاختصاص القضائي',
+  'الاختصاص القضائي',
+  'حل النزاعات',
+  'النزاعات القضائية',
+  'المصادقة والتوقيع',
+  'إقرار وتعهد',
+  'إقرارات وتعهدات',
+  'شهادة الشهود',
+  'المصاريف والأتعاب',
+  'خاتمة العقد',
+  'حالة الأماكن',
+  'التصريحات الجبائية',
+  'التأمينات والضمانات',
+  'الوفاة وانتقال الحقوق',
+] as const;
+
+export interface ClauseHeadingMatch {
+  isHeading: boolean;
+  kind: ClauseRecognitionKind;
+  cleanTitle: string;
+}
+
+/**
+ * Intelligent hybrid recognizer for notarial clauses in live contract DOM:
+ * Recognizes:
+ * 1. Explicit containers (.clause-container or [data-clause-id])
+ * 2. Rapid hash syntax: `# عنوان البند` or `## البند`
+ * 3. Law articles: `المادة الأولى: ...`, `المادة 1: ...`, `المادة العاشرة`
+ * 4. Contract clauses: `البند الأول: ...`, `البند 2: ...`
+ * 5. Verbal ordinal enumeration: `أولاً: ...`, `ثانياً: ...`, `عاشراً: ...`
+ * 6. Standard notarial headings: `التمهيد:`, `أصل الملكية:`, `شروط البيع:`
+ * 7. Heading tags (H1-H4) or standalone bold title paragraphs
+ */
+export function detectNotaryClauseHeading(el: HTMLElement): ClauseHeadingMatch {
+  if (!el || el.nodeType !== 1) {
+    return { isHeading: false, kind: 'clause', cleanTitle: '' };
+  }
+
+  // If already tagged as container or has explicit clause id
+  if (el.classList.contains('clause-container') || el.hasAttribute('data-clause-id')) {
+    const rawTitle =
+      el.getAttribute('data-clause-title') ||
+      el.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
+      '';
+    const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    const kindAttr = el.getAttribute('data-clause-kind') as ClauseRecognitionKind | null;
+    return {
+      isHeading: true,
+      kind: kindAttr || (el.classList.contains('clause-container') ? 'container' : 'clause'),
+      cleanTitle,
+    };
+  }
+
+  // Remove zero-width characters and normalize whitespace
+  const plainText = (el.textContent || '')
+    .replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u061C]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!plainText || plainText.length === 0) {
+    return { isHeading: false, kind: 'clause', cleanTitle: '' };
+  }
+
+  // 1. Hash syntax (# عنوان البند)
+  if (plainText.startsWith('#')) {
+    const clean = plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    return {
+      isHeading: true,
+      kind: 'hash',
+      cleanTitle: clean || 'بند غير معنون',
+    };
+  }
+
+  // 2. Law Article pattern: المادة الأولى، المادة 1، المادة الثانية...
+  const articleRegex =
+    /^(المادة\s+(الأولى|الثانية|الثالثة|الرابعة|الخامسة|السادسة|السابعة|الثامنة|التاسعة|العاشرة|الحادية\s+عشرة|الثانية\s+عشرة|الثالثة\s+عشرة|الرابعة\s+عشرة|الخامسة\s+عشرة|السادسة\s+عشرة|السابعة\s+عشرة|الثامنة\s+عشرة|التاسعة\s+عشرة|العشرون|\d+))(?:\s*[:\-–.]?\s*(.*))?$/i;
+  const articleMatch = plainText.match(articleRegex);
+  if (articleMatch) {
+    const mainNum = articleMatch[1].trim();
+    const rest = (articleMatch[3] || '').trim();
+    const cleanTitle = rest ? `${mainNum}: ${rest.slice(0, 60)}` : mainNum;
+    return {
+      isHeading: true,
+      kind: 'article',
+      cleanTitle,
+    };
+  }
+
+  // 3. Clause pattern: البند الأول، البند 1، البند الثاني...
+  const clauseRegex =
+    /^(البند\s+(الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|الحادي\s+عشر|الثاني\s+عشر|الثالث\s+عشر|الرابع\s+عشر|الخامس\s+عشر|السادس\s+عشر|السابع\s+عشر|الثامن\s+عشر|التاسع\s+عشر|العشرون|\d+))(?:\s*[:\-–.]?\s*(.*))?$/i;
+  const clauseMatch = plainText.match(clauseRegex);
+  if (clauseMatch) {
+    const mainNum = clauseMatch[1].trim();
+    const rest = (clauseMatch[3] || '').trim();
+    const cleanTitle = rest ? `${mainNum}: ${rest.slice(0, 60)}` : mainNum;
+    return {
+      isHeading: true,
+      kind: 'clause',
+      cleanTitle,
+    };
+  }
+
+  // 4. Verbal ordinal ranking: أولاً، ثانياً، ثالثاً...
+  const verbalRegex =
+    /^(أولاً|ثانياً|ثالثاً|رابعاً|خامساً|سادساً|سابعاً|ثامناً|تاسعاً|عاشراً|حادي\s+عشر|ثاني\s+عشر|ثالث\s+عشر|رابع\s+عشر|خامس\s+عشر|أولا|ثانيا|ثالثا|رابعا|خامسا|سادسا|سابعا|ثامنا|تاسعا|عاشرا)\s*[:\-–.]\s*(.*)$/i;
+  const verbalMatch = plainText.match(verbalRegex);
+  if (verbalMatch) {
+    const mainWord = verbalMatch[1].trim();
+    const rest = (verbalMatch[2] || '').trim();
+    const cleanTitle = rest ? `${mainWord}: ${rest.slice(0, 60)}` : mainWord;
+    return {
+      isHeading: true,
+      kind: 'verbal',
+      cleanTitle,
+    };
+  }
+
+  // 5. Standard Notarial Headings
+  for (const kw of NOTARIAL_HEADING_KEYWORDS) {
+    if (plainText === kw || plainText === `${kw}:` || plainText === `${kw} -`) {
+      return {
+        isHeading: true,
+        kind: 'heading',
+        cleanTitle: kw,
+      };
+    }
+    if (
+      plainText.startsWith(`${kw}:`) ||
+      plainText.startsWith(`${kw} :`) ||
+      plainText.startsWith(`${kw} -`) ||
+      plainText.startsWith(`${kw} –`)
+    ) {
+      const rest = plainText.slice(kw.length).replace(/^[\s:\-–.]+/, '').trim();
+      const cleanTitle = rest.length > 0 && rest.length <= 60 ? `${kw}: ${rest}` : kw;
+      return {
+        isHeading: true,
+        kind: 'heading',
+        cleanTitle,
+      };
+    }
+  }
+
+  // 6. Explicit HTML heading tags (H1-H4) or paragraph purely in bold
+  const tagName = el.tagName.toUpperCase();
+  if (['H1', 'H2', 'H3', 'H4'].includes(tagName)) {
+    if (plainText.length >= 2 && plainText.length <= 80 && !plainText.includes('[')) {
+      return {
+        isHeading: true,
+        kind: 'heading',
+        cleanTitle: plainText.replace(/:$/, '').trim(),
+      };
+    }
+  }
+
+  const boldChild = el.querySelector('strong, b, span[style*="bold"]');
+  if (
+    boldChild &&
+    (el.children.length === 1 ||
+      (el.textContent || '').trim() === (boldChild.textContent || '').trim())
+  ) {
+    if (plainText.length >= 3 && plainText.length <= 65 && !plainText.includes('[')) {
+      return {
+        isHeading: true,
+        kind: 'heading',
+        cleanTitle: plainText.replace(/:$/, '').trim(),
+      };
+    }
+  }
+
+  return { isHeading: false, kind: 'clause', cleanTitle: '' };
+}
+
 interface DomClauseSegment {
   id: string;
   title: string;
@@ -83,6 +290,7 @@ interface DomClauseSegment {
   isContainer: boolean;
   locked: boolean;
   explicitOrder?: number;
+  clauseKind?: ClauseRecognitionKind;
   elements: HTMLElement[];
 }
 
@@ -90,12 +298,12 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
   const children = Array.from(rootEl.children) as HTMLElement[];
   const segments: DomClauseSegment[] = [];
 
-  let currentHashSegment: DomClauseSegment | null = null;
+  let currentSegment: DomClauseSegment | null = null;
 
-  const flushHashSegment = () => {
-    if (currentHashSegment) {
-      segments.push(currentHashSegment);
-      currentHashSegment = null;
+  const flushSegment = () => {
+    if (currentSegment) {
+      segments.push(currentSegment);
+      currentSegment = null;
     }
   };
 
@@ -104,8 +312,8 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       return;
     }
     if (child.classList.contains('page-break')) {
-      if (currentHashSegment) {
-        currentHashSegment.elements.push(child);
+      if (currentSegment) {
+        currentSegment.elements.push(child);
       }
       return;
     }
@@ -114,14 +322,17 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       child.classList.contains('clause-container') ||
       child.hasAttribute('data-clause-id')
     ) {
-      flushHashSegment();
+      flushSegment();
       const rawTitle =
         child.getAttribute('data-clause-title') ||
         child.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
         `بند رقم ${segments.length + 1}`;
       const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
-      const cId =
-        child.getAttribute('data-clause-id') || `dom_clause_${idx}`;
+      let cId = child.getAttribute('data-clause-id');
+      if (!cId) {
+        cId = `dom_clause_${idx}_${Date.now().toString(36)}`;
+        child.setAttribute('data-clause-id', cId);
+      }
       const locked =
         child.getAttribute('data-clause-locked') === 'true' ||
         child.getAttribute('contenteditable') === 'false';
@@ -130,43 +341,54 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
         orderAttr !== null && orderAttr !== '' && !Number.isNaN(Number(orderAttr))
           ? Number(orderAttr)
           : undefined;
+      const detectedKind =
+        (child.getAttribute('data-clause-kind') as ClauseRecognitionKind) ||
+        (child.classList.contains('clause-container') ? 'container' : 'clause');
+
       segments.push({
         id: cId,
         title: cleanTitle || `بند رقم ${segments.length + 1}`,
         domIndex: idx,
-        isContainer: true,
+        isContainer: child.classList.contains('clause-container'),
         locked,
         explicitOrder,
+        clauseKind: detectedKind,
         elements: [child],
       });
       return;
     }
 
-    const plainText = (child.textContent || '').trim();
-    if (plainText.startsWith('#')) {
-      flushHashSegment();
-      const cleanTitle =
-        plainText.replace(/^#+\s*/, '').replace(/:$/, '').trim() ||
-        `بند رقم ${segments.length + 1}`;
-      currentHashSegment = {
-        id: `hash_clause_${idx}`,
-        title: cleanTitle,
+    const headingInfo = detectNotaryClauseHeading(child);
+    if (headingInfo.isHeading) {
+      flushSegment();
+      let cId = child.getAttribute('data-clause-id');
+      if (!cId) {
+        cId = `live_clause_${idx}_${Math.random().toString(36).slice(2, 8)}`;
+        child.setAttribute('data-clause-id', cId);
+      }
+      child.setAttribute('data-clause-title', headingInfo.cleanTitle);
+      child.setAttribute('data-clause-kind', headingInfo.kind);
+
+      currentSegment = {
+        id: cId,
+        title: headingInfo.cleanTitle,
         domIndex: idx,
         isContainer: false,
         locked: false,
+        clauseKind: headingInfo.kind,
         elements: [child],
       };
-    } else if (currentHashSegment) {
-      currentHashSegment.elements.push(child);
+    } else if (currentSegment) {
+      currentSegment.elements.push(child);
     }
   });
 
-  flushHashSegment();
+  flushSegment();
   return segments;
 }
 
 /**
- * Lazily upgrades top-level `# عنوان البند` segments into `<div class="clause-container">`
+ * Lazily upgrades top-level clause segments into `<div class="clause-container">`
  * ONLY when required by structural operations (lock, disable/hide, conditions, reorder).
  * Preserves the segment ID (`seg.id` or `matchedPrev.id`) so the calling operation can
  * immediately target the newly created container.
@@ -198,6 +420,9 @@ export function upgradeTopLevelHashSegmentsToContainers(
       }
       containerEl.setAttribute('data-clause-order', String(clauseOrder));
       containerEl.setAttribute('data-clause-title', seg.title);
+      if (seg.clauseKind) {
+        containerEl.setAttribute('data-clause-kind', seg.clauseKind);
+      }
       containerEl.setAttribute('data-clause-locked', isLocked ? 'true' : 'false');
       if (isLocked) {
         containerEl.setAttribute('contenteditable', 'false');
@@ -214,6 +439,9 @@ export function upgradeTopLevelHashSegmentsToContainers(
       wrapper.setAttribute('data-clause-id', newId);
       wrapper.setAttribute('data-clause-order', String(clauseOrder));
       wrapper.setAttribute('data-clause-title', seg.title);
+      if (seg.clauseKind) {
+        wrapper.setAttribute('data-clause-kind', seg.clauseKind);
+      }
       wrapper.setAttribute('data-clause-locked', isLocked ? 'true' : 'false');
       if (isLocked) {
         wrapper.setAttribute('contenteditable', 'false');
@@ -314,6 +542,7 @@ export function extractLiveContractClausesFromDOM(
       domIndex: seg.domIndex,
       isContainer: seg.isContainer,
       condition: prevMatch?.condition,
+      clauseKind: seg.clauseKind ?? prevMatch?.clauseKind ?? 'clause',
     };
   });
 
