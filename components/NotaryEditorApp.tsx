@@ -220,6 +220,19 @@ export default function NotaryEditorApp() {
   const [editorInteractionMode, setEditorInteractionMode] = useState<
     'desktop-pro' | 'adaptive-touch'
   >('desktop-pro');
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setEditorInteractionMode('adaptive-touch');
+      } else {
+        setEditorInteractionMode('desktop-pro');
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [inlinePopover, setInlinePopover] =
     useState<InlineVariablePopoverState | null>(null);
 
@@ -793,17 +806,7 @@ export default function NotaryEditorApp() {
         onOpenNewContractModal={() => setShowMultiSourceModal(true)}
         onImportWordFile={handleParseAndPreviewDocx}
         onTogglePreviewMergedMode={handleTogglePreviewMergedMode}
-        editorInteractionMode={editorInteractionMode}
-        onToggleInteractionMode={() => {
-          setEditorInteractionMode((prev) =>
-            prev === 'desktop-pro' ? 'adaptive-touch' : 'desktop-pro'
-          );
-          showToast(
-            editorInteractionMode === 'desktop-pro'
-              ? 'تم التبديل للوضع المتكيف المرن للشاشات الصغيرة'
-              : 'تم العودة لوضع سطح المكتب الاحترافي المكتبي'
-          );
-        }}
+
         onOpenSnapshotsHistoryModal={() => {
           setModalActiveBodyHtml(
             bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH
