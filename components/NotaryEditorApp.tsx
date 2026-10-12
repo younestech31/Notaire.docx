@@ -10,6 +10,7 @@ import {
   EditorActivityRail,
   EditorModalsHost,
 } from './editor/EditorModalsHost';
+import OfficeSettingsModal from './modals/OfficeSettingsModal';
 import {
   EditorBottomStatusBar,
   EditorFindReplaceBar,
@@ -255,6 +256,7 @@ export default function NotaryEditorApp() {
     INITIAL_EMPTY_PARAGRAPH
   );
   const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
+  const [showOfficeSettingsModal, setShowOfficeSettingsModal] = useState<boolean>(false);
   const previewBackupHtmlRef = useRef<string>('');
 
   // 4. Editor Sync & Auto-Save Hook
@@ -796,17 +798,9 @@ export default function NotaryEditorApp() {
         autoSaveState={autoSaveState}
         previewMergedMode={previewMergedMode}
         revisionsCount={revisions.filter((r) => r.documentId === docId).length}
-        lastBackupAt={lastBackupAt}
         localDirState={localDirState}
-        onConnectLocalDirectory={() =>
-          connectAndReloadLocalDirectory(async () => {
-            await reloadLifecycleRecords();
-          })
-        }
         onOpenNewContractModal={() => setShowMultiSourceModal(true)}
         onImportWordFile={handleParseAndPreviewDocx}
-        onTogglePreviewMergedMode={handleTogglePreviewMergedMode}
-
         onOpenSnapshotsHistoryModal={() => {
           setModalActiveBodyHtml(
             bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH
@@ -826,33 +820,7 @@ export default function NotaryEditorApp() {
         onExportCurrentToWord={() =>
           handleExportContractWord(getSessionSnapshot())
         }
-        onExportBackupJson={async () => {
-          const nowIso = await downloadOfficeBackupBundleFile();
-          setLastBackupAt(nowIso);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('notary_last_backup_at_v1', nowIso);
-          }
-          showToast('تم تصدير النسخة الاحتياطية الشاملة للمكتب (JSON)');
-        }}
-        onImportBackupJson={async (file) => {
-          try {
-            const text = await file.text();
-            const parsed = JSON.parse(text);
-            const counts = await importFullBackupBundle(parsed);
-            await reloadAllOfficeRecords();
-            const nowIso = new Date().toISOString();
-            setLastBackupAt(nowIso);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('notary_last_backup_at_v1', nowIso);
-            }
-            showToast(
-              `تم استعادة (${counts.templatesCount}) قالب و (${counts.clausesCount}) بند و (${counts.documentsCount}) عقد`
-            );
-          } catch {
-            showToast('تعذر قراءة ملف النسخة الاحتياطية');
-          }
-        }}
-        onOpenOnboardingTour={() => setShowOnboardingTour(true)}
+        onOpenOfficeSettings={() => setShowOfficeSettingsModal(true)}
       />
 
       <EditorRibbon
@@ -1222,6 +1190,47 @@ export default function NotaryEditorApp() {
           );
         }}
         onImportDocxFileFromMultiSource={handleParseAndPreviewDocx}
+      />
+
+      <OfficeSettingsModal
+        isOpen={showOfficeSettingsModal}
+        onClose={() => setShowOfficeSettingsModal(false)}
+        localDirState={localDirState}
+        onConnectLocalDirectory={() =>
+          connectAndReloadLocalDirectory(async () => {
+            await reloadLifecycleRecords();
+          })
+        }
+        onExportBackupJson={async () => {
+          const nowIso = await downloadOfficeBackupBundleFile();
+          setLastBackupAt(nowIso);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('notary_last_backup_at_v1', nowIso);
+          }
+          showToast('تم تصدير النسخة الاحتياطية الشاملة للمكتب (JSON)');
+        }}
+        onImportBackupJson={async (file) => {
+          try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            const counts = await importFullBackupBundle(parsed);
+            await reloadAllOfficeRecords();
+            const nowIso = new Date().toISOString();
+            setLastBackupAt(nowIso);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('notary_last_backup_at_v1', nowIso);
+            }
+            showToast(
+              `تم استعادة (${counts.templatesCount}) قالب و (${counts.clausesCount}) بند و (${counts.documentsCount}) عقد`
+            );
+          } catch {
+            showToast('تعذر قراءة ملف النسخة الاحتياطية');
+          }
+        }}
+        lastBackupAt={lastBackupAt}
+        smartAssistPrefs={smartAssistPrefs}
+        onChangeSmartAssistPrefs={setSmartAssistPrefs}
+        onOpenOnboardingTour={() => setShowOnboardingTour(true)}
       />
     </div>
   );

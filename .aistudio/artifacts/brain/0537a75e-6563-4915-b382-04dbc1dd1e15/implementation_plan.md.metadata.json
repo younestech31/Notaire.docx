@@ -1,6 +1,6 @@
 {
-  "summary": "خطة هندسية لتحقيق وضع مزدوج متكيف بذكاء وتحسين دقة الماوس وسحب الجداول مع الحفاظ على التفاعل المريح للشاشات المختلفة في محرر العقود التوثيقية",
-  "updatedAt": "2026-10-12T14:10:35.054754467Z",
+  "summary": "Revised v2 implementation plan for Notary Editor UI reorganization, command registry, settings store, and office settings modal based on user's refined feedback.",
+  "updatedAt": "2026-10-12T14:35:57.589570455Z",
   "requestFeedback": true,
   "userFacing": true
 }
