@@ -1,6 +1,4 @@
 import {
-  CustomTemplate,
-  DerivedDocTemplate,
   DocumentRevision,
   OfficeTemplate,
   STRICT_FONT_FAMILY,
@@ -107,7 +105,6 @@ export async function exportContractToWord(params: {
     documentId: params.docId,
     documentTitle: titleToUse,
     author: params.authorName || 'الموثق الرئيسي',
-    bodyHtml: '', // Lightweight revision event without duplicating full HTML
     fieldValues: { ...params.fieldValues },
     createdAt: new Date().toISOString(),
     eventType: 'export',
@@ -127,7 +124,7 @@ export async function exportContractToWord(params: {
 export async function generateAndDownloadDerivedDoc(params: {
   docId: string;
   docTitle: string;
-  tpl: OfficeTemplate | DerivedDocTemplate;
+  tpl: OfficeTemplate;
   fieldValues: Record<string, string>;
   authorName?: string;
 }): Promise<{
@@ -150,17 +147,11 @@ export async function generateAndDownloadDerivedDoc(params: {
     bodyHtml: tpl.bodyHtml,
     headerHtml: tpl.headerHtml,
     footerHtml: tpl.footerHtml,
-    pageNumberingEnabled:
-      'pageNumberingEnabled' in tpl ? tpl.pageNumberingEnabled !== false : true,
+    pageNumberingEnabled: tpl.pageNumberingEnabled !== false,
     fieldValues,
   });
 
-  const docTypeCode =
-    'docTypeCode' in tpl && tpl.docTypeCode
-      ? tpl.docTypeCode
-      : 'code' in tpl
-      ? tpl.code
-      : 'extrait';
+  const docTypeCode = tpl.docTypeCode || tpl.code || 'extrait';
   const fileName = `${fileTitle}.docx`;
 
   const derivedRevision: DocumentRevision = {
@@ -168,7 +159,6 @@ export async function generateAndDownloadDerivedDoc(params: {
     documentId: docId,
     documentTitle: docTitle || 'عقد توثيقي',
     author: params.authorName || 'الموثق الرئيسي',
-    bodyHtml: '', // Lightweight revision event without duplicating full HTML
     fieldValues: { ...fieldValues },
     createdAt: new Date().toISOString(),
     eventType: 'derived',

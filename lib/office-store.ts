@@ -1,10 +1,11 @@
 import {
   type BackupBundle,
   type ContractFolder,
-  type CustomTemplate,
-  type DerivedDocTemplate,
   type DocumentRevision,
-  type DownloadArchiveItem,
+  type LegacyCustomTemplate,
+  type LegacyDerivedDocTemplate,
+  type LegacyDownloadArchiveItem,
+  type LegacyWordTemplateDefinition,
   type NotaryClerk,
   type NotaryClause,
   type OfficeTemplate,
@@ -18,7 +19,6 @@ import {
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
   type SubdivisionEstate,
-  type WordTemplateDefinition,
 } from './types';
 
 export interface SealContractOriginalInput {
@@ -65,45 +65,22 @@ export interface OfficeStore {
   exportOfficeTemplatesJson(): Promise<string>;
   importOfficeTemplatesJson(templates: unknown[]): Promise<number>;
 
-  // 2a. Legacy Derived Document Templates (shimmed to OfficeTemplate)
-  loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]>;
-  saveDerivedDocTemplate(tpl: DerivedDocTemplate): Promise<void>;
-  deleteDerivedDocTemplate(id: string): Promise<void>;
-
-  // 2b. Legacy Word Templates (shimmed to OfficeTemplate)
-  loadWordTemplates(): Promise<WordTemplateDefinition[]>;
-  saveWordTemplate(tpl: WordTemplateDefinition): Promise<void>;
-  deleteWordTemplate(id: string): Promise<void>;
-
-  // 3. Document Revisions
+  // 3. Unified Document Revisions & Export History
   loadDocumentRevisions(): Promise<DocumentRevision[]>;
   saveDocumentRevision(rev: DocumentRevision): Promise<void>;
   deleteDocumentRevision(id: string): Promise<void>;
 
-  // 4. Download Archive (legacy compat)
-  loadDownloadArchive(): Promise<DownloadArchiveItem[]>;
-  saveDownloadArchiveItem(item: DownloadArchiveItem): Promise<void>;
-  deleteDownloadArchiveItem(id: string): Promise<void>;
-  clearDownloadArchive(): Promise<void>;
-
-  // 5. Legacy Custom Templates (shimmed to OfficeTemplate)
-  loadCustomTemplates(): Promise<CustomTemplate[]>;
-  saveCustomTemplate(template: CustomTemplate): Promise<void>;
-  deleteCustomTemplate(id: string): Promise<void>;
-  exportCustomTemplatesJson(): Promise<string>;
-  importCustomTemplatesJson(templates: CustomTemplate[]): Promise<number>;
-
-  // 6. Saved Documents
+  // 4. Saved Documents
   loadSavedDocuments(): Promise<SavedDocument[]>;
   saveDocumentRecord(doc: SavedDocument): Promise<void>;
   deleteDocumentRecord(id: string): Promise<void>;
 
-  // 7. Subdivision Estates
+  // 5. Subdivision Estates
   loadSubdivisionEstates(): Promise<SubdivisionEstate[]>;
   saveSubdivisionEstate(estate: SubdivisionEstate): Promise<void>;
   deleteSubdivisionEstate(id: string): Promise<void>;
 
-  // 7b. Saved Parties & Properties Directory
+  // 6. Saved Parties & Properties Directory
   loadSavedParties(): Promise<SavedPartyRecord[]>;
   savePartyRecord(party: SavedPartyRecord): Promise<void>;
   deletePartyRecord(id: string): Promise<void>;
@@ -111,7 +88,7 @@ export interface OfficeStore {
   savePropertyRecord(prop: SavedPropertyRecord): Promise<void>;
   deletePropertyRecord(id: string): Promise<void>;
 
-  // 7c. Clerks & Folders
+  // 7. Clerks & Folders
   loadNotaryClerks(): Promise<NotaryClerk[]>;
   saveNotaryClerk(clerk: NotaryClerk): Promise<void>;
   deleteNotaryClerk(id: string): Promise<void>;
@@ -119,17 +96,13 @@ export interface OfficeStore {
   saveContractFolder(folder: ContractFolder): Promise<void>;
   deleteContractFolder(id: string): Promise<void>;
 
-  // 7d. Registration Batches & Land Publication Tracks
+  // 8. Registration Batches & Land Publication Tracks
   loadRegistrationBatches(): Promise<RegistrationBatch[]>;
   saveRegistrationBatch(batch: RegistrationBatch): Promise<void>;
   deleteRegistrationBatch(id: string): Promise<void>;
   loadPublicationTracks(): Promise<PublicationTrack[]>;
   savePublicationTrack(track: PublicationTrack): Promise<void>;
   deletePublicationTrack(id: string): Promise<void>;
-
-  // 8. Party Fields
-  loadPartyFields(): Promise<PartyField[]>;
-  savePartyFields(fields: PartyField[]): Promise<void>;
 
   // 9. Active Draft Session
   loadActiveDraftSession(): Promise<SavedDocument | null>;
@@ -191,7 +164,7 @@ export const DEFAULT_PARTY_FIELDS: PartyField[] = [
 const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
 const pCenterBold = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:center;font-weight:bold;`;
 
-export const DEFAULT_DERIVED_DOC_TEMPLATES: DerivedDocTemplate[] = [
+export const DEFAULT_DERIVED_DOC_TEMPLATES: LegacyDerivedDocTemplate[] = [
   {
     id: 'derived_extrait',
     code: 'extrait',
@@ -481,7 +454,7 @@ export function inferKindFromDerivedCode(code?: string): OfficeTemplateKind {
 }
 
 export function migrateDerivedTemplateToOfficeTemplate(
-  tpl: DerivedDocTemplate
+  tpl: LegacyDerivedDocTemplate
 ): OfficeTemplate {
   const kind = inferKindFromDerivedCode(tpl.code);
   const category =
@@ -515,7 +488,7 @@ export function migrateDerivedTemplateToOfficeTemplate(
 }
 
 export function migrateCustomTemplateToOfficeTemplate(
-  tpl: CustomTemplate
+  tpl: LegacyCustomTemplate
 ): OfficeTemplate {
   const cat = tpl.category || 'عقود رسمية';
   const kind: OfficeTemplateKind =
@@ -553,7 +526,7 @@ export function migrateCustomTemplateToOfficeTemplate(
 }
 
 export function migrateWordTemplateToOfficeTemplate(
-  tpl: WordTemplateDefinition
+  tpl: LegacyWordTemplateDefinition
 ): OfficeTemplate {
   const kind: OfficeTemplateKind =
     tpl.type === 'original' || tpl.type === 'copy'
@@ -594,9 +567,27 @@ export function migrateWordTemplateToOfficeTemplate(
   };
 }
 
+export function migrateDownloadArchiveItemToRevision(
+  dl: LegacyDownloadArchiveItem
+): DocumentRevision {
+  return {
+    id: dl.id.startsWith('rev_') ? dl.id : `rev_dl_${dl.id}`,
+    documentId: dl.documentId,
+    documentTitle: dl.documentTitle || 'عقد توثيقي',
+    author: 'الموثق الرئيسي',
+    fieldValues: dl.fieldValues || {},
+    createdAt: dl.createdAt || new Date().toISOString(),
+    summary: `تصدير وثيقة: ${dl.docTypeLabel || dl.fileName}`,
+    eventType: dl.docTypeCode === 'acte' ? 'export' : 'derived',
+    fileName: dl.fileName,
+    docTypeLabel: dl.docTypeLabel,
+    docTypeCode: dl.docTypeCode,
+  };
+}
+
 export function officeTemplateToCustomTemplate(
   tpl: OfficeTemplate
-): CustomTemplate {
+): LegacyCustomTemplate {
   return {
     id: tpl.id,
     name: tpl.name,
@@ -615,7 +606,7 @@ export function officeTemplateToCustomTemplate(
 
 export function officeTemplateToDerivedDocTemplate(
   tpl: OfficeTemplate
-): DerivedDocTemplate {
+): LegacyDerivedDocTemplate {
   return {
     id: tpl.id,
     code: tpl.docTypeCode || (tpl.kind === 'registration' ? 'publication' : 'extrait'),
@@ -665,18 +656,18 @@ export function normalizeAnyTemplateToOfficeTemplate(
 
   if (typeof obj.code === 'string') {
     return migrateDerivedTemplateToOfficeTemplate(
-      obj as unknown as DerivedDocTemplate
+      obj as unknown as LegacyDerivedDocTemplate
     );
   }
 
   if (typeof obj.type === 'string') {
     return migrateWordTemplateToOfficeTemplate(
-      obj as unknown as WordTemplateDefinition
+      obj as unknown as LegacyWordTemplateDefinition
     );
   }
 
   return migrateCustomTemplateToOfficeTemplate(
-    obj as unknown as CustomTemplate
+    obj as unknown as LegacyCustomTemplate
   );
 }
 
@@ -724,9 +715,9 @@ export const DEFAULT_OFFICE_TEMPLATES: OfficeTemplate[] = [
 
 export function mergeLegacyStoresIntoOfficeTemplates(params: {
   existingOffice: OfficeTemplate[];
-  legacyCustom?: CustomTemplate[];
-  legacyDerived?: DerivedDocTemplate[];
-  legacyWord?: WordTemplateDefinition[];
+  legacyCustom?: LegacyCustomTemplate[];
+  legacyDerived?: LegacyDerivedDocTemplate[];
+  legacyWord?: LegacyWordTemplateDefinition[];
   seedDefaults?: boolean;
 }): OfficeTemplate[] {
   const byId = new Map<string, OfficeTemplate>();

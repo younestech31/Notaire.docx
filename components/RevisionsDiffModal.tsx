@@ -46,8 +46,8 @@ export function VersionDiffModal({
       ? null
       : revisions.find((r) => r.id === rightRevId) || null;
 
-  const oldHtml = leftRev ? leftRev.bodyHtml : '';
-  const newHtml = rightRev ? rightRev.bodyHtml : currentBodyHtml;
+  const oldHtml = leftRev?.bodyHtml || '';
+  const newHtml = rightRev ? rightRev.bodyHtml || '' : currentBodyHtml;
 
   const diffSegments = leftRev ? computeTextDiff(oldHtml, newHtml) : [];
   const addedCount = diffSegments.filter((s) => s.type === 'added').length;
@@ -408,7 +408,7 @@ export function SnapshotsHistoryModal({
                     {revisions.map((rev) => {
                       const hasBodySnapshot = Boolean(rev.bodyHtml && rev.bodyHtml.trim());
                       const revMetrics = hasBodySnapshot
-                        ? computeDocumentMetrics(rev.bodyHtml)
+                        ? computeDocumentMetrics(rev.bodyHtml || '')
                         : { wordCount: 0, charCount: 0, estimatedPages: 0 };
                       const eventTypeLabel =
                         rev.eventType === 'seal'

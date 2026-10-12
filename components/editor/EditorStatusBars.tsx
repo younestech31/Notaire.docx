@@ -12,7 +12,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  DerivedDocTemplate,
   NotaryClause,
   OfficeTemplate,
   SavedDocument,
@@ -28,7 +27,7 @@ export function EditorModeAndSealBanners({
   onFinishEditingDerivedTemplate,
   onFinishEditingClause,
 }: {
-  editingDerivedTpl: OfficeTemplate | DerivedDocTemplate | null;
+  editingDerivedTpl: OfficeTemplate | null;
   editingClauseObj: NotaryClause | null;
   activeDocument: SavedDocument | null;
   unlockIndexedBody: boolean;

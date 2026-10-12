@@ -88,7 +88,7 @@ export type DerivedDocCode =
   | 'recu_depot'
   | string;
 
-export interface DerivedDocTemplate {
+export interface LegacyDerivedDocTemplate {
   id: string;
   code: DerivedDocCode;
   name: string;
@@ -101,7 +101,7 @@ export interface DerivedDocTemplate {
 
 export type WordTemplateType = 'original' | 'copy' | 'extract' | 'registration' | 'fiscal' | string;
 
-export interface WordTemplateDefinition {
+export interface LegacyWordTemplateDefinition {
   id: string;
   name: string;
   type: WordTemplateType;
@@ -152,7 +152,7 @@ export interface DocumentRevision {
   documentId: string;
   documentTitle: string;
   author: string;
-  bodyHtml: string;
+  bodyHtml?: string; // مطلوب فقط لـ snapshot | seal | save
   fieldValues: Record<string, string>;
   createdAt: string;
   summary: string;
@@ -163,21 +163,21 @@ export interface DocumentRevision {
   docTypeCode?: DerivedDocCode;
 }
 
-export interface DownloadArchiveItem {
+export interface LegacyDownloadArchiveItem {
   id: string;
   documentId: string;
   documentTitle: string;
   docTypeCode: DerivedDocCode;
   docTypeLabel: string;
   fileName: string;
-  bodyHtml: string;
-  headerHtml: string;
-  footerHtml: string;
+  bodyHtml?: string;
+  headerHtml?: string;
+  footerHtml?: string;
   fieldValues: Record<string, string>;
   createdAt: string;
 }
 
-export interface CustomTemplate {
+export interface LegacyCustomTemplate {
   id: string;
   name: string;
   category: string;
@@ -442,14 +442,14 @@ export interface BackupBundle {
   clerks?: NotaryClerk[];
   folders?: ContractFolder[];
   officeTemplates?: OfficeTemplate[];
-  templates?: CustomTemplate[];
+  templates?: LegacyCustomTemplate[];
   documents: SavedDocument[];
   estates: SubdivisionEstate[];
   clauses: NotaryClause[];
-  derivedTemplates?: DerivedDocTemplate[];
-  wordTemplates?: WordTemplateDefinition[];
+  derivedTemplates?: LegacyDerivedDocTemplate[];
+  wordTemplates?: LegacyWordTemplateDefinition[];
   revisions: DocumentRevision[];
-  downloads?: DownloadArchiveItem[];
+  downloads?: LegacyDownloadArchiveItem[];
   savedParties?: SavedPartyRecord[];
   savedProperties?: SavedPropertyRecord[];
   registrationBatches?: RegistrationBatch[];

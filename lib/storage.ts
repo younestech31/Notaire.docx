@@ -1,28 +1,21 @@
 import type {
   BackupBundle,
   ContractFolder,
-  CustomTemplate,
-  DerivedDocTemplate,
   DocumentRevision,
-  DownloadArchiveItem,
   NotaryClerk,
   NotaryClause,
   OfficeTemplate,
-  PartyField,
   PublicationTrack,
   RegistrationBatch,
   SavedDocument,
   SavedPartyRecord,
   SavedPropertyRecord,
   SubdivisionEstate,
-  WordTemplateDefinition,
 } from './types';
 import { getDesktopBridge } from './desktop-bridge';
 import {
-  DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
   DEFAULT_OFFICE_TEMPLATES,
-  DEFAULT_PARTY_FIELDS,
   type OfficeStore,
   type OfficeStoreRuntimeInfo,
   type ReadSealedOriginalResult,
@@ -33,10 +26,8 @@ import { browserOfficeStore } from './storage-browser';
 import { desktopOfficeStore } from './storage-desktop';
 
 export {
-  DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
   DEFAULT_OFFICE_TEMPLATES,
-  DEFAULT_PARTY_FIELDS,
 };
 
 export function getActiveOfficeStore(): OfficeStore {
@@ -93,33 +84,7 @@ export function importOfficeTemplatesJson(templates: unknown[]): Promise<number>
   return getActiveOfficeStore().importOfficeTemplatesJson(templates);
 }
 
-// 2a. Derived Document Templates
-export function loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]> {
-  return getActiveOfficeStore().loadDerivedDocTemplates();
-}
-
-export function saveDerivedDocTemplate(tpl: DerivedDocTemplate): Promise<void> {
-  return getActiveOfficeStore().saveDerivedDocTemplate(tpl);
-}
-
-export function deleteDerivedDocTemplate(id: string): Promise<void> {
-  return getActiveOfficeStore().deleteDerivedDocTemplate(id);
-}
-
-// 2b. Word Templates
-export function loadWordTemplates(): Promise<WordTemplateDefinition[]> {
-  return getActiveOfficeStore().loadWordTemplates();
-}
-
-export function saveWordTemplate(tpl: WordTemplateDefinition): Promise<void> {
-  return getActiveOfficeStore().saveWordTemplate(tpl);
-}
-
-export function deleteWordTemplate(id: string): Promise<void> {
-  return getActiveOfficeStore().deleteWordTemplate(id);
-}
-
-// 3. Document Revisions
+// 3. Unified Document Revisions & Export History
 export function loadDocumentRevisions(): Promise<DocumentRevision[]> {
   return getActiveOfficeStore().loadDocumentRevisions();
 }
@@ -132,45 +97,7 @@ export function deleteDocumentRevision(id: string): Promise<void> {
   return getActiveOfficeStore().deleteDocumentRevision(id);
 }
 
-// 4. Download Archive
-export function loadDownloadArchive(): Promise<DownloadArchiveItem[]> {
-  return getActiveOfficeStore().loadDownloadArchive();
-}
-
-export function saveDownloadArchiveItem(item: DownloadArchiveItem): Promise<void> {
-  return getActiveOfficeStore().saveDownloadArchiveItem(item);
-}
-
-export function deleteDownloadArchiveItem(id: string): Promise<void> {
-  return getActiveOfficeStore().deleteDownloadArchiveItem(id);
-}
-
-export function clearDownloadArchive(): Promise<void> {
-  return getActiveOfficeStore().clearDownloadArchive();
-}
-
-// 5. Custom Templates
-export function loadCustomTemplates(): Promise<CustomTemplate[]> {
-  return getActiveOfficeStore().loadCustomTemplates();
-}
-
-export function saveCustomTemplate(template: CustomTemplate): Promise<void> {
-  return getActiveOfficeStore().saveCustomTemplate(template);
-}
-
-export function deleteCustomTemplate(id: string): Promise<void> {
-  return getActiveOfficeStore().deleteCustomTemplate(id);
-}
-
-export function exportCustomTemplatesJson(): Promise<string> {
-  return getActiveOfficeStore().exportCustomTemplatesJson();
-}
-
-export function importCustomTemplatesJson(templates: CustomTemplate[]): Promise<number> {
-  return getActiveOfficeStore().importCustomTemplatesJson(templates);
-}
-
-// 6. Saved Documents
+// 4. Saved Documents
 export function loadSavedDocuments(): Promise<SavedDocument[]> {
   return getActiveOfficeStore().loadSavedDocuments();
 }
@@ -183,7 +110,7 @@ export function deleteDocumentRecord(id: string): Promise<void> {
   return getActiveOfficeStore().deleteDocumentRecord(id);
 }
 
-// 7. Subdivision Estates
+// 5. Subdivision Estates
 export function loadSubdivisionEstates(): Promise<SubdivisionEstate[]> {
   return getActiveOfficeStore().loadSubdivisionEstates();
 }
@@ -196,7 +123,7 @@ export function deleteSubdivisionEstate(id: string): Promise<void> {
   return getActiveOfficeStore().deleteSubdivisionEstate(id);
 }
 
-// 7b. Saved Parties & Properties Directory
+// 6. Saved Parties & Properties Directory
 export function loadSavedParties(): Promise<SavedPartyRecord[]> {
   return getActiveOfficeStore().loadSavedParties();
 }
@@ -221,7 +148,7 @@ export function deletePropertyRecord(id: string): Promise<void> {
   return getActiveOfficeStore().deletePropertyRecord(id);
 }
 
-// 7c. Clerks & Folders
+// 7. Clerks & Folders
 export function loadNotaryClerks(): Promise<NotaryClerk[]> {
   return getActiveOfficeStore().loadNotaryClerks();
 }
@@ -246,7 +173,7 @@ export function deleteContractFolder(id: string): Promise<void> {
   return getActiveOfficeStore().deleteContractFolder(id);
 }
 
-// 7d. Registration Batches & Land Publication Tracks
+// 8. Registration Batches & Land Publication Tracks
 export function loadRegistrationBatches(): Promise<RegistrationBatch[]> {
   return getActiveOfficeStore().loadRegistrationBatches();
 }
@@ -269,15 +196,6 @@ export function savePublicationTrack(track: PublicationTrack): Promise<void> {
 
 export function deletePublicationTrack(id: string): Promise<void> {
   return getActiveOfficeStore().deletePublicationTrack(id);
-}
-
-// 8. Party Fields
-export function loadPartyFields(): Promise<PartyField[]> {
-  return getActiveOfficeStore().loadPartyFields();
-}
-
-export function savePartyFields(fields: PartyField[]): Promise<void> {
-  return getActiveOfficeStore().savePartyFields(fields);
 }
 
 // 9. Active Draft Session

@@ -10,15 +10,12 @@ import {
   Upload,
 } from 'lucide-react';
 import {
-  CustomTemplate,
   OfficeTemplate,
   OfficeTemplateKind,
 } from '@/lib/types';
-import { migrateCustomTemplateToOfficeTemplate } from '@/lib/office-store';
 
 interface TemplatesTabPanelProps {
-  officeTemplates?: OfficeTemplate[];
-  templates?: (OfficeTemplate | CustomTemplate)[];
+  templates: OfficeTemplate[];
   onImportDocxAsTemplate: (files: FileList) => Promise<void>;
   onSaveCurrentAsTemplate: (
     name: string,
@@ -30,11 +27,11 @@ interface TemplatesTabPanelProps {
   onExportTemplatesJson?: () => void;
   onImportTemplatesJson?: (file: File) => void;
   onLoadTemplateFull: (
-    tpl: OfficeTemplate | CustomTemplate,
+    tpl: OfficeTemplate,
     clearPreviousClauses?: boolean
   ) => void;
-  onInsertTemplateAtCaret: (tpl: OfficeTemplate | CustomTemplate) => void;
-  onExportTemplateDocx: (tpl: OfficeTemplate | CustomTemplate) => Promise<void>;
+  onInsertTemplateAtCaret: (tpl: OfficeTemplate) => void;
+  onExportTemplateDocx: (tpl: OfficeTemplate) => Promise<void>;
   onGenerateDerivedFromTemplate?: (tpl: OfficeTemplate) => Promise<void>;
   onGenerateDerivedDoc?: (tpl: OfficeTemplate) => void | Promise<void>;
   onEditTemplateInEditor?: (tpl: OfficeTemplate) => void;
@@ -52,7 +49,6 @@ const KIND_LABELS: Record<OfficeTemplateKind, string> = {
 };
 
 export default function TemplatesTabPanel({
-  officeTemplates,
   templates = [],
   onImportDocxAsTemplate,
   onSaveCurrentAsTemplate,
@@ -77,12 +73,7 @@ export default function TemplatesTabPanel({
   const [clearClausesOnReplace, setClearClausesOnReplace] =
     useState<boolean>(true);
 
-  const unifiedList: OfficeTemplate[] =
-    officeTemplates && officeTemplates.length > 0
-      ? officeTemplates
-      : templates.map((t) =>
-          'kind' in t ? t : migrateCustomTemplateToOfficeTemplate(t)
-        );
+  const unifiedList: OfficeTemplate[] = templates;
 
   const filteredList = unifiedList.filter((tpl) => {
     if (filterKind === 'all') return true;

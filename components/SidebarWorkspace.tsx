@@ -11,19 +11,13 @@ import {
 } from 'lucide-react';
 import {
   ClauseCondition,
-  ClauseVariableGroup,
   ContractFolder,
   ContractOutlineClause,
   ContractPartyCard,
-  CustomTemplate,
-  DerivedDocTemplate,
-  DocumentRevision,
-  DownloadArchiveItem,
   NotaryClerk,
   NotaryClause,
   OfficeTemplate,
   OfficeTemplateKind,
-  PartyField,
   SavedContractDerivedDoc,
   SavedDocument,
   SavedPartyRecord,
@@ -58,10 +52,7 @@ interface SidebarWorkspaceProps {
   onInsertNewClauseHeadingInDoc: (title?: string) => void;
   onImportStandardClausesPack?: () => Promise<void>;
   clauses: NotaryClause[];
-  activeClauseIdsInDoc: string[];
-  onToggleClauseInDoc: (clause: NotaryClause) => void;
   onInsertClauseAtCaret: (clause: NotaryClause) => void;
-  onMoveClauseOrder: (clauseId: string, direction: 'up' | 'down') => Promise<void>;
   onSaveNewClause: (title: string, category: string, contentHtml?: string) => Promise<void>;
   onSaveSelectionAsClause: (title: string, category: string) => Promise<void>;
   onEditClauseInEditor: (clause: NotaryClause) => void;
@@ -70,18 +61,12 @@ interface SidebarWorkspaceProps {
   partyCards?: ContractPartyCard[];
   onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
   onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
-  partyFields?: PartyField[];
   extractedPlaceholders: string[];
-  clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
   fieldInputTypes?: Record<string, VariableInputType>;
-  onOpenSmartVariablesModal?: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
-  onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onAddCustomField?: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
-  onInsertValueAtCaret?: (value: string) => void;
   onBakeAllPlaceholdersIntoDocument: (explicitValues?: Record<string, string>) => void;
   estates: SubdivisionEstate[];
   selectedEstateId: string;
@@ -95,12 +80,10 @@ interface SidebarWorkspaceProps {
   savedProperties: SavedPropertyRecord[];
   onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
   onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
-  onDeleteSavedParty: (id: string) => void;
   onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
   onSaveCurrentPropertyToDirectory: () => void;
-  onDeleteSavedProperty: (id: string) => void;
   // 3. Unified Office Templates (Contracts, Extracts, Registration, Fiscal, Other)
-  templates: (OfficeTemplate | CustomTemplate)[];
+  templates: OfficeTemplate[];
   onImportDocxAsTemplate: (files: FileList) => Promise<void>;
   onSaveCurrentAsTemplate: (
     name: string,
@@ -111,35 +94,21 @@ interface SidebarWorkspaceProps {
   onOpenSaveAsTemplateModal?: () => void;
   onExportTemplatesJson?: () => void;
   onImportTemplatesJson?: (file: File) => void;
-  onLoadTemplateFull: (tpl: OfficeTemplate | CustomTemplate, clearPreviousClauses?: boolean) => void;
-  onInsertTemplateAtCaret: (tpl: OfficeTemplate | CustomTemplate) => void;
-  onExportTemplateDocx: (tpl: OfficeTemplate | CustomTemplate) => Promise<void>;
+  onLoadTemplateFull: (tpl: OfficeTemplate, clearPreviousClauses?: boolean) => void;
+  onInsertTemplateAtCaret: (tpl: OfficeTemplate) => void;
+  onExportTemplateDocx: (tpl: OfficeTemplate) => Promise<void>;
   onDeleteTemplate: (id: string) => Promise<void>;
-  derivedTemplates?: DerivedDocTemplate[];
   activeEditingDerivedId?: string | null;
-  onGenerateDerivedDoc?: (tpl: OfficeTemplate | DerivedDocTemplate) => void;
-  onEditDerivedTemplateInEditor?: (tpl: OfficeTemplate | DerivedDocTemplate) => void;
-  onSaveCurrentAsDerivedTemplate: (name: string, code: string, description: string) => Promise<void>;
-  onImportDocxForDerivedTemplate: (tpl: DerivedDocTemplate, file: File) => Promise<void>;
-  onDeleteDerivedTemplate: (id: string) => Promise<void>;
-  // 4. Saved Documents + Version History (Diff) + Download Archive
+  onGenerateDerivedDoc?: (tpl: OfficeTemplate) => void;
+  onEditDerivedTemplateInEditor?: (tpl: OfficeTemplate) => void;
+  // 4. Saved Documents & Folder Tree
   documents: SavedDocument[];
-  revisions: DocumentRevision[];
-  downloads: DownloadArchiveItem[];
   activeDocumentId: string;
   currentEditorTitle?: string;
   onOpenDocument: (doc: SavedDocument) => void;
-  onOpenMultiSourceNewModal: () => void;
   onSaveCurrentDocument: (targetFolderId?: string | null) => Promise<SavedDocument | void>;
   onDeleteDocument: (id: string) => Promise<void>;
   onExportDocumentDocx: (doc: SavedDocument) => Promise<void>;
-  onOpenVersionDiffModal: () => void;
-  onRestoreRevision: (rev: DocumentRevision) => void;
-  onOpenDownloadArchiveItemInEditor: (item: DownloadArchiveItem) => void;
-  onRedownloadArchiveItemDocx: (item: DownloadArchiveItem) => Promise<void>;
-  onDeleteDownloadArchiveItem: (id: string) => Promise<void>;
-  onExportBackupJson: () => Promise<void>;
-  onImportBackupJson: (file: File) => Promise<void>;
   onSaveSelectionBookmark: () => void;
   onToggleCollapse?: () => void;
   folders: ContractFolder[];
@@ -185,16 +154,11 @@ export default function SidebarWorkspace({
   partyCards = [],
   onUpdatePartyCards,
   onSavePartyCardToDirectory,
-  partyFields,
   extractedPlaceholders,
-  clauseGroups,
   unfilledCount,
   fieldValues,
   fieldInputTypes = {},
-  onOpenSmartVariablesModal,
   onUpdateFieldValue,
-  onChangeFieldInputType,
-  onAddCustomField,
   onInsertPlaceholderAtCaret,
   onBakeAllPlaceholdersIntoDocument,
   estates,
@@ -221,7 +185,6 @@ export default function SidebarWorkspace({
   onInsertTemplateAtCaret,
   onExportTemplateDocx,
   onDeleteTemplate,
-  derivedTemplates = [],
   activeEditingDerivedId,
   onGenerateDerivedDoc,
   onEditDerivedTemplateInEditor,
@@ -398,7 +361,6 @@ export default function SidebarWorkspace({
             onEditClauseInEditor={onEditClauseInEditor}
             onDeleteClause={onDeleteClause}
             fieldValues={fieldValues}
-            onOpenSmartVariablesModal={onOpenSmartVariablesModal}
             onSaveSelectionBookmark={onSaveSelectionBookmark}
           />
         )}
@@ -408,16 +370,11 @@ export default function SidebarWorkspace({
             partyCards={partyCards}
             onUpdatePartyCards={onUpdatePartyCards}
             onSavePartyCardToDirectory={onSavePartyCardToDirectory}
-            partyFields={partyFields}
             extractedPlaceholders={extractedPlaceholders}
-            clauseGroups={clauseGroups}
             unfilledCount={unfilledCount}
             fieldValues={fieldValues}
             fieldInputTypes={fieldInputTypes}
-            onOpenSmartVariablesModal={onOpenSmartVariablesModal}
             onUpdateFieldValue={onUpdateFieldValue}
-            onChangeFieldInputType={onChangeFieldInputType}
-            onAddCustomField={onAddCustomField}
             onInsertPlaceholderAtCaret={onInsertPlaceholderAtCaret}
             onBakeAllPlaceholdersIntoDocument={onBakeAllPlaceholdersIntoDocument}
             estates={estates}
@@ -485,7 +442,6 @@ export default function SidebarWorkspace({
             onCreateContractInFolder={onCreateContractInFolder}
             onDeleteDocument={onDeleteDocument}
             onUpdateDocumentMeta={onUpdateDocumentMeta}
-            derivedTemplates={derivedTemplates}
             onOpenDerivedModal={onOpenDerivedModal}
             onSelectDerivedDoc={onSelectDerivedDoc}
             activeDerivedDocId={activeDerivedDocId}

@@ -8,8 +8,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Download,
-  Eye,
   FileText,
   FileUp,
   Merge,
@@ -18,7 +16,6 @@ import {
   Search,
   Sparkles,
   Tag,
-  Trash2,
   X,
 } from 'lucide-react';
 import { DocxImportResult } from '@/lib/docx-engine';
@@ -27,11 +24,6 @@ import {
   compileCandidateClausesToHtml,
   segmentHtmlIntoCandidateClauses,
 } from '@/lib/clause-outline-engine';
-import {
-  exportTemplateAsDocx,
-  renderTemplateWithContractData,
-} from '@/lib/docx-template-engine';
-import { WordTemplateDefinition } from '@/lib/types';
 
 // =========================================================
 // 1. WORD IMPORT PREVIEW MODAL (معاينة استيراد ملف Word)
@@ -913,184 +905,3 @@ export function OnboardingTourModal({
   );
 }
 
-// =========================================================
-// 4. WORD TEMPLATES MODAL (إدارة قوالب Word الرسمية)
-// =========================================================
-interface WordTemplatesModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  wordTemplates: WordTemplateDefinition[];
-  onSaveWordTemplate: (tpl: WordTemplateDefinition) => void;
-  onDeleteWordTemplate: (id: string) => void;
-  contractData: {
-    officeName?: string;
-    officeAddr?: string;
-    typeActe?: string;
-    client1?: string;
-    client2?: string;
-    dateActe?: string;
-    dateLettre?: string;
-    clauses?: { title: string; contentHtml: string }[];
-    rawContractBodyHtml?: string;
-    fieldValues?: Record<string, string>;
-  };
-}
-
-export function WordTemplatesModal({
-  isOpen,
-  onClose,
-  wordTemplates,
-  onDeleteWordTemplate,
-  contractData,
-}: WordTemplatesModalProps) {
-  const [selectedTpl, setSelectedTpl] = useState<WordTemplateDefinition | null>(null);
-  const [previewHtml, setPreviewHtml] = useState<string>('');
-  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false);
-
-  if (!isOpen) return null;
-
-  const handleOpenPreview = (tpl: WordTemplateDefinition) => {
-    setSelectedTpl(tpl);
-    const rendered = renderTemplateWithContractData(tpl, contractData);
-    setPreviewHtml(rendered.bodyHtml);
-    setShowPreviewModal(true);
-  };
-
-  const handleExport = async (tpl: WordTemplateDefinition) => {
-    await exportTemplateAsDocx(tpl, contractData);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 select-none">
-      <div className="bg-white rounded-lg border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
-        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">
-              إدارة قوالب Word الرسمية وتوليد الوثائق المشتقة (أصل، مستخرج، شهر، وضعية جبائية)
-            </h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              فصل تام بين نص العقد (المحتوى والبنود) وشكل وثيقة Word الرسمية (القوالب، الهوامش، العناوين).
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {wordTemplates.map((tpl) => (
-              <div
-                key={tpl.id}
-                className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 flex flex-col justify-between space-y-3 hover:border-blue-800 transition-colors"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-slate-900">{tpl.name}</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 bg-blue-100 text-blue-900 rounded font-semibold uppercase">
-                      {tpl.type}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    {tpl.description}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenPreview(tpl)}
-                      className="px-2.5 py-1 bg-white border border-slate-300 text-xs font-semibold text-slate-800 rounded hover:bg-slate-100 inline-flex items-center gap-1"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-blue-900" />
-                      <span>معاينة سريعة</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleExport(tpl)}
-                      className="px-2.5 py-1 bg-blue-900 text-white text-xs font-semibold rounded hover:bg-blue-800 inline-flex items-center gap-1"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>تصدير Word (.docx)</span>
-                    </button>
-                  </div>
-
-                  {!tpl.isDefault && (
-                    <button
-                      type="button"
-                      onClick={() => onDeleteWordTemplate(tpl.id)}
-                      className="p-1 text-slate-400 hover:text-red-600 rounded"
-                      title="حذف القالب"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {showPreviewModal && selectedTpl && (
-          <div className="fixed inset-0 z-60 bg-slate-900/60 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden border border-slate-300">
-              <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
-                  معاينة وثيقة: {selectedTpl.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowPreviewModal(false)}
-                  className="p-1 text-slate-400 hover:text-slate-700"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div
-                dir="rtl"
-                className="flex-1 overflow-y-auto p-6 bg-slate-50 text-sm leading-relaxed space-y-3"
-                style={{ fontFamily: 'Arial, sans-serif' }}
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-              <div className="px-4 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPreviewModal(false)}
-                  className="px-3 py-1.5 bg-slate-200 text-slate-800 text-xs font-medium rounded hover:bg-slate-300"
-                >
-                  إغلاق المعاينة
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleExport(selectedTpl);
-                    setShowPreviewModal(false);
-                  }}
-                  className="px-4 py-1.5 bg-blue-900 text-white text-xs font-semibold rounded hover:bg-blue-800 inline-flex items-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>تصدير فوري كملف Word</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 bg-blue-900 text-white text-xs font-semibold rounded hover:bg-blue-800"
-          >
-            إغلاق النافذة
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

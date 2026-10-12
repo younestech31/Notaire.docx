@@ -1176,3 +1176,59 @@ export async function downloadNotaryDocx(options: DocxExportOptions): Promise<Ui
   return bytes;
 }
 
+/**
+ * Splits a raw HTML contract text into structured clauses based on bold headings,
+ * "البند", "المادة", "أولاً", or numbered headers.
+ */
+export function parseContractIntoClauses(bodyHtml: string): { title: string; contentHtml: string }[] {
+  if (!bodyHtml || !bodyHtml.trim()) return [];
+  if (typeof window === 'undefined') {
+    return [{ title: 'نص العقد', contentHtml: bodyHtml }];
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(bodyHtml, 'text/html');
+  const paragraphs = Array.from(doc.body.querySelectorAll('p, h1, h2, h3, div'));
+
+  if (paragraphs.length === 0) {
+    return [{ title: 'نص العقد', contentHtml: bodyHtml }];
+  }
+
+  const clauses: { title: string; contentHtml: string }[] = [];
+  let currentTitle = 'مقدمة العقد والديباجة';
+  let currentChunks: string[] = [];
+
+  const headingPattern = /^(البند|المادة|أولا|أولاً|ثانيا|ثانياً|ثالثا|ثالثاً|رابعا|رابعاً|خامسا|خامساً|سادسا|سادساً|سابعا|سابعاً|ثامنا|ثامناً|تعيين|أصل الملكية|الثمن|التكاليف|الشروط|الحالة المدنية|الأطراف|حضور)/i;
+
+  for (const el of paragraphs) {
+    if (el.tagName === 'DIV' && el.querySelector('p')) continue;
+    const text = (el.textContent || '').trim();
+    if (!text) continue;
+
+    const isShortHeading = text.length <= 75 && (headingPattern.test(text) || el.tagName.startsWith('H'));
+
+    if (isShortHeading && currentChunks.length > 0) {
+      clauses.push({
+        title: currentTitle,
+        contentHtml: currentChunks.join('\n'),
+      });
+      currentTitle = text.replace(/[:\-–—]+$/, '').trim();
+      currentChunks = [];
+    } else if (isShortHeading && currentChunks.length === 0 && clauses.length === 0) {
+      currentTitle = text.replace(/[:\-–—]+$/, '').trim();
+    } else {
+      currentChunks.push(el.outerHTML);
+    }
+  }
+
+  if (currentChunks.length > 0) {
+    clauses.push({
+      title: currentTitle,
+      contentHtml: currentChunks.join('\n'),
+    });
+  }
+
+  return clauses.length > 0 ? clauses : [{ title: 'بنود العقد', contentHtml: bodyHtml }];
+}
+
+

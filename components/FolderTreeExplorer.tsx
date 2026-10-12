@@ -28,7 +28,6 @@ import {
   SavedDocument,
   NotaryClerk,
   SavedContractDerivedDoc,
-  DerivedDocTemplate,
 } from '@/lib/types';
 
 interface FolderTreeExplorerProps {
@@ -50,7 +49,6 @@ interface FolderTreeExplorerProps {
   onCreateContractInFolder: (folderId: string | null) => void;
   onDeleteDocument: (docId: string) => void;
   onUpdateDocumentMeta: (updated: SavedDocument) => void;
-  derivedTemplates: DerivedDocTemplate[];
   onOpenDerivedModal: (templateId?: string) => void;
   onSelectDerivedDoc: (derivedDoc: SavedContractDerivedDoc) => void;
   activeDerivedDocId?: string | null;

@@ -1,147 +1,83 @@
-# خطة توحيد بنية الموثق الرقمي وإزالة التكرار (Consolidation & Simplification Plan — النسخة المنقحة)
+# خطة استكمال التنظيف المعماري وتفكيك المحرر (محدّثة وفق مراجعة 26)
 
-تهدف هذه الخطة إلى تطهير النظام من الطبقات المتراكمة والمسارات المتوازية التي تؤدي نفس الوظيفة، وتحويله إلى بيئة مكتبية توثيقية رشيقة ذات مصدر واحد للحقيقة في القوالب، الأطراف، المعاينة، شريط الملف، شريط التنسيق (Ribbon)، وسجل المراجعات، مع حماية صارمة للمنطق التوثيقي المعتمد (الفهرسة، الختم الرسمي بـ SHA-256، قفل المتن، وترقيم `../..`).
-
----
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> تم تثبيت القرارات الأساسية وإدراج الضوابط السبعة الإلزامية قبل الشروع في كتابة الكود:
-
-- **توحيد القوالب (`OfficeTemplate`) + ترحيل ثنائي الاتجاه في `BackupBundle`**:
-  - دمج `CustomTemplate` و`DerivedDocTemplate` و`WordTemplateDefinition` في كيان موحّد `OfficeTemplate` يحمل حقل تصنيف وظيفي (`kind: 'contract' | 'extract' | 'registration' | 'fiscal' | 'other'`) ورمز وثيقة اختياري (`docTypeCode`).
-  - عند القراءة أو الاستيراد، يقبل النظام الحزم القديمة (`templates`, `derivedTemplates`, `wordTemplates`) والحزم الجديدة (`officeTemplates`) ويرحّلها تلقائياً؛ وعند التصدير يكتب `officeTemplates[]` مع الاحتفاظ بتوافق القراءة الصامتة للحقول القديمة دورة انتقالية كاملة.
-- **اعتماد بطاقات الأطراف (`partyCards`) + قراءة تخزين صامتة لـ `PartyField`**:
-  - إزالة مسار الاستمارة المسطحة الموازي (`PartyField[]`) من كافة واجهات المستخدم (اللوحة الجانبية، شريط التنسيق، والنوافذ)، واعتماد بطاقات الأطراف المنظمة (`ContractPartyCard[]`) ودليل الأطراف/العقارات المحفوظة كمصدر أساسي، مع النافذة المنبثقة السريعة (`InlineVariablePopover`) للوسوم الحرة.
-  - الإبقاء على قراءة صامتة لحقل `defaultFields` في طبقة التخزين والنسخ الاحتياطي حصراً لضمان التوافق العكسي مع النسخ القديمة دون أي أثر في الواجهة.
-- **تطهير شريط التنسيق (`EditorRibbon`) بالكامل من القوالب والمشتقات**:
-  - يقتصر `EditorRibbon` على: **أدوات تنسيق النص والفقرات + الجداول + إدراج الوسوم الذكية + البحث والاستبدال**.
-  - تُزال منه نهائياً: قائمة «المشتقات / الوثائق التوثيقية»، زر `onOpenWordTemplatesModal`، وأي اعتماد على `derivedTemplates` أو `partyFields` في خصائصه (`props`)؛ ويكون توليد المستخرجات حصراً من تبويب القوالب الموحّد أو من بطاقة العقد في تبويب الأرشيف.
-- **فصل تصدير Word اليومي عن الختم الرسمي (`SHA-256`)**:
-  - عملية **«تصدير Word»** العادية تولّد ملف `.docx` وتنزّله مع تسجيل حدث خفيف في سجل المراجعات (`eventType: 'export'`) دون ختم أصل العقد.
-  - عملية **الختم الرسمي (`seal_original` + بصمة `SHA-256`)** تبقى محصورة حصرياً في مسار الفهرسة الرسمية (`officiallyIndexAndSealContract`).
-- **دمج سجل التنزيلات في `DocumentRevision` بحجم خفيف**:
-  - الاستغناء عن مخزن وواجهة أرشيف التحميلات المستقل (`DownloadArchiveItem`).
-  - لتجنب تضخم قاعدة IndexedDB، لا يُخزَّن المتن الكامل (`bodyHtml`) إلا عند لقطات الاسترجاع (`eventType: 'snapshot'`) أو الختم الرسمي (`eventType: 'seal'`)؛ أما أحداث التصدير والمشتقات (`eventType: 'export' | 'derived' | 'lifecycle'`) فتكتفي بتخزين البيانات الوصفية (`eventType, label, summary, fileName, createdAt`) دون تكرار المتن الكامل.
+تم تحديث الخطة لتثبيت **التصحيحات الإلزامية الستة** وعكس ترتيب التنفيذ ليبدأ بطبقة البيانات والترحيل، ثم تنظيف الواجهات والـ props، ثم تفكيك/حذف الملفات المتوازية بعد التحقق من المستوردات، وأخيراً استخراج الـ 3 Hooks بحدود واضحة ونقية.
 
 ---
 
-## 1. Overview & Core Concept
+## الترتيب التنفيذي الآمن (من 1 إلى 5)
 
-- **ما الذي يقدمه هذا التحديث**: إزالة ازدواجية المسارات في واجهة الموثق والكاتب؛ فبدلاً من ثلاث نوافذ للقوالب، ومسارين للأطراف، وثلاثة أزرار للمعاينة، وقوائم مشتقات مكررة في الـ Ribbon، يحصل المكتب على مسار واحد واضح لكل عملية.
-- **المستخدم المستهدف**: الموثق وكتاب المكتب الذين يحتاجون إلى سرعة بديهية أثناء تحرير العقود وفهرستها وطباعتها على ورق A4 الرسمي دون حيرة بين أزرار متشابهة.
-- **القيمة الجوهرية**: تقليص التعقيد الذهني والبرمجي، ومنع التضارب بين الحقول المسطحة وبطاقات الأطراف، وفصل التصدير التجريبي/اليومي عن الختم التوثيقي الرسمي، وضمان أن ما يراه الموثق في «معاينة الطباعة» هو بالضبط ما سيُطبع ويُختم.
+### المرحلة 1: البيانات والترحيل أولاً (`bodyHtml?` + ترحيل التنزيلات + توافق `BackupBundle`)
 
----
+1. **جعل `bodyHtml` اختيارياً في `DocumentRevision` للأحداث الخفيفة (`lib/types.ts`)**:
+   - تعديل `DocumentRevision` ليصبح:
+     ```ts
+     bodyHtml?: string; // مطلوب فقط عند eventType: 'save' | 'snapshot' | 'seal'
+     ```
+   - في `lib/document-io-workflows.ts` وعند تسجيل أحداث `eventType: 'export' | 'derived' | 'lifecycle'`، لا يتم تخزين `bodyHtml` داخل المراجعة لتجنب تضخم التخزين المحلي.
+   - في نوافذ المقارنة والاسترجاع (`VersionDiffModal` / `SnapshotsHistoryModal`)، يقتصر زر «استرجاع اللقطة» أو «مقارنة النص» على المراجعات التي تملك `bodyHtml`.
 
-## 2. User Experience & Visual Design
+2. **الترحيل التلقائي لسجلات `DownloadArchiveItem` القديمة (`lib/storage-browser.ts` و `lib/storage-desktop.ts`)**:
+   - داخل `loadDocumentRevisions()`، فحص وجود بيانات قديمة في مفتاح `notaire_download_archive_v1` (أو ملف الأرشيف القديم)، وتحويل كل عنصر إلى `DocumentRevision` خفيف (`eventType: item.docTypeCode === 'acte' ? 'export' : 'derived'`, مع الاحتفاظ بـ `fileName`, `docTypeCode`, `docTypeLabel`, `createdAt`)، ثم دمجها لمرة واحدة وحذف المخزن المستقل القديم.
+   - حذف دوال المخازن المستقلة المهجورة من `OfficeStore` و `lib/storage.ts` (`loadDownloadArchive`, `saveDownloadArchiveItem`, `loadDerivedDocTemplates`, `loadWordTemplates`, `loadCustomTemplates` ومشتقاتها).
 
-### مسارات العمل الموحّدة (Key User Flows)
-
-1. **شريط ملف علوي مختصر + قائمة «صيانة المكتب» (`EditorTopBar`)**:
-   - يقتصر الشريط العلوي على: **هوية المكتب وعنوان العقد (مع حالة الحفظ التلقائي)** | **عقد جديد** | **فتح Word** | **وضع التحرير / معاينة الطباعة** | **السجل** | **طباعة** | **تصدير Word** | **قائمة «صيانة المكتب» (Dropdown)**.
-   - تنتقل أدوات ربط مجلد القرص المحلي، تصدير نسخة المكتب الاحتياطية JSON، واستعادة النسخة الاحتياطية إلى داخل قائمة **«صيانة المكتب»** المنسدلة.
-2. **شريط تنسيق نقي (`EditorRibbon`)**:
-   - مخصص حصرياً لتنسيق الخط (Arial 13pt الرسمي للعقود)، المحاذاة، التباعد، القوائم، الجداول، إدراج الوسوم الذكية والعملات والتواريخ التوثيقية، وشريط البحث والاستبدال.
-   - خالٍ تماماً من قوائم توليد المستخرجات أو نوافذ قوالب Word الموازية.
-3. **وضعان فقط للورقة (`EditorA4Canvas`: تحرير | معاينة الطباعة)**:
-   - إلغاء زر «معاينة مواضع `../..`» المنفصل على اللوحة.
-   - زر تبديل واحد في الشريط العلوي ينقل الموثق بين **وضع التحرير الحي** و**وضع معاينة الطباعة النهائية** (حيث تُدمج قيم البطاقات والوسوم وتُحقن علامات `../..` وعبارة «الصفحة ... والأخيرة» بنفس محرك الطباعة الفعلي).
-4. **لوحة البنود المفصولة وظيفياً (`ClausesPanel`)**:
-   - قسم **هيكل العقد الحي**: مخصص حصرياً لترتيب البنود الحالية داخل المتن، تفعيلها/تعطيلها، أو قفلها.
-   - قسم **مكتبة البنود الجاهزة**: مخصص حصرياً للبحث وإدراج بند جاهز عند المؤشر أو حفظ نص محدد كبند جديد.
-5. **لوحة الأطراف والتعيينات الموحّدة (`PartiesTabPanel`)**:
-   - تعرض **بطاقات الأطراف المنظمة** (بائع، مشتري، موكل، وكيل...) مع الاستدعاء المباشر من دليل المكتب، وتوليد فقرة الحضور والهوية، إلى جانب **التعيين العقاري والجدول التقسيمي**.
-   - أي وسم حر إضافي في المتن يُحرَّر مباشرةً بالنقر عليه عبر النافذة المنبثقة السريعة (`InlineVariablePopover`) أو من شريط الوسوم غير المملوءة أعلى تبويب الأطراف دون استمارة `PartyField` موازية.
-6. **لوحة القوالب الموحّدة (`TemplatesTabPanel`)**:
-   - تبويب واحد يعرض قوالب المكتب (`OfficeTemplate`) مصنفة بفلاتر واضحة: **الكل | عقود رسمية | مستخرجات ونسخ | استمارات التسجيل والشهر**.
-   - إذا كان القالب من فئة `contract` يُفتح كعقد كامل أو يُدرج عند المؤشر؛ وإذا كان من فئة `extract | registration | fiscal` يولّد الوثيقة المشتقة للعقد الحالي مباشرةً.
-
-### الهوية البصرية ونظام التصميم (Visual Identity & Theme)
-
-- **الاتجاه البصري**: طابع مؤسسي توثيقي جزائري رصين (Utilitarian Institutional Editorial) بأسطح نظيفة أحادية الارتفاع (`Single-Elevation Depth`) وحدود دقيقة (`1px solid`).
-- **نظام الألوان (60-30-10)**:
-  - **60% خلفية محايدة**: رمادي مكتبي هادئ (`#F4F1EA`) يبرز بياض ورقة الـ A4 (`#FFFFFF`).
-  - **30% أسطح هيكلية**: ألواح جانبية وشريط أدوات أبيض ناصع مع فواصل رمادية/ذهبية خفيفة (`#E2E8F0` / `#C4A46A`).
-  - **10% لون التوكيد**: الكحلي التوثيقي الرسمي (`#0F2744` و`#1E3A8A`) للأزرار الأساسية، مع دلالات لونية مقترنة بنص واضح للحالات (الأخضر `#16A34A` للمسجل/المشهر، الكهرماني `#D97706` للمودع، العنابي `#8C1D2C` للمرفوض للتسوية أو المقفول).
-- **الطباعة والأرقام الجدولية**:
-  - متن العقد على ورقة A4: خط **Arial 13pt** إلزامي وفق المعايير التوثيقية بهوامش `7سم / 2سم / 1سم / 6سم`.
-  - واجهة التطبيق: خط عربي واضح مع فرض الأرقام الجدولية (`tabular-nums` / `font-mono`) في كافة أرقام الفهرس السنوي، التواريخ، المبالغ المالية، وعدادات الكلمات والصفحات.
+3. **حماية استيراد النسخ الاحتياطية القديمة (`BackupBundle`)**:
+   - الإبقاء على أنواع التوافق كأنواع أرشيفية اختيارية (`LegacyCustomTemplate`, `LegacyDerivedDocTemplate`, `LegacyWordTemplateDefinition`, `LegacyDownloadArchiveItem`) مخصصة حصرياً لقارئ الاستيراد والترحيل في `BackupBundle` و `storage-*`، بينما تعتمد كافة واجهات العمل النشطة على `OfficeTemplate` و `DocumentRevision` فقط.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+### المرحلة 2: تنظيف الواجهات والـ Props من المسارات المزدوجة (الأولوية ب + هـ)
 
-- **القرار 1: فصل الختم التوثيقي (`seal_original`) عن التصدير اليومي (`exportContractToWord`)**
-  - *النهج المختار*: التصدير من الشريط العلوي يخرج ملف `.docx` ويسجّل حدث مراجعة خفيفاً (`eventType: 'export'`) دون تغيير حالة ختم العقد؛ أما توليد الأصل المختوم بـ SHA-256 وحفظه في مخزن الأصول المختومة فيتم حصرياً عند «الفهرسة والختم الرسمي» (`officiallyIndexAndSealContract`).
-  - *السبب*: الموثق أو الكاتب قد يصدّر مسودة Word للمراجعة عدة مرات قبل الفهرسة؛ ربط الختم بكل تصدير كان يخلط بين المسودة والأصل الرسمي المفهرس.
-- **القرار 2: لقطات مراجعة خفيفة للتصدير وكاملة للاسترجاع والختم**
-  - *النهج المختار*: جعل `bodyHtml` اختيارياً أو فارغاً في سجلات `DocumentRevision` ذات النوع `export | derived | lifecycle`، وحفظ المتن الكامل فقط في `snapshot | seal`.
-  - *السبب*: منع تضخم IndexedDB وملفات النسخ الاحتياطي عند تكرار التصدير مع الحفاظ على سجل تدقيق زمني كامل لكل ما صدر عن العقد.
-- **القرار 3: حدود صارمة ومفصولة للـ Hooks الثلاثة**
-  - *النهج المختار*:
-    1. `useDocumentSession`: المتن (`bodyHtml`, `headerHtml`, `footerHtml`) + العنوان + `partyCards` + `fieldValues` المشتقة والحرة + حالة القفل (`isBodyLocked`) + وضع المعاينة الموحّدة (`unifiedPrintPreview`) + مكدس التراجع المحلي (`undo/redo`).
-    2. `useOfficeCatalog`: القوالب الموحّدة (`officeTemplates`) + مكتبة البنود (`clauses`) + التجزئات العقارية (`estates`) + دليل الأطراف والعقارات (`savedParties`, `savedProperties`) + المجلدات والكتّاب (`folders`, `clerks`).
-    3. `useNotaryLifecycle`: قائمة العقود المحفوظة (`savedDocuments`) + دفعات التسجيل (`registrationBatches`) + مسارات الشهر العقاري (`publicationTracks`) + سجل المراجعات الموحّد (`revisions`) + حالة جسر المجلد المحلي (`localDirState`).
+1. **`components/SidebarWorkspace.tsx` و `components/sidebar/PartiesTabPanel.tsx`**:
+   - إزالة `partyFields`, `onUpdateFieldValue`, `onAddCustomPartyField`, `onUpdatePartyFieldMeta`, و `onDeletePartyField` من `SidebarWorkspaceProps`.
+   - إزالة `derivedTemplates`, `onSaveDerivedTemplate`, و `onResetDerivedTemplates` من `SidebarWorkspaceProps` والاكتفاء بـ `templates: OfficeTemplate[]`.
+   - في `PartiesTabPanel.tsx`: الاعتماد الحصري على `partyCards: ContractPartyCard[]` + دليل الأطراف والعقارات المحفوظة (`savedParties`, `savedProperties`) + `fieldValues` للوسوم الحرة الملتقطة من المتن (`extractedPlaceholders`).
+
+2. **`components/editor/EditorModalsHost.tsx`**:
+   - تنظيف `EditorModalsHostProps` من جميع الخصائص الميتة التي لم تعد تُمرر أو تُستخدم (`showSmartVarsModal`, `partyFields`, `downloads`, `showWordTemplatesModal`, `wordTemplates`, `onSaveWordTemplate`, `onDeleteWordTemplate`, إلخ).
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+### المرحلة 3: التحقق من المستوردات ونقل الدوال والملفات النشطة قبل الحذف (الأولوية ج)
 
-### المخطط المعماري للنظام بعد التوحيد (System Architecture Diagram)
+بعد فحص المستوردات الفعلي في المستودع تبيّن ما يلي:
+- `components/EditorModalsHost.tsx` (في الجذر): ملف ميت غير مستورد في أي مكان (المستورد الفعلي في `NotaryEditorApp.tsx` هو `./editor/EditorModalsHost`).
+- `lib/docx-template-engine.ts`: مستورد فقط في `components/SmartModals.tsx` داخل نافذة `WordTemplatesManagerModal` المهجورة.
+- `components/SmartModals.tsx`: يحتوي على نافذتين مهجورتين (`SmartVariablesModal`, `WordTemplatesManagerModal`) **بالإضافة إلى 6 نوافذ نشطة** يستوردها `components/editor/EditorModalsHost.tsx` (`VersionDiffModal`, `DocxImportPreviewModal`, `SaveAsTemplateModal`, `SnapshotsHistoryModal`, `OnboardingTourModal`, `MultiSourceStartModal`).
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        NotaryEditorApp (Orchestrator)                        │
-├────────────────────────┬───────────────────────────┬─────────────────────────┤
-│   useDocumentSession   │     useOfficeCatalog      │   useNotaryLifecycle    │
-│  • activeDocId / title │  • officeTemplates[]      │  • savedDocuments[]     │
-│  • body / header / ftr │    (contract/extract/...) │  • registrationBatches  │
-│  • partyCards[]        │  • clauses[] (library)    │  • publicationTracks    │
-│  • outlineClauses[]    │  • estates[]              │  • revisions[] (full    │
-│  • fieldValues (merged)│  • savedParties/Props[]   │    for snapshot/seal,   │
-│  • unifiedPrintPreview │  • folders[] / clerks[]   │    light for export)    │
-│  • isBodyLocked & undo │                           │  • localDirBridgeState  │
-└───────────┬────────────┴─────────────┬─────────────┴────────────┬────────────┘
-            │                          │                          │
-            ▼                          ▼                          ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         4-Zone Clean Workspace UI                            │
-│  1. EditorTopBar: [Brand + Title] ── [File Actions] ── [Office Maintenance]  │
-│  2. EditorRibbon: Formatting + Tables + Smart Tags + Find/Replace ONLY       │
-│  3. EditorA4Canvas: Live Edit Mode  <==>  Unified Print & Pagination Preview │
-│  4. SidebarWorkspace (5 Tabs): البنود | الأطراف | القوالب | الأرشيف | الفهارس │
-└───────────┬──────────────────────────┬──────────────────────────┬────────────┘
-            │                          │                          │
-            ▼                          ▼                          ▼
-┌──────────────────────┐   ┌────────────────────────┐   ┌──────────────────────┐
-│  notarial-pagination │   │    indexing-engine     │   │     docx-engine      │
-│  • 12cm DOM measure  │   │  • Annual index check  │   │  • OOXML generator   │
-│  • Tag-preserving    │   │  • Official SHA-256    │   │  • DOCX importer     │
-│    paragraph split   │   │    seal ONLY on index  │   │  • Variable merger   │
-└──────────────────────┘   └────────────────────────┘   └──────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│               Unified Storage Facade (Browser IDB / Desktop FS)              │
-│  • Auto-migrates Custom/Derived/Word templates <──► OfficeTemplate[]         │
-│  • Bi-directional BackupBundle compatibility + silent legacy field reading   │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+**خطوات التنفيذ الآمنة:**
+1. نقل الدالة النقية `parseContractIntoClauses` إلى `lib/docx-engine.ts` (لإبقائها متاحة لمحرك الوثائق والاختبارات).
+2. نقل النوافذ الست النشطة فقط (`VersionDiffModal`, `DocxImportPreviewModal`, `SaveAsTemplateModal`, `SnapshotsHistoryModal`, `OnboardingTourModal`, `MultiSourceStartModal`) إلى `components/editor/EditorModalsHost.tsx` بعد تنظيفها من أي إشارات لـ `CustomTemplate` أو `DownloadArchiveItem`.
+3. بعد التأكد من عدم وجود أي `import` متبقٍ، حذف الملفات الثلاثة المهجورة:
+   - `lib/docx-template-engine.ts`
+   - `components/SmartModals.tsx`
+   - `components/EditorModalsHost.tsx` (الملف المكرر في الجذر)
 
-### الترتيب التسلسلي المعتمد للتنفيذ (10-Step Execution Order)
+---
 
-> [!NOTE]
-> يُنفَّذ التوحيد وفق هذا التسلسل المضبوط لضمان سلامة الأنواع والبيانات في كل خطوة قبل تعديل الواجهة:
+### المرحلة 4: استخراج الـ 3 Hooks بحدود واضحة وبدون حالة مشتركة مخفية (الأولوية أ)
 
-1. **تحديث الأنواع (`types.ts`)**: إضافة `OfficeTemplate` و`OfficeTemplateKind`، وتوسيع `DocumentRevision` بحقول `eventType?: 'snapshot' | 'export' | 'derived' | 'seal' | 'lifecycle'` و`fileName?: string`، وتحديث `BackupBundle` ليحمل `officeTemplates?: OfficeTemplate[]` مع الإبقاء الاختياري على الحقول القديمة للتوافق العكسي.
-2. **ترحيل طبقة التخزين والنسخ الاحتياطي (`storage-*`)**: تنفيذ `loadOfficeTemplates` و`saveOfficeTemplate` و`deleteOfficeTemplate` مع ترحيل تلقائي شفاف من المخازن الثلاثة القديمة، ودعم التصدير والاستيراد ثنائي الاتجاه في `BackupBundle` وقراءة صامتة لـ `defaultFields`.
-3. **تحديث مسارات التصدير والاستيراد (`document-io-workflows`)**: فصل التصدير اليومي (`exportContractToWord`) عن الختم الرسمي (`officiallyIndexAndSealContract`)، وتسجيل أحداث التصدير كمراجعة خفيفة (`eventType: 'export'`) دون تخزين `bodyHtml` كامل ودون استخدام مخزن `downloads`.
-4. **تبسيط الشريط العلوي (`EditorTopBar`)**: حصر الأزرار في مجموعة ملف الأساسية + نقل ربط المجلد المحلي والنسخ الاحتياطي واستعادته إلى قائمة منسدلة «صيانة المكتب».
-5. **تطهير شريط التنسيق (`EditorRibbon`)**: إزالة قائمة المشتقات، وإزالة `onOpenWordTemplatesModal`، وحذف `derivedTemplates` و`partyFields` من خصائصه ليبقى مخصصاً للتنسيق والجداول والوسوم والبحث فقط.
-6. **توحيد تبويب القوالب وتبويب الأطراف (`TemplatesTabPanel` & `PartiesTabPanel`)**: دمج عرض وإدارة العقود والمستخرجات ونماذج Word في تبويب قوالب واحد يعتمد `OfficeTemplate`، وحصر تبويب الأطراف في بطاقات الأطراف (`partyCards`) + دليل المكتب + التعيين العقاري + شريط الوسوم الحرة بدون استمارة `PartyField` الموازية.
-7. **توحيد المعاينة في ورقة A4 (`EditorA4Canvas`)**: دمج معاينة الحقول وترقيم `../..` في وضع واحد «معاينة الطباعة» يُفعَّل من الشريط العلوي، وإزالة زر المعاينة المزدوج من شريط الحالة السفلي للورقة.
-8. **استخراج الـ Hooks الثلاثة (`useDocumentSession`, `useOfficeCatalog`, `useNotaryLifecycle`)**: تفكيك حالة `NotaryEditorApp` وفق الحدود المعمارية الصارمة (دون وضع `savedDocuments` داخل `useDocumentSession`).
-9. **تنظيف `editor-utils`**: إزالة كافة عبارات إعادة التصدير (`re-exports`) من `notarial-pagination` و`clause-outline-engine`، وتوجيه المكونات للاستيراد من المحرك الأصلي مباشرةً.
-10. **تحديث وتوسيع الاختبارات الآلية (`notarial-core.test.ts`)**: إضافة اختبارات ترحيل `OfficeTemplate`، وفصل التصدير اليومي عن الختم الرسمي، والتحقق من اجتياز كافة الاختبارات وبناء المشروع (`next build`).
+يتم استخراج الـ Hooks الثلاثة بحيث يكون `NotaryEditorApp.tsx` هو الـ **Orchestrator** الذي يمرر المعاملات الصريحة بين الجلسة ودورة الحياة والكتالوج:
+
+1. **`hooks/useDocumentSession.ts`**
+   - يدير حالة جلسة التحرير الحالية فقط: `docId`, `docTitle`, `bodyEditorRef`, `headerEditorRef`, `footerEditorRef`, `showHeaderFooter`, `pageNumberingEnabled`, `zoom`, `previewMergedMode`, `mergedPreviewHtml`, `printPaginatedHtml`.
+   - يدير حالة التحرير الفرعي المؤقت (`editingDerivedTpl`, `editingClauseObj`, `stashedMainDocRef`).
+   - يدير سجل التراجع والإعادة (`undoStack`, `redoStack`, `recordUndoSnapshot`, `handleUndo`, `handleRedo`) وإحصائيات المستند (`metrics`).
+   - يوفّر دالة قراءة لقطة الجلسة الحالية (`getSessionSnapshot()`) لتمريرها صراحةً إلى دوال الحفظ أو الفهرسة أو التصدير.
+
+2. **`hooks/useOfficeCatalog.ts`**
+   - يدير سجلات المكتب المرجعية فقط: `templates` (`OfficeTemplate[]`), `clauses` (`NotaryClause[]`), `estates` (`SubdivisionEstate[]`), `savedParties` (`SavedPartyRecord[]`), `savedProperties` (`SavedPropertyRecord[]`), `folders` (`ContractFolder[]`), `clerks` (`NotaryClerk[]`), وحالة ربط مجلد سطح المكتب (`localDirState`, `connectAndReloadLocalDirectory`).
+   - **لا يتدخل** في ختم العقود أو قراءة الأصول المختومة.
+
+3. **`hooks/useNotaryLifecycle.ts`**
+   - يدير العقود المحفوظة (`documents`)، سجل المراجعات والأحداث الموحّد (`revisions`)، وحالة فك القفل الاستثنائي المؤقت (`unlockIndexedBody`).
+   - يقدّم دوال دورة الحياة التي **تستقبل لقطة الجلسة بمعاملات صريحة** (مثل `bodyHtml`, `headerHtml`, `footerHtml`, `fieldValues`, `partyCards`) دون قراءة مخفية من DOM:
+     - حفظ العقد وأخذ اللقطات (`saveContractSnapshot`, `recordRevisionEvent`).
+     - الفهرسة الرسمية والختم وقراءة الأصل المختوم (`sealContractOriginal`, `readSealedOriginal`).
+     - توليد الوثائق المشتقة وتصدير `DOCX` عبر استدعاء المحركات النقية (`docx-engine`, `document-io-workflows`) وتمرير लقطة الجلسة إليها.
+
+---
+
+### المرحلة 5: التحقق الشامل
+
+- تشغيل `npm test` للتحقق من نجاح جميع الاختبارات الآلية التسعة (الفهرسة، الترقيم التوثيقي `../..`، قفل الأصول، تقسيم الفقرات، وجسر المكتب).
+- تشغيل `lint_applet` و `compile_applet` لضمان خلو المشروع من أي أخطاء TypeScript أو ESLint.

@@ -4,17 +4,14 @@ import React, { useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
-  FormInput,
   Plus,
   Save,
   Trash2,
   Users,
 } from 'lucide-react';
 import {
-  ClauseVariableGroup,
   ContractPartyCard,
   NotaryPartyRole,
-  PartyField,
   SavedPartyRecord,
   SavedPropertyRecord,
   SubdivisionEstate,
@@ -26,16 +23,11 @@ interface PartiesTabPanelProps {
   partyCards: ContractPartyCard[];
   onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
   onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
-  partyFields?: PartyField[];
   extractedPlaceholders: string[];
-  clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
   fieldInputTypes?: Record<string, VariableInputType>;
-  onOpenSmartVariablesModal?: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
-  onChangeFieldInputType?: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onAddCustomField?: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
   onBakeAllPlaceholdersIntoDocument?: (explicitValues?: Record<string, string>) => void;
   estates: SubdivisionEstate[];
@@ -59,16 +51,11 @@ export default function PartiesTabPanel({
   partyCards = [],
   onUpdatePartyCards,
   onSavePartyCardToDirectory,
-  partyFields = [],
   extractedPlaceholders,
-  clauseGroups,
   unfilledCount,
   fieldValues,
   fieldInputTypes = {},
-  onOpenSmartVariablesModal = () => {},
   onUpdateFieldValue,
-  onChangeFieldInputType = () => {},
-  onAddCustomField = () => {},
   onInsertPlaceholderAtCaret,
   onBakeAllPlaceholdersIntoDocument = () => {},
   estates,
@@ -902,7 +889,6 @@ export default function PartiesTabPanel({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newFieldKey.trim()) {
                     const clean = newFieldKey.trim().replace(/\s+/g, '_');
-                    onAddCustomField?.(clean, newFieldKey.trim());
                     onInsertPlaceholderAtCaret(clean);
                     setNewFieldKey('');
                   }
@@ -919,7 +905,6 @@ export default function PartiesTabPanel({
                 onClick={() => {
                   const clean = newFieldKey.trim().replace(/\s+/g, '_');
                   if (clean) {
-                    onAddCustomField?.(clean, newFieldKey.trim());
                     onInsertPlaceholderAtCaret(clean);
                     setNewFieldKey('');
                   }

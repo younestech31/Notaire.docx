@@ -1,14 +1,14 @@
 import type {
   BackupBundle,
   ContractFolder,
-  CustomTemplate,
-  DerivedDocTemplate,
   DocumentRevision,
-  DownloadArchiveItem,
+  LegacyCustomTemplate,
+  LegacyDerivedDocTemplate,
+  LegacyDownloadArchiveItem,
+  LegacyWordTemplateDefinition,
   NotaryClerk,
   NotaryClause,
   OfficeTemplate,
-  PartyField,
   PublicationTrack,
   RegistrationBatch,
   SavedDocument,
@@ -16,20 +16,17 @@ import type {
   SavedPropertyRecord,
   SerializedSealedOriginal,
   SubdivisionEstate,
-  WordTemplateDefinition,
 } from './types';
-import { DEFAULT_WORD_TEMPLATES } from './docx-template-engine';
 import { getDesktopBridge, type DesktopOfficeBridge } from './desktop-bridge';
 import {
   base64ToUint8Array,
   buildArchiveRelativePath,
   computeSha256Hex,
-  DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
-  DEFAULT_PARTY_FIELDS,
   mergeLegacyStoresIntoOfficeTemplates,
   migrateCustomTemplateToOfficeTemplate,
   migrateDerivedTemplateToOfficeTemplate,
+  migrateDownloadArchiveItemToRevision,
   migrateWordTemplateToOfficeTemplate,
   normalizeAnyTemplateToOfficeTemplate,
   officeTemplateToCustomTemplate,
@@ -176,9 +173,9 @@ export async function loadOfficeTemplates(): Promise<OfficeTemplate[]> {
   }
 
   const [legacyCustom, legacyDerived, legacyWord] = await Promise.all([
-    desktopLoad<CustomTemplate>('templates'),
-    desktopLoad<DerivedDocTemplate>('derived_templates'),
-    desktopLoad<WordTemplateDefinition>('word_templates'),
+    desktopLoad<LegacyCustomTemplate>('templates'),
+    desktopLoad<LegacyDerivedDocTemplate>('derived_templates'),
+    desktopLoad<LegacyWordTemplateDefinition>('word_templates'),
   ]);
 
   const merged = mergeLegacyStoresIntoOfficeTemplates({
@@ -233,47 +230,32 @@ export async function importOfficeTemplatesJson(
   return count;
 }
 
-// 2a. Legacy Derived Document Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]> {
-  const all = await loadOfficeTemplates();
-  const derived = all
-    .filter((t) => t.kind !== 'contract')
-    .map(officeTemplateToDerivedDocTemplate);
-  return derived.length > 0 ? derived : DEFAULT_DERIVED_DOC_TEMPLATES;
-}
-
-export async function saveDerivedDocTemplate(tpl: DerivedDocTemplate): Promise<void> {
-  await desktopSave('derived_templates', tpl);
-  await saveOfficeTemplate(migrateDerivedTemplateToOfficeTemplate(tpl));
-}
-
-export async function deleteDerivedDocTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-// 2b. Legacy Word Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadWordTemplates(): Promise<WordTemplateDefinition[]> {
-  const saved = await desktopLoad<WordTemplateDefinition>('word_templates');
-  if (saved.length === 0) {
-    for (const defTpl of DEFAULT_WORD_TEMPLATES) {
-      await desktopSave('word_templates', defTpl);
-    }
-    return DEFAULT_WORD_TEMPLATES;
-  }
-  return saved;
-}
-
-export async function saveWordTemplate(tpl: WordTemplateDefinition): Promise<void> {
-  await desktopSave('word_templates', tpl);
-  await saveOfficeTemplate(migrateWordTemplateToOfficeTemplate(tpl));
-}
-
-export async function deleteWordTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-// 3. Document Revisions CRUD (Keeps latest 25 revisions per documentId)
+// 3. Document Revisions CRUD (Keeps latest 25 revisions per documentId + one-time migration of legacy downloads)
 export async function loadDocumentRevisions(): Promise<DocumentRevision[]> {
+  const migrationFlags = await desktopLoad<{ id: string; migrated?: boolean }>(
+    'migration_flags'
+  );
+  const downloadsMigrated = migrationFlags.some(
+    (f) => f.id === 'office_downloads_migrated_v1' && f.migrated
+  );
+  if (!downloadsMigrated) {
+    const legacyDownloads = await desktopLoad<LegacyDownloadArchiveItem>('downloads');
+    if (legacyDownloads.length > 0) {
+      for (const dl of legacyDownloads) {
+        if (dl && dl.id) {
+          const rev = migrateDownloadArchiveItemToRevision(dl);
+          await desktopSave('revisions', rev);
+        }
+      }
+      await desktopClear('downloads').catch(() => {});
+    }
+    await desktopSave('migration_flags', {
+      id: 'office_downloads_migrated_v1',
+      migrated: true,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   const items = await desktopLoad<DocumentRevision>('revisions');
   return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -282,11 +264,12 @@ export async function saveDocumentRevision(rev: DocumentRevision): Promise<void>
   const isFullBodyEvent =
     !rev.eventType ||
     rev.eventType === 'snapshot' ||
-    rev.eventType === 'seal';
+    rev.eventType === 'seal' ||
+    rev.eventType === 'save';
   const normalizedRev: DocumentRevision = {
     ...rev,
     eventType: rev.eventType || 'snapshot',
-    bodyHtml: isFullBodyEvent ? rev.bodyHtml || '' : '',
+    ...(isFullBodyEvent ? { bodyHtml: rev.bodyHtml || '' } : { bodyHtml: undefined }),
   };
   await desktopSave('revisions', normalizedRev);
   const allRevs = await loadDocumentRevisions();
@@ -302,50 +285,6 @@ export async function saveDocumentRevision(rev: DocumentRevision): Promise<void>
 
 export async function deleteDocumentRevision(id: string): Promise<void> {
   await desktopDelete('revisions', id);
-}
-
-// 4. Download Archive CRUD
-export async function loadDownloadArchive(): Promise<DownloadArchiveItem[]> {
-  const items = await desktopLoad<DownloadArchiveItem>('downloads');
-  return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-export async function saveDownloadArchiveItem(item: DownloadArchiveItem): Promise<void> {
-  await desktopSave('downloads', item);
-}
-
-export async function deleteDownloadArchiveItem(id: string): Promise<void> {
-  await desktopDelete('downloads', id);
-}
-
-export async function clearDownloadArchive(): Promise<void> {
-  await desktopClear('downloads');
-}
-
-// 5. Custom Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadCustomTemplates(): Promise<CustomTemplate[]> {
-  const all = await loadOfficeTemplates();
-  return all
-    .filter((t) => t.kind === 'contract')
-    .map(officeTemplateToCustomTemplate)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export async function saveCustomTemplate(template: CustomTemplate): Promise<void> {
-  await desktopSave('templates', template);
-  await saveOfficeTemplate(migrateCustomTemplateToOfficeTemplate(template));
-}
-
-export async function deleteCustomTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-export async function exportCustomTemplatesJson(): Promise<string> {
-  return exportOfficeTemplatesJson();
-}
-
-export async function importCustomTemplatesJson(templates: CustomTemplate[]): Promise<number> {
-  return importOfficeTemplatesJson(templates);
 }
 
 // 6. Saved Documents CRUD
@@ -463,42 +402,6 @@ export async function deletePublicationTrack(id: string): Promise<void> {
   await desktopDelete('publication_tracks', id);
 }
 
-// 8. Party Fields (Async from Disk / SQLite)
-export async function loadPartyFields(): Promise<PartyField[]> {
-  const bridge = requireBridge();
-  const res = await bridge.invoke<
-    PartyField[] | Array<{ id: string; fields?: PartyField[] }> | null
-  >('storage_load', { collection: 'party_fields' });
-
-  let parsed: PartyField[] = [];
-  if (Array.isArray(res) && res.length > 0) {
-    const first = res[0] as { fields?: PartyField[]; key?: string };
-    if (Array.isArray(first.fields)) {
-      parsed = first.fields;
-    } else if (typeof first.key === 'string') {
-      parsed = res as PartyField[];
-    }
-  }
-
-  if (parsed.length === 0) return DEFAULT_PARTY_FIELDS;
-  const existingKeys = new Set(parsed.map((f) => f.key));
-  const merged = [...parsed];
-  for (const defField of DEFAULT_PARTY_FIELDS) {
-    if (!existingKeys.has(defField.key)) {
-      merged.push(defField);
-    }
-  }
-  return merged;
-}
-
-export async function savePartyFields(fields: PartyField[]): Promise<void> {
-  const bridge = requireBridge();
-  await bridge.invoke<void>('storage_save', {
-    collection: 'party_fields',
-    item: { id: 'default_party_fields', fields },
-  });
-}
-
 // 9. Active Draft Session (Async from Disk / SQLite)
 export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
   const bridge = requireBridge();
@@ -537,7 +440,6 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     estates,
     clauses,
     revisions,
-    downloads,
     savedParties,
     savedProperties,
     clerks,
@@ -545,14 +447,12 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     registrationBatches,
     publicationTracks,
     sealedOriginals,
-    defaultFields,
   ] = await Promise.all([
     loadOfficeTemplates(),
     loadSavedDocuments(),
     loadSubdivisionEstates(),
     loadNotaryClauses(),
     loadDocumentRevisions(),
-    loadDownloadArchive(),
     loadSavedParties(),
     loadSavedProperties(),
     loadNotaryClerks(),
@@ -560,7 +460,6 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadRegistrationBatches(),
     loadPublicationTracks(),
     desktopLoad<SerializedSealedOriginal>('sealed_originals'),
-    loadPartyFields(),
   ]);
 
   const templates = officeTemplates
@@ -582,12 +481,10 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     clauses,
     derivedTemplates,
     revisions,
-    downloads,
     savedParties,
     savedProperties,
     registrationBatches,
     publicationTracks,
-    defaultFields,
     ...(sealedOriginals.length > 0 ? { sealedOriginals } : {}),
   };
 }
@@ -629,7 +526,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.templates)) {
     for (const tpl of bundle.templates) {
       if (tpl && tpl.id && tpl.name && !importedTemplateIds.has(tpl.id)) {
-        await saveCustomTemplate(tpl);
+        await saveOfficeTemplate(migrateCustomTemplateToOfficeTemplate(tpl));
         importedTemplateIds.add(tpl.id);
         templatesCount++;
       }
@@ -638,7 +535,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.derivedTemplates)) {
     for (const dt of bundle.derivedTemplates) {
       if (dt && dt.id && dt.name && !importedTemplateIds.has(dt.id)) {
-        await saveDerivedDocTemplate(dt);
+        await saveOfficeTemplate(migrateDerivedTemplateToOfficeTemplate(dt));
         importedTemplateIds.add(dt.id);
       }
     }
@@ -646,7 +543,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.wordTemplates)) {
     for (const wt of bundle.wordTemplates) {
       if (wt && wt.id && wt.name && !importedTemplateIds.has(wt.id)) {
-        await saveWordTemplate(wt);
+        await saveOfficeTemplate(migrateWordTemplateToOfficeTemplate(wt));
         importedTemplateIds.add(wt.id);
       }
     }
@@ -684,20 +581,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.downloads)) {
     for (const dl of bundle.downloads) {
       if (dl && dl.id) {
-        await saveDownloadArchiveItem(dl);
-        await saveDocumentRevision({
-          id: `rev_dl_${dl.id}`,
-          documentId: dl.documentId,
-          documentTitle: dl.documentTitle || 'عقد توثيقي',
-          author: 'الموثق الرئيسي',
-          bodyHtml: '',
-          fieldValues: dl.fieldValues || {},
-          createdAt: dl.createdAt || new Date().toISOString(),
-          summary: `تصدير وثيقة: ${dl.docTypeLabel || dl.fileName}`,
-          eventType: dl.docTypeCode === 'acte' ? 'export' : 'derived',
-          fileName: dl.fileName,
-          docTypeCode: dl.docTypeCode,
-        });
+        await saveDocumentRevision(migrateDownloadArchiveItemToRevision(dl));
       }
     }
   }
@@ -736,9 +620,6 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
       }
     }
   }
-  if (Array.isArray(bundle.defaultFields) && bundle.defaultFields.length > 0) {
-    await savePartyFields(bundle.defaultFields);
-  }
 
   return { templatesCount, documentsCount, estatesCount, clausesCount };
 }
@@ -755,24 +636,9 @@ export const desktopOfficeStore: OfficeStore = {
   deleteOfficeTemplate,
   exportOfficeTemplatesJson,
   importOfficeTemplatesJson,
-  loadDerivedDocTemplates,
-  saveDerivedDocTemplate,
-  deleteDerivedDocTemplate,
-  loadWordTemplates,
-  saveWordTemplate,
-  deleteWordTemplate,
   loadDocumentRevisions,
   saveDocumentRevision,
   deleteDocumentRevision,
-  loadDownloadArchive,
-  saveDownloadArchiveItem,
-  deleteDownloadArchiveItem,
-  clearDownloadArchive,
-  loadCustomTemplates,
-  saveCustomTemplate,
-  deleteCustomTemplate,
-  exportCustomTemplatesJson,
-  importCustomTemplatesJson,
   loadSavedDocuments,
   saveDocumentRecord,
   deleteDocumentRecord,
@@ -797,8 +663,6 @@ export const desktopOfficeStore: OfficeStore = {
   loadPublicationTracks,
   savePublicationTrack,
   deletePublicationTrack,
-  loadPartyFields,
-  savePartyFields,
   loadActiveDraftSession,
   saveActiveDraftSession,
   exportFullBackupBundle,

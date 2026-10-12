@@ -1,14 +1,14 @@
 import type {
   BackupBundle,
   ContractFolder,
-  CustomTemplate,
-  DerivedDocTemplate,
   DocumentRevision,
-  DownloadArchiveItem,
+  LegacyCustomTemplate,
+  LegacyDerivedDocTemplate,
+  LegacyDownloadArchiveItem,
+  LegacyWordTemplateDefinition,
   NotaryClerk,
   NotaryClause,
   OfficeTemplate,
-  PartyField,
   PublicationTrack,
   RegistrationBatch,
   SavedDocument,
@@ -17,20 +17,16 @@ import type {
   SealedContractOriginal,
   SerializedSealedOriginal,
   SubdivisionEstate,
-  WordTemplateDefinition,
 } from './types';
-import { DEFAULT_WORD_TEMPLATES } from './docx-template-engine';
 import {
   base64ToUint8Array,
   buildArchiveRelativePath,
   computeSha256Hex,
-  DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
-  DEFAULT_OFFICE_TEMPLATES,
-  DEFAULT_PARTY_FIELDS,
   mergeLegacyStoresIntoOfficeTemplates,
   migrateCustomTemplateToOfficeTemplate,
   migrateDerivedTemplateToOfficeTemplate,
+  migrateDownloadArchiveItemToRevision,
   migrateWordTemplateToOfficeTemplate,
   normalizeAnyTemplateToOfficeTemplate,
   officeTemplateToCustomTemplate,
@@ -62,10 +58,11 @@ const STORE_SEALED_ORIGINALS = 'sealed_originals';
 const STORE_REGISTRATION_BATCHES = 'registration_batches';
 const STORE_PUBLICATION_TRACKS = 'publication_tracks';
 
-const LS_FIELDS_KEY = 'notary_default_party_fields_v2';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
 const LS_MIGRATED_TEMPLATES_KEY = 'office_templates_migrated_v1';
+const LS_MIGRATED_DOWNLOADS_KEY = 'office_downloads_migrated_v1';
 let memoryTemplatesMigrated = false;
+let memoryDownloadsMigrated = false;
 
 function isOfficeTemplatesMigrated(): boolean {
   if (memoryTemplatesMigrated) return true;
@@ -85,6 +82,30 @@ function setOfficeTemplatesMigrated(val: boolean): void {
     try {
       if (val) localStorage.setItem(LS_MIGRATED_TEMPLATES_KEY, 'true');
       else localStorage.removeItem(LS_MIGRATED_TEMPLATES_KEY);
+    } catch {
+      // ignore storage error
+    }
+  }
+}
+
+function isDownloadsMigrated(): boolean {
+  if (memoryDownloadsMigrated) return true;
+  if (typeof window !== 'undefined') {
+    try {
+      return localStorage.getItem(LS_MIGRATED_DOWNLOADS_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function setDownloadsMigrated(val: boolean): void {
+  memoryDownloadsMigrated = val;
+  if (typeof window !== 'undefined') {
+    try {
+      if (val) localStorage.setItem(LS_MIGRATED_DOWNLOADS_KEY, 'true');
+      else localStorage.removeItem(LS_MIGRATED_DOWNLOADS_KEY);
     } catch {
       // ignore storage error
     }
@@ -432,12 +453,12 @@ export async function loadOfficeTemplates(): Promise<OfficeTemplate[]> {
 
   // First-time migration from legacy stores + default templates
   const [legacyCustom, legacyDerived, legacyWord] = await Promise.all([
-    getAllFromStore<CustomTemplate>(STORE_TEMPLATES, 'notary_templates_v1'),
-    getAllFromStore<DerivedDocTemplate>(
+    getAllFromStore<LegacyCustomTemplate>(STORE_TEMPLATES, 'notary_templates_v1'),
+    getAllFromStore<LegacyDerivedDocTemplate>(
       STORE_DERIVED_TEMPLATES,
       'notary_derived_templates_v2'
     ),
-    getAllFromStore<WordTemplateDefinition>(
+    getAllFromStore<LegacyWordTemplateDefinition>(
       STORE_WORD_TEMPLATES,
       'notary_word_templates_v1'
     ),
@@ -510,58 +531,48 @@ export async function importOfficeTemplatesJson(
   return count;
 }
 
-// 2a. Legacy Derived Document Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]> {
-  const all = await loadOfficeTemplates();
-  const derived = all
-    .filter((t) => t.kind !== 'contract')
-    .map(officeTemplateToDerivedDocTemplate);
-  return derived.length > 0 ? derived : DEFAULT_DERIVED_DOC_TEMPLATES;
-}
-
-export async function saveDerivedDocTemplate(
-  tpl: DerivedDocTemplate
-): Promise<void> {
-  await putInStore(STORE_DERIVED_TEMPLATES, 'notary_derived_templates_v2', tpl);
-  await saveOfficeTemplate(migrateDerivedTemplateToOfficeTemplate(tpl));
-}
-
-export async function deleteDerivedDocTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-// 2b. Legacy Word Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadWordTemplates(): Promise<WordTemplateDefinition[]> {
-  const saved = await getAllFromStore<WordTemplateDefinition>(
-    STORE_WORD_TEMPLATES,
-    'notary_word_templates_v1'
-  );
-  if (saved.length === 0) {
-    for (const defTpl of DEFAULT_WORD_TEMPLATES) {
-      await putInStore(
-        STORE_WORD_TEMPLATES,
-        'notary_word_templates_v1',
-        defTpl
-      );
-    }
-    return DEFAULT_WORD_TEMPLATES;
-  }
-  return saved;
-}
-
-export async function saveWordTemplate(
-  tpl: WordTemplateDefinition
-): Promise<void> {
-  await putInStore(STORE_WORD_TEMPLATES, 'notary_word_templates_v1', tpl);
-  await saveOfficeTemplate(migrateWordTemplateToOfficeTemplate(tpl));
-}
-
-export async function deleteWordTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-// 3. Document Revisions CRUD (Keeps latest 25 revisions per documentId)
+// 3. Document Revisions CRUD (Keeps latest 25 revisions per documentId + one-time migration of legacy downloads)
 export async function loadDocumentRevisions(): Promise<DocumentRevision[]> {
+  if (!isDownloadsMigrated()) {
+    const legacyDownloads = await getAllFromStore<LegacyDownloadArchiveItem>(
+      STORE_DOWNLOADS,
+      'notary_downloads_v2'
+    );
+    let extraLsDownloads: LegacyDownloadArchiveItem[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const rawV1 = localStorage.getItem('notaire_download_archive_v1');
+        if (rawV1) {
+          const parsed = JSON.parse(rawV1);
+          if (Array.isArray(parsed)) extraLsDownloads = parsed;
+        }
+      } catch {
+        // ignore invalid legacy JSON
+      }
+    }
+    const allLegacy = [...legacyDownloads, ...extraLsDownloads];
+    if (allLegacy.length > 0) {
+      for (const dl of allLegacy) {
+        if (dl && dl.id) {
+          const rev = migrateDownloadArchiveItemToRevision(dl);
+          await putInStore(STORE_REVISIONS, 'notary_revisions_v2', rev);
+          await deleteFromStore(STORE_DOWNLOADS, 'notary_downloads_v2', dl.id).catch(
+            () => {}
+          );
+        }
+      }
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('notary_downloads_v2');
+        localStorage.removeItem('notaire_download_archive_v1');
+      } catch {
+        // ignore storage error
+      }
+    }
+    setDownloadsMigrated(true);
+  }
+
   const items = await getAllFromStore<DocumentRevision>(
     STORE_REVISIONS,
     'notary_revisions_v2'
@@ -575,11 +586,12 @@ export async function saveDocumentRevision(
   const isFullBodyEvent =
     !rev.eventType ||
     rev.eventType === 'snapshot' ||
-    rev.eventType === 'seal';
+    rev.eventType === 'seal' ||
+    rev.eventType === 'save';
   const normalizedRev: DocumentRevision = {
     ...rev,
     eventType: rev.eventType || 'snapshot',
-    bodyHtml: isFullBodyEvent ? rev.bodyHtml || '' : '',
+    ...(isFullBodyEvent ? { bodyHtml: rev.bodyHtml || '' } : { bodyHtml: undefined }),
   };
   await putInStore(STORE_REVISIONS, 'notary_revisions_v2', normalizedRev);
 
@@ -599,62 +611,6 @@ export async function saveDocumentRevision(
 
 export async function deleteDocumentRevision(id: string): Promise<void> {
   await deleteFromStore(STORE_REVISIONS, 'notary_revisions_v2', id);
-}
-
-// 4. Download Archive CRUD (legacy compat)
-export async function loadDownloadArchive(): Promise<DownloadArchiveItem[]> {
-  const items = await getAllFromStore<DownloadArchiveItem>(
-    STORE_DOWNLOADS,
-    'notary_downloads_v2'
-  );
-  return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
-export async function saveDownloadArchiveItem(
-  item: DownloadArchiveItem
-): Promise<void> {
-  await putInStore(STORE_DOWNLOADS, 'notary_downloads_v2', item);
-}
-
-export async function deleteDownloadArchiveItem(id: string): Promise<void> {
-  await deleteFromStore(STORE_DOWNLOADS, 'notary_downloads_v2', id);
-}
-
-export async function clearDownloadArchive(): Promise<void> {
-  const items = await loadDownloadArchive();
-  for (const item of items) {
-    await deleteDownloadArchiveItem(item.id);
-  }
-}
-
-// 5. Legacy Custom Templates CRUD (shimmed to unified OfficeTemplate)
-export async function loadCustomTemplates(): Promise<CustomTemplate[]> {
-  const all = await loadOfficeTemplates();
-  return all
-    .filter((t) => t.kind === 'contract')
-    .map(officeTemplateToCustomTemplate)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export async function saveCustomTemplate(
-  template: CustomTemplate
-): Promise<void> {
-  await putInStore(STORE_TEMPLATES, 'notary_templates_v1', template);
-  await saveOfficeTemplate(migrateCustomTemplateToOfficeTemplate(template));
-}
-
-export async function deleteCustomTemplate(id: string): Promise<void> {
-  await deleteOfficeTemplate(id);
-}
-
-export async function exportCustomTemplatesJson(): Promise<string> {
-  return exportOfficeTemplatesJson();
-}
-
-export async function importCustomTemplatesJson(
-  templates: CustomTemplate[]
-): Promise<number> {
-  return importOfficeTemplatesJson(templates);
 }
 
 // 6. Saved Documents CRUD
@@ -799,37 +755,6 @@ export async function deletePublicationTrack(id: string): Promise<void> {
   await deleteFromStore(STORE_PUBLICATION_TRACKS, 'notary_publication_tracks_v1', id);
 }
 
-// 8. Default / Custom Party Fields
-export async function loadPartyFields(): Promise<PartyField[]> {
-  if (typeof window === 'undefined') return DEFAULT_PARTY_FIELDS;
-  try {
-    const raw = localStorage.getItem(LS_FIELDS_KEY);
-    if (!raw) return DEFAULT_PARTY_FIELDS;
-    const parsed = JSON.parse(raw) as PartyField[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_PARTY_FIELDS;
-    const existingKeys = new Set(parsed.map((f) => f.key));
-    const merged = parsed.map((f) => {
-      if ((f.key === 'تاريخ_العقد' || f.key === 'رقم_الفهرس') && f.category === 'custom') {
-        return { ...f, category: 'index' as const };
-      }
-      return f;
-    });
-    for (const defField of DEFAULT_PARTY_FIELDS) {
-      if (!existingKeys.has(defField.key)) {
-        merged.push(defField);
-      }
-    }
-    return merged;
-  } catch {
-    return DEFAULT_PARTY_FIELDS;
-  }
-}
-
-export async function savePartyFields(fields: PartyField[]): Promise<void> {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(LS_FIELDS_KEY, JSON.stringify(fields));
-}
-
 // 9. Active Draft Session
 export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
   if (typeof window === 'undefined') return null;
@@ -854,7 +779,6 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     estates,
     clauses,
     revisions,
-    downloads,
     savedParties,
     savedProperties,
     clerks,
@@ -862,14 +786,12 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     registrationBatches,
     publicationTracks,
     rawSealedOriginals,
-    defaultFields,
   ] = await Promise.all([
     loadOfficeTemplates(),
     loadSavedDocuments(),
     loadSubdivisionEstates(),
     loadNotaryClauses(),
     loadDocumentRevisions(),
-    loadDownloadArchive(),
     loadSavedParties(),
     loadSavedProperties(),
     loadNotaryClerks(),
@@ -877,7 +799,6 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     loadRegistrationBatches(),
     loadPublicationTracks(),
     getAllSealedOriginals(),
-    loadPartyFields(),
   ]);
 
   const templates = officeTemplates
@@ -909,12 +830,10 @@ export async function exportFullBackupBundle(): Promise<BackupBundle> {
     clauses,
     derivedTemplates,
     revisions,
-    downloads,
     savedParties,
     savedProperties,
     registrationBatches,
     publicationTracks,
-    defaultFields,
     ...(sealedOriginals.length > 0 ? { sealedOriginals } : {}),
   };
 }
@@ -962,7 +881,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.templates)) {
     for (const tpl of bundle.templates) {
       if (tpl && tpl.id && tpl.name && !importedTemplateIds.has(tpl.id)) {
-        await saveCustomTemplate(tpl);
+        await saveOfficeTemplate(migrateCustomTemplateToOfficeTemplate(tpl));
         importedTemplateIds.add(tpl.id);
         templatesCount++;
       }
@@ -972,7 +891,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.derivedTemplates)) {
     for (const dt of bundle.derivedTemplates) {
       if (dt && dt.id && dt.name && !importedTemplateIds.has(dt.id)) {
-        await saveDerivedDocTemplate(dt);
+        await saveOfficeTemplate(migrateDerivedTemplateToOfficeTemplate(dt));
         importedTemplateIds.add(dt.id);
       }
     }
@@ -981,7 +900,7 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.wordTemplates)) {
     for (const wt of bundle.wordTemplates) {
       if (wt && wt.id && wt.name && !importedTemplateIds.has(wt.id)) {
-        await saveWordTemplate(wt);
+        await saveOfficeTemplate(migrateWordTemplateToOfficeTemplate(wt));
         importedTemplateIds.add(wt.id);
       }
     }
@@ -1029,22 +948,10 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
   if (Array.isArray(bundle.downloads)) {
     for (const dl of bundle.downloads) {
       if (dl && dl.id) {
-        await saveDownloadArchiveItem(dl);
-        await saveDocumentRevision({
-          id: `rev_dl_${dl.id}`,
-          documentId: dl.documentId,
-          documentTitle: dl.documentTitle || 'عقد توثيقي',
-          author: 'الموثق الرئيسي',
-          bodyHtml: '',
-          fieldValues: dl.fieldValues || {},
-          createdAt: dl.createdAt || new Date().toISOString(),
-          summary: `تصدير وثيقة: ${dl.docTypeLabel || dl.fileName}`,
-          eventType: dl.docTypeCode === 'acte' ? 'export' : 'derived',
-          fileName: dl.fileName,
-          docTypeCode: dl.docTypeCode,
-        });
+        await saveDocumentRevision(migrateDownloadArchiveItemToRevision(dl));
       }
     }
+    setDownloadsMigrated(true);
   }
 
   if (Array.isArray(bundle.savedParties)) {
@@ -1105,10 +1012,6 @@ export async function importFullBackupBundle(bundle: BackupBundle): Promise<{
     }
   }
 
-  if (Array.isArray(bundle.defaultFields) && bundle.defaultFields.length > 0) {
-    await savePartyFields(bundle.defaultFields);
-  }
-
   return { templatesCount, documentsCount, estatesCount, clausesCount };
 }
 
@@ -1124,24 +1027,9 @@ export const browserOfficeStore: OfficeStore = {
   deleteOfficeTemplate,
   exportOfficeTemplatesJson,
   importOfficeTemplatesJson,
-  loadDerivedDocTemplates,
-  saveDerivedDocTemplate,
-  deleteDerivedDocTemplate,
-  loadWordTemplates,
-  saveWordTemplate,
-  deleteWordTemplate,
   loadDocumentRevisions,
   saveDocumentRevision,
   deleteDocumentRevision,
-  loadDownloadArchive,
-  saveDownloadArchiveItem,
-  deleteDownloadArchiveItem,
-  clearDownloadArchive,
-  loadCustomTemplates,
-  saveCustomTemplate,
-  deleteCustomTemplate,
-  exportCustomTemplatesJson,
-  importCustomTemplatesJson,
   loadSavedDocuments,
   saveDocumentRecord,
   deleteDocumentRecord,
@@ -1166,8 +1054,6 @@ export const browserOfficeStore: OfficeStore = {
   loadPublicationTracks,
   savePublicationTrack,
   deletePublicationTrack,
-  loadPartyFields,
-  savePartyFields,
   loadActiveDraftSession,
   saveActiveDraftSession,
   exportFullBackupBundle,
