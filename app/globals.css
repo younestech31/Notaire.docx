@@ -58,8 +58,14 @@
 }
 
 .notary-editor-zone p,
-.notary-editor-zone li {
+.notary-editor-zone li,
+.notary-editor-zone div:not(.page-break):not(.clause-container) {
   min-height: 13pt;
+  text-align: justify;
+  text-justify: inter-word;
+  text-align-last: right;
+  hyphens: none;
+  word-spacing: normal;
 }
 
 .notary-editor-zone ul,

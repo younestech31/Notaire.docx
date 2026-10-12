@@ -459,10 +459,19 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
     }
     closeActiveList();
 
-    const tempContainer = document.createElement('div');
-    tempContainer.innerHTML = htmlChunks.join('');
-    decorateSmartTagsInDOM(tempContainer);
-    return tempContainer.innerHTML;
+    if (typeof document !== 'undefined') {
+      const tempContainer = document.createElement('div');
+      tempContainer.innerHTML = htmlChunks.join('');
+      decorateSmartTagsInDOM(tempContainer);
+      return tempContainer.innerHTML;
+    }
+    // SSR / Node test fallback: string-based smart-tag replacement
+    return htmlChunks
+      .join('')
+      .replace(/\[\s*([^\[\]<>]{1,45}?)\s*\]/g, (_m, key) => {
+        const clean = key.trim().replace(/\s+/g, '_');
+        return `<span class="smart-tag" data-var="${clean}">[${clean}]</span>`;
+      });
   }
 
   const cleaned = rawHtml
@@ -475,6 +484,10 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
     .replace(/<\/?w:[^>]*>/gi, '')
     .replace(/<\/?v:[^>]*>/gi, '')
     .replace(/<\/?m:[^>]*>/gi, '');
+
+  if (typeof DOMParser === 'undefined') {
+    return sanitizePastedWordHTML('', fallbackText || rawHtml);
+  }
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(cleaned, 'text/html');

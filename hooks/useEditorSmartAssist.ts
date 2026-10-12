@@ -41,6 +41,8 @@ interface UseEditorSmartAssistParams {
   syncPlaceholdersAndDraft: () => void;
   flushSyncPlaceholdersAndDraft: () => void;
   triggerFastClauseScan?: () => void;
+  onTogglePreviewMergedMode?: () => void;
+  onSaveCurrentDocument?: () => void;
   setShowFindReplace: React.Dispatch<React.SetStateAction<boolean>>;
   setInlinePopover: React.Dispatch<
     React.SetStateAction<InlineVariablePopoverState | null>
@@ -70,6 +72,8 @@ export function useEditorSmartAssist({
   syncPlaceholdersAndDraft,
   flushSyncPlaceholdersAndDraft,
   triggerFastClauseScan,
+  onTogglePreviewMergedMode,
+  onSaveCurrentDocument,
   setShowFindReplace,
   setInlinePopover,
   setSidebarTab,

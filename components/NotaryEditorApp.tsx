@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
 import EditorTopBar from './EditorTopBar';
@@ -217,6 +217,9 @@ export default function NotaryEditorApp() {
   // Sidebar & UI state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('clauses');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [editorInteractionMode, setEditorInteractionMode] = useState<
+    'desktop-pro' | 'adaptive-touch'
+  >('desktop-pro');
   const [inlinePopover, setInlinePopover] =
     useState<InlineVariablePopoverState | null>(null);
 
@@ -239,6 +242,7 @@ export default function NotaryEditorApp() {
     INITIAL_EMPTY_PARAGRAPH
   );
   const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
+  const previewBackupHtmlRef = useRef<string>('');
 
   // 4. Editor Sync & Auto-Save Hook
   const {
@@ -714,8 +718,60 @@ export default function NotaryEditorApp() {
     setPartyCards,
     setSelectedEstateId,
     setSelectedLotNumber,
-    setShowHeaderFooter,
     setSmartAssistPrefs,
+    showToast,
+  ]);
+
+  const handleTogglePreviewMergedMode = useCallback(() => {
+    flushSyncPlaceholdersAndDraft();
+    const next = !previewMergedMode;
+    if (next) {
+      const currentHtml =
+        bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+      previewBackupHtmlRef.current = currentHtml;
+      const activeVals = fieldValuesRef.current || fieldValues;
+      const rawMerged = mergePlaceholdersIntoHtml(currentHtml, activeVals);
+      setMergedPreviewHtml(
+        injectNotarialPaginationIntoHtml(
+          rawMerged,
+          pageNumberingEnabled,
+          true
+        )
+      );
+      setPreviewMergedMode(true);
+      setSidebarTab('parties');
+      setIsSidebarOpen(true);
+      showToast(
+        'وضع معاينة الطباعة والدمج: عدّل أي قيمة في اليمين لترى العقد المدمج وعلامات الترقيم (../..) مباشرة'
+      );
+    } else {
+      setPreviewMergedMode(false);
+      if (
+        bodyEditorRef.current &&
+        previewBackupHtmlRef.current &&
+        (!bodyEditorRef.current.innerHTML.trim() ||
+          bodyEditorRef.current.innerHTML === '<br>' ||
+          bodyEditorRef.current.innerHTML === '<p><br></p>' ||
+          bodyEditorRef.current.innerHTML === INITIAL_EMPTY_PARAGRAPH)
+      ) {
+        bodyEditorRef.current.innerHTML = previewBackupHtmlRef.current;
+        normalizeNotaryContainerDOM(bodyEditorRef.current);
+      }
+      setTimeout(() => {
+        flushSyncPlaceholdersAndDraft();
+      }, 50);
+    }
+  }, [
+    bodyEditorRef,
+    fieldValues,
+    fieldValuesRef,
+    flushSyncPlaceholdersAndDraft,
+    pageNumberingEnabled,
+    previewMergedMode,
+    setIsSidebarOpen,
+    setMergedPreviewHtml,
+    setPreviewMergedMode,
+    setSidebarTab,
     showToast,
   ]);
 
@@ -736,28 +792,17 @@ export default function NotaryEditorApp() {
         }
         onOpenNewContractModal={() => setShowMultiSourceModal(true)}
         onImportWordFile={handleParseAndPreviewDocx}
-        onTogglePreviewMergedMode={() => {
-          const next = !previewMergedMode;
-          if (next) {
-            const currentHtml =
-              bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
-            const activeVals = fieldValuesRef.current || fieldValues;
-            const rawMerged = mergePlaceholdersIntoHtml(
-              currentHtml,
-              activeVals
-            );
-            setMergedPreviewHtml(
-              injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
-            );
-            setPreviewMergedMode(true);
-            setSidebarTab('parties');
-            setIsSidebarOpen(true);
-            showToast(
-              'وضع معاينة الطباعة والدمج: عدّل أي قيمة في اليمين لترى العقد المدمج وعلامات الترقيم (../..) مباشرة'
-            );
-          } else {
-            setPreviewMergedMode(false);
-          }
+        onTogglePreviewMergedMode={handleTogglePreviewMergedMode}
+        editorInteractionMode={editorInteractionMode}
+        onToggleInteractionMode={() => {
+          setEditorInteractionMode((prev) =>
+            prev === 'desktop-pro' ? 'adaptive-touch' : 'desktop-pro'
+          );
+          showToast(
+            editorInteractionMode === 'desktop-pro'
+              ? 'تم التبديل للوضع المتكيف المرن للشاشات الصغيرة'
+              : 'تم العودة لوضع سطح المكتب الاحترافي المكتبي'
+          );
         }}
         onOpenSnapshotsHistoryModal={() => {
           setModalActiveBodyHtml(
@@ -1054,29 +1099,7 @@ export default function NotaryEditorApp() {
           onDecorateEditorZonesPreservingSelection={
             decorateEditorZonesPreservingSelection
           }
-          onTogglePreviewMergedMode={() => {
-            flushSyncPlaceholdersAndDraft();
-            const next = !previewMergedMode;
-            if (next) {
-              const currentHtml =
-                bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
-              const activeVals = fieldValuesRef.current || fieldValues;
-              const rawMerged = mergePlaceholdersIntoHtml(
-                currentHtml,
-                activeVals
-              );
-              setMergedPreviewHtml(
-                injectNotarialPaginationIntoHtml(
-                  rawMerged,
-                  pageNumberingEnabled,
-                  true
-                )
-              );
-              setPreviewMergedMode(true);
-            } else {
-              setPreviewMergedMode(false);
-            }
-          }}
+          onTogglePreviewMergedMode={handleTogglePreviewMergedMode}
           onEditorBeforeInput={handleEditorBeforeInput}
           onEditorKeyDown={handleEditorKeyDown}
           onEditorPaste={handleEditorPaste}
@@ -1123,6 +1146,7 @@ export default function NotaryEditorApp() {
         unfilledCount={unfilledCount}
         totalVariablesCount={extractedPlaceholders.length}
         docMetrics={docMetrics}
+        activeClauseTitle={outlineClauses.find((c) => c.enabled)?.title}
         onOpenSmartVariablesModal={() => {
           setSidebarTab('parties');
           setIsSidebarOpen(true);

@@ -258,6 +258,7 @@ export function EditorBottomStatusBar({
   unfilledCount,
   totalVariablesCount,
   docMetrics,
+  activeClauseTitle,
   onOpenSmartVariablesModal,
 }: {
   autoSaveState: 'saved' | 'saving' | 'error';
@@ -268,6 +269,7 @@ export function EditorBottomStatusBar({
     charCount: number;
     estimatedPages: number;
   };
+  activeClauseTitle?: string;
   onOpenSmartVariablesModal: () => void;
 }) {
   return (
@@ -303,6 +305,16 @@ export function EditorBottomStatusBar({
             ? `المتغيرات غير المعبأة: ${unfilledCount} (اضغط للتعبئة)`
             : `جميع متغيرات العقد مكتملة (${totalVariablesCount})`}
         </button>
+
+        {activeClauseTitle && (
+          <>
+            <span className="text-slate-300">|</span>
+            <span className="inline-flex items-center gap-1 text-[#0F2744] font-medium truncate max-w-[200px]" title={activeClauseTitle}>
+              <span className="text-slate-400">البند الحالي:</span>
+              <span className="font-semibold">{activeClauseTitle}</span>
+            </span>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-3 tabular-nums">
@@ -310,10 +322,10 @@ export function EditorBottomStatusBar({
         <span className="text-slate-300">·</span>
         <span>الأحرف: {docMetrics.charCount}</span>
         <span className="text-slate-300">·</span>
-        <span>الصفحات المقدرة: {docMetrics.estimatedPages}</span>
+        <span className="font-medium text-[#0F2744]">الصفحات: {docMetrics.estimatedPages}</span>
         <span className="text-slate-300">·</span>
         <span className="font-semibold text-[#0F2744]">
-          Arial 13pt · تباعد 1.0 · هوامش 7/2/1/6 سم
+          Arial 13pt · ضبط كامل · هوامش 7/2/1/6 سم
         </span>
       </div>
     </footer>

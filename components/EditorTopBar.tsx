@@ -36,6 +36,8 @@ interface EditorTopBarProps {
   onExportBackupJson: () => void;
   onImportBackupJson: (file: File) => void;
   onOpenOnboardingTour: () => void;
+  editorInteractionMode?: 'desktop-pro' | 'adaptive-touch';
+  onToggleInteractionMode?: () => void;
 }
 
 export default function EditorTopBar({
@@ -56,6 +58,8 @@ export default function EditorTopBar({
   onExportBackupJson,
   onImportBackupJson,
   onOpenOnboardingTour,
+  editorInteractionMode = 'desktop-pro',
+  onToggleInteractionMode,
 }: EditorTopBarProps) {
   const [showMaintenanceMenu, setShowMaintenanceMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -215,6 +219,21 @@ export default function EditorTopBar({
           <Download className="w-3.5 h-3.5" />
           <span>تصدير Word</span>
         </button>
+
+        {onToggleInteractionMode && (
+          <button
+            type="button"
+            onClick={onToggleInteractionMode}
+            className={`px-2.5 py-1.5 border rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+              editorInteractionMode === 'desktop-pro'
+                ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                : 'bg-amber-50 text-amber-900 border-amber-300'
+            }`}
+            title="تبديل وضع التحرير بين بيئة سطح المكتب المكتبي والوضع المتكيف المرن"
+          >
+            <span>{editorInteractionMode === 'desktop-pro' ? '🖥️ وضع سطح المكتب الاحترافي' : '📱 وضع متكيف مرن'}</span>
+          </button>
+        )}
 
         <div className="h-5 w-px bg-slate-200 mx-0.5 hidden sm:block" />
 

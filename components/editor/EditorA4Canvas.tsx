@@ -185,49 +185,48 @@ export default function EditorA4Canvas({
             </div>
           )}
 
-          {/* MAIN CONTRACT BODY EDITABLE ZONE OR PAGINATED MERGED PREVIEW */}
-          {previewMergedMode ? (
-            <div
-              dir="rtl"
-              className="notary-editor-zone relative z-10 min-h-[210mm]"
-              dangerouslySetInnerHTML={{
-                __html: mergedPreviewHtml,
-              }}
-            />
-          ) : (
-            <>
-              <div
-                ref={bodyEditorRef}
-                contentEditable={!isBodyLocked}
-                suppressContentEditableWarning
-                dir="rtl"
-                onBeforeInput={onEditorBeforeInput}
-                onInput={onSyncPlaceholdersAndDraft}
-                onKeyUp={(e) => {
-                  if (e.key === ']' || e.key === '}') {
-                    onDecorateEditorZonesPreservingSelection();
-                  }
-                }}
-                onBlur={handleZoneBlur}
-                onKeyDown={onEditorKeyDown}
-                onPaste={onEditorPaste}
-                onMouseDown={onEditorMouseDown}
-                onClick={onEditorClick}
-                onDoubleClick={onEditorDoubleClick}
-                className={`notary-editor-zone relative z-10 outline-none min-h-[210mm] print:hidden ${
-                  isBodyLocked ? 'cursor-default select-text' : ''
-                }`}
-              />
-              {/* Print-Only Paginated Layer with exact ../.. on non-final pages and الصفحة … والأخيرة on final page */}
-              <div
-                dir="rtl"
-                className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
-                dangerouslySetInnerHTML={{
-                  __html: printPaginatedHtml,
-                }}
-              />
-            </>
-          )}
+          {/* MAIN CONTRACT BODY: Always preserved in DOM, toggled via CSS hidden/block */}
+          <div
+            dir="rtl"
+            className={`notary-editor-zone relative z-10 min-h-[210mm] ${
+              previewMergedMode ? 'block' : 'hidden'
+            }`}
+            dangerouslySetInnerHTML={{
+              __html: mergedPreviewHtml,
+            }}
+          />
+
+          <div
+            ref={bodyEditorRef}
+            contentEditable={!isBodyLocked && !previewMergedMode}
+            suppressContentEditableWarning
+            dir="rtl"
+            onBeforeInput={previewMergedMode ? undefined : onEditorBeforeInput}
+            onInput={previewMergedMode ? undefined : onSyncPlaceholdersAndDraft}
+            onKeyUp={(e) => {
+              if (!previewMergedMode && (e.key === ']' || e.key === '}')) {
+                onDecorateEditorZonesPreservingSelection();
+              }
+            }}
+            onBlur={previewMergedMode ? undefined : handleZoneBlur}
+            onKeyDown={previewMergedMode ? undefined : onEditorKeyDown}
+            onPaste={previewMergedMode ? undefined : onEditorPaste}
+            onMouseDown={previewMergedMode ? undefined : onEditorMouseDown}
+            onClick={previewMergedMode ? undefined : onEditorClick}
+            onDoubleClick={previewMergedMode ? undefined : onEditorDoubleClick}
+            className={`notary-editor-zone relative z-10 outline-none min-h-[210mm] print:hidden ${
+              isBodyLocked ? 'cursor-default select-text' : ''
+            } ${previewMergedMode ? 'hidden' : 'block'}`}
+          />
+
+          {/* Print-Only Paginated Layer with exact ../.. on non-final pages and الصفحة … والأخيرة on final page */}
+          <div
+            dir="rtl"
+            className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
+            dangerouslySetInnerHTML={{
+              __html: printPaginatedHtml,
+            }}
+          />
 
           {/* Clean Notarial Closing Line Marker at end of body text (no artificial explanation on screen) */}
           {pageNumberingEnabled && !previewMergedMode && (

@@ -26,6 +26,7 @@ import {
 import { desktopOfficeStore } from '../lib/storage-desktop.ts';
 import { generateNotaryDocxBlob } from '../lib/docx-engine.ts';
 import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
+import { sanitizePastedWordHTML } from '../lib/editor-utils.ts';
 import type {
   PublicationTrack,
   RegistrationBatch,
@@ -608,4 +609,32 @@ test('Clause Outline Engine: hybrid detection of legal articles, clauses, verbal
   );
   assert.equal(normalText.isHeading, false);
 });
+
+test('Word Paste Sanitization: enforces Arial 13pt, text-align: justify, and preserves tags and headings', () => {
+  const sampleWordHtml = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+      <head><style>p.MsoNormal { font-size: 16pt; font-family: Calibri; }</style></head>
+      <body>
+        <!--[if gte mso 9]><xml><w:WordDocument><w:View>Normal</w:View></w:WordDocument></xml><![endif]-->
+        <p class="MsoNormal" style="margin-bottom:12pt;text-align:right;">
+          <span style="font-family:Calibri;font-size:16pt;">بمقتضى هذا العقد حضر <span style="font-weight:bold;">[البائع]</span> وتنازل لصالح <span style="font-weight:bold;">[المشتري]</span>.</span>
+        </p>
+        <p class="MsoNormal">
+          <span># أصل الملكية والمشتقات</span>
+        </p>
+      </body>
+    </html>
+  `;
+
+  const fallbackText = 'بمقتضى هذا العقد حضر [البائع] وتنازل لصالح [المشتري].\n# أصل الملكية والمشتقات';
+  const sanitized = sanitizePastedWordHTML(sampleWordHtml, fallbackText);
+  assert.ok(sanitized.includes('Arial'));
+  assert.ok(sanitized.includes('13pt'));
+  assert.ok(sanitized.includes('text-align:justify') || sanitized.includes('text-align: justify'));
+  assert.ok(sanitized.includes('data-var="البائع"'));
+  assert.ok(sanitized.includes('data-var="المشتري"'));
+  assert.ok(!sanitized.includes('Calibri'));
+  assert.ok(!sanitized.includes('MsoNormal'));
+});
+
 

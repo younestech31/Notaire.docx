@@ -320,7 +320,7 @@ export function useEditorDomCommands({
    */
   const recordTypingHistorySnapshot = useCallback(() => {
     const now = Date.now();
-    if (now - lastTypingSnapshotTimeRef.current < 900) {
+    if (now - lastTypingSnapshotTimeRef.current < 1500) {
       lastTypingSnapshotTimeRef.current = now;
       return;
     }
