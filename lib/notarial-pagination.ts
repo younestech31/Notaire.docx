@@ -841,7 +841,7 @@ export function injectNotarialPaginationIntoHtml(
 
       return root.innerHTML;
     } catch {
-      return cleanHtml;
+      return injectNotarialPaginationFallback(cleanHtml, highPrecisionDomSplit);
     } finally {
       probeCtx?.destroy();
     }

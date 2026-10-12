@@ -701,7 +701,8 @@ function serializeBlockContainerToXml(
     const tag = el.tagName.toUpperCase();
 
     if (el.classList.contains('page-break') || el.getAttribute('data-page-break') === 'true') {
-      listState.nextPageBreak = true;
+      xml += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+      listState.nextPageBreak = false;
       continue;
     }
 
@@ -722,8 +723,9 @@ function serializeBlockContainerToXml(
     }
 
     if (['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE'].includes(tag)) {
-      const dir = (el.getAttribute('dir') || el.style?.direction || 'rtl').toLowerCase() === 'ltr' ? 'ltr' : 'rtl';
-      const align = el.style?.textAlign || el.getAttribute('align') || 'justify';
+      const isPaginationMarker = el.getAttribute('data-notary-pagination') === 'true';
+      const dir = isPaginationMarker ? 'rtl' : (el.getAttribute('dir') || el.style?.direction || 'rtl').toLowerCase() === 'ltr' ? 'ltr' : 'rtl';
+      const align = isPaginationMarker ? 'left' : el.style?.textAlign || el.getAttribute('align') || 'justify';
       const padRightPx = parseInt(el.style?.paddingRight || el.style?.marginRight || '0', 10) || 0;
       const padLeftPx = parseInt(el.style?.paddingLeft || el.style?.marginLeft || '0', 10) || 0;
 
