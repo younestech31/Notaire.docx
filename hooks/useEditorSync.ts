@@ -125,6 +125,7 @@ export function useEditorSync({
   const debouncedSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  const previewBackupHtmlRef = useRef<string>('');
 
   const clearAutoSaveTimer = useCallback(() => {
     if (autoSaveTimerRef.current) {
@@ -207,6 +208,10 @@ export function useEditorSync({
       syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
 
+      if (!previewBackupHtmlRef.current && bodyHtml.trim().length > 100) {
+        previewBackupHtmlRef.current = bodyHtml;
+      }
+
       const rawMergedForPagination = mergePlaceholdersIntoHtml(
         bodyHtml,
         activeValues
@@ -219,6 +224,15 @@ export function useEditorSync({
             true
           )
         );
+        return;
+      }
+
+      if (
+        previewBackupHtmlRef.current &&
+        bodyHtml.replace(/<[^>]+>/g, '').trim().length <
+          previewBackupHtmlRef.current.replace(/<[^>]+>/g, '').trim().length / 2
+      ) {
+        return;
       }
 
       if (editingDerivedTpl || editingClauseObj) {

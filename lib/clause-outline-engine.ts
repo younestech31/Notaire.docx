@@ -54,7 +54,7 @@ export function insertOrWrapNewClauseAtSelection(
       }
       if (block && (block as HTMLElement).tagName === 'P') {
         const pText = (block.textContent || '').trim();
-        if (pText.startsWith('#') || (pText.length > 0 && pText.length <= 60)) {
+        if (pText.startsWith('#')) {
           rawTitle = pText.replace(/^#+\s*/, '').trim();
           (block as HTMLElement).innerHTML = '<br>';
         }
@@ -66,7 +66,7 @@ export function insertOrWrapNewClauseAtSelection(
   const clauseId = `hash_clause_${Date.now()}`;
   const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
 
-  const headingAndBlankLineHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
+  const headingAndBlankLineHtml = `<p dir="rtl" style="${pStyle}" data-clause-id="${clauseId}"><span style="font-weight:bold;"># ${escapeHtml(
     title
   )}</span></p><p dir="rtl" style="${pStyle}"><br></p>`;
 
@@ -240,7 +240,7 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       const detectedKind =
         (child.getAttribute('data-clause-kind') as ClauseRecognitionKind) || 'container';
 
-      currentSegment = {
+      segments.push({
         id: cId,
         title: cleanTitle || `بند رقم ${segments.length + 1}`,
         domIndex: idx,
@@ -249,15 +249,15 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
         explicitOrder,
         clauseKind: detectedKind,
         elements: [child],
-      };
+      });
+      currentSegment = null;
       return;
     }
 
     const headingInfo = detectNotaryClauseHeading(child);
     if (headingInfo.isHeading) {
       flushSegment();
-      // Read existing id or fallback (do NOT create new IDs during read)
-      const cId = child.getAttribute('data-clause-id') || `live_clause_${idx}`;
+      const cId = child.getAttribute('data-clause-id') || `hash_clause_${idx}`;
 
       currentSegment = {
         id: cId,
@@ -270,18 +270,6 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       };
     } else if (currentSegment) {
       currentSegment.elements.push(child);
-    } else {
-      if (!currentSegment && (child.textContent || '').trim().length > 0) {
-        currentSegment = {
-          id: `intro_segment_${idx}`,
-          title: 'التمهيد أو المقدمة',
-          domIndex: idx,
-          isContainer: false,
-          locked: false,
-          clauseKind: 'heading',
-          elements: [child],
-        };
-      }
     }
   });
 
@@ -842,18 +830,9 @@ export function segmentHtmlIntoCandidateClauses(html: string): CandidateImported
     }
 
     const plain = (child.textContent || '').replace(/\s+/g, ' ').trim();
-    const hasBoldTag =
-      child.style.fontWeight === 'bold' ||
-      !!child.querySelector('strong, b, span[style*="bold"]');
-    const isShortHeading =
-      plain.startsWith('#') ||
-      (plain.length >= 3 &&
-        plain.length <= 75 &&
-        !plain.includes('[') &&
-        (notaryHeadingPatterns.test(plain) ||
-          (hasBoldTag && plain.endsWith(':'))));
+    const isHashHeading = plain.startsWith('#');
 
-    if (isShortHeading) {
+    if (isHashHeading) {
       flushCurrent();
       const cleanTitle = plain.replace(/^#+\s*/, '').replace(/:$/, '').trim();
       current = {
