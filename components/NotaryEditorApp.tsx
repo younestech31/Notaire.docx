@@ -572,7 +572,6 @@ export default function NotaryEditorApp() {
       setSelectedLotNumber(doc.selectedLotNumber || '');
       bodyEditorRef.current.innerHTML = doc.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
       normalizeNotaryContainerDOM(bodyEditorRef.current);
-      upgradeTopLevelHashSegmentsToContainers(bodyEditorRef.current, isolatedOutline);
       if (headerEditorRef.current)
         headerEditorRef.current.innerHTML = doc.headerHtml || '';
       if (footerEditorRef.current)
@@ -711,7 +710,6 @@ export default function NotaryEditorApp() {
 
           bodyEditorRef.current.innerHTML = activeDraft.bodyHtml || INITIAL_EMPTY_PARAGRAPH;
           normalizeNotaryContainerDOM(bodyEditorRef.current);
-          upgradeTopLevelHashSegmentsToContainers(bodyEditorRef.current, initialOutline);
           if (headerEditorRef.current && activeDraft.headerHtml) {
             headerEditorRef.current.innerHTML = activeDraft.headerHtml;
           }
@@ -1242,16 +1240,24 @@ export default function NotaryEditorApp() {
   const handleInsertClauseAtCaret = (clause: NotaryClause) => {
     if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
-    const containerHtml = `<div class="clause-container" data-clause-id="${
-      clause.id
-    }" data-clause-title="${escapeHtml(clause.title)}">${clause.contentHtml}</div>`;
+    const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
+    const cleanTitle = clause.title.replace(/^#+\s*/, '').trim();
+    const rawContent = (clause.contentHtml || '').trim();
+    const plainContent = rawContent.replace(/<[^>]+>/g, '').trim();
+    const startsWithHash = plainContent.startsWith('#');
+    const headingLine = startsWithHash
+      ? ''
+      : `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
+          cleanTitle
+        )}</span></p>`;
+    const bodyPart = rawContent || `<p dir="rtl" style="${pStyle}"><br></p>`;
     insertHtmlAtSelection(
       bodyEditorRef.current,
-      containerHtml,
+      `${headingLine}${bodyPart}`,
       savedRangeRef.current
     );
     syncPlaceholdersAndDraft();
-    showToast(`تم إدراج البند المقترح "${clause.title}" عند المؤشر`);
+    showToast(`تم إدراج البند "${cleanTitle}" عند المؤشر`);
   };
 
   const handleSaveNewClause = async (
@@ -1467,7 +1473,6 @@ export default function NotaryEditorApp() {
       if (bodyEditorRef.current) {
         bodyEditorRef.current.innerHTML = htmlToUse;
         normalizeNotaryContainerDOM(bodyEditorRef.current);
-        upgradeTopLevelHashSegmentsToContainers(bodyEditorRef.current, []);
       }
       if (pendingDocxImport.headerHtml || pendingDocxImport.footerHtml) {
         setShowHeaderFooter(true);
@@ -1479,7 +1484,7 @@ export default function NotaryEditorApp() {
       setExtractedPlaceholders(pendingDocxImport.extractedPlaceholders);
       syncPlaceholdersAndDraft(undefined, undefined, []);
       showToast(
-        `تم استبدال العقد بمحتوى ملف "${pendingDocxImport.title}" وهيكلة بنوده بنجاح`
+        `تم استبدال العقد بمحتوى ملف "${pendingDocxImport.title}" بنجاح`
       );
     } else {
       if (!bodyEditorRef.current) return;
@@ -1490,10 +1495,6 @@ export default function NotaryEditorApp() {
         savedRangeRef.current
       );
       normalizeNotaryContainerDOM(bodyEditorRef.current);
-      upgradeTopLevelHashSegmentsToContainers(
-        bodyEditorRef.current,
-        outlineClausesRef.current
-      );
       syncPlaceholdersAndDraft();
       showToast(
         `تم إدراج محتوى ملف "${pendingDocxImport.title}" عند موضع المؤشر بنجاح`
@@ -1673,32 +1674,18 @@ export default function NotaryEditorApp() {
     syncPlaceholdersAndDraft(fieldValuesRef.current, nextTypes);
   };
 
-  // # New Clause Toolbar Action
+  // # New Clause Toolbar Action (Flexible # Heading without container or mandatory body)
   const handleInsertNewClauseHeadingAtCaret = async (customTitle?: string) => {
     if (!bodyEditorRef.current || !ensureBodyEditable()) return;
     recordHistorySnapshot();
-    if (customTitle && customTitle.trim()) {
-      const cleanTitle = customTitle.replace(/^#+\s*/, '').trim();
-      const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
-      const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
-        cleanTitle
-      )}</span></p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات [اسم_المتغير] هنا.</p>`;
-      const wrapperHtml = `<div class="clause-container" data-clause-id="${clauseId}" data-clause-title="${escapeHtml(
-        cleanTitle
-      )}">${innerContentHtml}</div><p dir="rtl" style="${pStyle}"><br></p>`;
-      insertHtmlAtSelection(bodyEditorRef.current, wrapperHtml, savedRangeRef.current);
-      syncPlaceholdersAndDraft();
-      showToast(`تم إدراج عنوان البند "# ${cleanTitle}" في هيكل العقد الحالي`);
-      return;
-    }
     const { title } = insertOrWrapNewClauseAtSelection(
       bodyEditorRef.current,
       savedRangeRef.current,
-      outlineClauses.length + 1
+      outlineClauses.length + 1,
+      customTitle
     );
     syncPlaceholdersAndDraft();
-    showToast(`تم إدراج عنوان البند "${title}" في هيكل العقد الحالي`);
+    showToast(`تم إدراج عنوان البند "# ${title}" — اكتب محتواه بحرية في الورقة`);
   };
 
   const handleInsertSmartTagAtCaret = (varKey: string) => {

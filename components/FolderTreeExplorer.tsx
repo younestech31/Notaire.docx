@@ -106,8 +106,21 @@ export default function FolderTreeExplorer({
     return initial;
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [yearFilter, setYearFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [clerkFilter, setClerkFilter] = useState<string>('all');
+
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<number>([new Date().getFullYear()]);
+    documents.forEach((d) => {
+      if (d.year) {
+        yearsSet.add(d.year);
+      } else if (d.updatedAt) {
+        const y = new Date(d.updatedAt).getFullYear();
+        if (!Number.isNaN(y)) yearsSet.add(y);
+      }
+    });
+    return Array.from(yearsSet).sort((a, b) => b - a);
+  }, [documents]);
 
   // Selected target folder in the "Save Current Editor Contract" bar
   const currentSavedDoc = useMemo(
@@ -340,12 +353,17 @@ export default function FolderTreeExplorer({
     }
   };
 
-  // Filter documents and folders based on search & clerk role
+  // Filter documents and folders based on search, year, status & clerk role
   const filteredDocs = documents.filter((doc) => {
     if (activeClerk.role !== 'notary' && doc.clerkId && doc.clerkId !== activeClerk.id) {
       return false;
     }
-    if (clerkFilter !== 'all' && doc.clerkId !== clerkFilter) return false;
+    if (yearFilter !== 'all') {
+      const docYear =
+        doc.year ||
+        (doc.updatedAt ? new Date(doc.updatedAt).getFullYear() : new Date().getFullYear());
+      if (String(docYear) !== yearFilter) return false;
+    }
     if (statusFilter !== 'all' && doc.status !== statusFilter) return false;
 
     if (searchQuery.trim()) {
@@ -365,7 +383,7 @@ export default function FolderTreeExplorer({
     if (activeClerk.role !== 'notary' && folder.clerkId && folder.clerkId !== activeClerk.id) {
       return false;
     }
-    if (!searchQuery.trim() && statusFilter === 'all' && clerkFilter === 'all') {
+    if (!searchQuery.trim() && statusFilter === 'all' && yearFilter === 'all') {
       return true;
     }
     const q = searchQuery.trim().toLowerCase();
@@ -622,11 +640,13 @@ export default function FolderTreeExplorer({
         {childDocs.map((doc) => {
           const isActive =
             activeDocument?.id === doc.id || activeDocumentId === doc.id;
-          const clerk = clerks.find((c) => c.id === doc.clerkId);
           const isBeingDragged =
             draggedItem?.type === 'document' && draggedItem.id === doc.id;
           const derivedCount = doc.derivedDocuments?.length || 0;
           const statusLabel = STATUS_LABELS[doc.status || 'draft'] || 'مسودة';
+          const formattedDate = doc.updatedAt
+            ? new Date(doc.updatedAt).toLocaleDateString('ar-DZ')
+            : '';
 
           return (
             <div
@@ -642,7 +662,7 @@ export default function FolderTreeExplorer({
               }
               onDragEnd={handleDragEndItem}
               onClick={() => onSelectDocument(doc)}
-              className={`group/doc flex items-center justify-between px-2 py-2 rounded-lg text-xs cursor-pointer transition-all border ${
+              className={`group/doc flex items-center justify-between px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-all border ${
                 isBeingDragged ? 'opacity-45 scale-[0.99]' : ''
               } ${
                 isActive
@@ -650,31 +670,33 @@ export default function FolderTreeExplorer({
                   : 'bg-white border-stone-200/80 hover:border-stone-300 text-stone-700 hover:bg-stone-50'
               }`}
             >
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <GripVertical className="w-3 h-3 text-stone-300 group-hover/doc:text-stone-500 shrink-0 cursor-grab active:cursor-grabbing" />
+              <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                <GripVertical className="w-3 h-3 mt-0.5 text-stone-300 group-hover/doc:text-stone-500 shrink-0 cursor-grab active:cursor-grabbing" />
                 <FileText
-                  className={`w-4 h-4 shrink-0 ${
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${
                     isActive ? 'text-amber-700' : 'text-stone-400'
                   }`}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold truncate flex items-center gap-1.5">
+                  <div className="font-semibold flex items-center justify-between gap-2">
                     <span className="truncate">{doc.title || 'عقد بدون عنوان'}</span>
-                    {isActive && (
-                      <span className="text-[9px] font-normal text-amber-800 shrink-0">
-                        (مفتوح)
+                    {doc.contractNumber && (
+                      <span className="font-mono tabular-nums text-[10px] font-normal text-stone-500 shrink-0">
+                        {doc.contractNumber}
                       </span>
                     )}
                   </div>
                   {/* Unboxed clean metadata with typographic separators */}
                   <div className="flex items-center gap-1.5 text-[10px] text-stone-500 mt-0.5 truncate">
-                    {doc.contractNumber && (
-                      <span className="font-mono tabular-nums text-stone-600 shrink-0">
-                        {doc.contractNumber}
-                      </span>
-                    )}
-                    {doc.contractNumber && <span aria-hidden="true">·</span>}
                     <span className="text-stone-600 shrink-0">{statusLabel}</span>
+                    {formattedDate && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono tabular-nums text-stone-500 shrink-0">
+                          {formattedDate}
+                        </span>
+                      </>
+                    )}
                     {doc.clientName && (
                       <>
                         <span aria-hidden="true">·</span>
@@ -689,21 +711,13 @@ export default function FolderTreeExplorer({
                         </span>
                       </>
                     )}
-                    {clerk && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="text-stone-500 shrink-0">
-                          {clerk.name.split(' ')[0]}
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
               </div>
 
               {/* Document Actions */}
               <div
-                className="opacity-0 group-hover/doc:opacity-100 flex items-center gap-0.5 transition-opacity shrink-0"
+                className="opacity-0 group-hover/doc:opacity-100 flex items-center gap-0.5 transition-opacity shrink-0 mr-1"
                 onClick={(e) => e.stopPropagation()}
               >
                 {onExportDocumentDocx && (
@@ -747,184 +761,157 @@ export default function FolderTreeExplorer({
     );
   };
 
+  const currentOpenStatusLabel =
+    STATUS_LABELS[currentSavedDoc?.status || 'draft'] || 'مسودة';
+
   return (
     <div className="flex flex-col h-full bg-stone-50 text-stone-800 text-xs select-none -m-3">
-      {/* 1. ACTIVE EDITOR CONTRACT FILING BAR (حفظ العقد المفتوح حالياً في مجلد أو سحبه) */}
-      <div className="p-3 bg-white border-b border-stone-200 space-y-2">
-        <div
-          draggable
-          onDragStart={(e) =>
-            handleDragStartItem(e, {
-              type: 'active-editor-doc',
-              id: activeDocumentId || 'current_editor',
-              name: currentEditorTitle,
-              sourceFolderId: currentSavedDoc?.folderId ?? null,
-            })
-          }
-          onDragEnd={handleDragEndItem}
-          className="p-2 rounded-lg border border-amber-300/90 bg-amber-50/60 cursor-grab active:cursor-grabbing transition-all hover:border-amber-400"
-          title="اسحب هذه البطاقة وأفلتها فوق أي مجلد في الشجرة أدناه لحفظ العقد المفتوح بداخله فوراً"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <GripVertical className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <FileText className="w-3.5 h-3.5 text-amber-800 shrink-0" />
-              <span className="font-bold text-stone-900 truncate">
-                {currentEditorTitle || 'عقد توثيقي جديد'}
-              </span>
-            </div>
-            <span className="text-[10px] text-amber-900 shrink-0">
-              {currentSavedDoc ? 'محفوظ في الشجرة' : 'مسودة غير مؤرشفة'}
-            </span>
-          </div>
-          <div className="text-[10px] text-stone-600 mt-1 flex items-center justify-between gap-2">
-            <span className="truncate">
-              الموقع: {getFolderBreadcrumb(currentSavedDoc?.folderId)}
-            </span>
-            <span className="text-amber-800 font-medium shrink-0">
-              اسحب للمجلد أو اختر أدناه
-            </span>
-          </div>
-        </div>
-
-        {/* Direct Folder Selector + Save Button */}
-        {onSaveCurrentToFolder && (
-          <div className="flex items-center gap-1.5">
-            <select
-              value={selectedSaveFolderId || ''}
-              onChange={(e) =>
-                setSelectedSaveFolderId(e.target.value ? e.target.value : null)
-              }
-              className="flex-1 min-w-0 py-1.5 px-2 bg-stone-50 border border-stone-300 rounded-md text-xs text-stone-800 focus:outline-none focus:border-amber-600 focus:bg-white truncate"
-              title="اختر المجلد لحفظ العقد المفتوح حالياً بداخله"
-            >
-              <option value="">(الجذر الرئيسي للمكتب)</option>
-              {hierarchicalFolderOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {'— '.repeat(opt.depth)}
-                  {opt.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={async () => {
-                await onSaveCurrentToFolder(selectedSaveFolderId);
-                expandFolderAndAncestors(selectedSaveFolderId);
-              }}
-              className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-semibold inline-flex items-center gap-1 shrink-0 transition-colors shadow-2xs whitespace-nowrap"
-              title="حفظ العقد المفتوح حالياً في المحرر داخل المجلد المختار"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>حفظ في المجلد</span>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* 2. TREE TOOLBAR, SEARCH & FILTERS */}
+      {/* 1. SEARCH & COMPACT FILTERS (الأعلى: بحث ثم السنة والحالة فقط) */}
       <div className="p-2.5 border-b border-stone-200 bg-white space-y-2">
-        <div className="flex items-center justify-between gap-1">
-          <div className="font-bold text-stone-900 flex items-center gap-1.5 min-w-0">
-            <Layers className="w-4 h-4 text-amber-700 shrink-0" />
-            <span className="truncate">شجرة المجلدات والعقود</span>
-            <span className="text-[10px] text-stone-400 font-mono tabular-nums shrink-0">
-              ({documents.length})
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={handleExpandAll}
-              className="p-1 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
-              title="توسيع كل المجلدات"
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleCollapseAll}
-              className="p-1 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
-              title="طي كل المجلدات"
-            >
-              <ChevronsDownUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTargetParentForNewFolder(null);
-                setNewFolderName('');
-                setShowNewFolderModal(true);
-              }}
-              className="flex items-center gap-1 px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium transition-colors whitespace-nowrap"
-              title="إنشاء مجلد رئيسي جديد"
-            >
-              <FolderPlus className="w-3.5 h-3.5 text-amber-700" />
-              <span>مجلد</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onCreateContractInFolder(selectedSaveFolderId)}
-              className="flex items-center gap-1 px-2 py-1 bg-stone-900 hover:bg-stone-800 text-white rounded-md font-medium transition-colors whitespace-nowrap"
-              title="إنشاء عقد فارغ جديد"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>عقد جديد</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Search Bar */}
         <div className="relative">
           <Search className="absolute right-2.5 top-2 w-3.5 h-3.5 text-stone-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث في المجلدات والعقود والزبائن ورقم الفهرس..."
+            placeholder="بحث (عنوان / فهرس / طرف)..."
             className="w-full pl-3 pr-8 py-1.5 bg-stone-100 border border-stone-200 rounded-md text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-amber-500 focus:bg-white"
           />
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <select
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="w-1/2 py-1 px-2 bg-stone-100 border border-stone-200 rounded text-[11px] text-stone-700 focus:outline-none focus:border-amber-500"
+            title="تصفية حسب السنة"
+          >
+            <option value="all">السنة: الكل</option>
+            {availableYears.map((y) => (
+              <option key={y} value={String(y)}>
+                {y}
+              </option>
+            ))}
+          </select>
+
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-1/2 py-1 px-1.5 bg-stone-100 border border-stone-200 rounded text-stone-700 focus:outline-none focus:border-amber-500"
+            className="w-1/2 py-1 px-2 bg-stone-100 border border-stone-200 rounded text-[11px] text-stone-700 focus:outline-none focus:border-amber-500"
+            title="تصفية حسب الحالة"
           >
-            <option value="all">كل الحالات</option>
+            <option value="all">الحالة: الكل</option>
             <option value="draft">مسودة</option>
             <option value="editing">قيد التحرير</option>
             <option value="ready_to_sign">جاهز للتوقيع</option>
             <option value="signed">موقع</option>
+            <option value="signed_indexed">مفهرس ومختوم</option>
             <option value="registered">مشهر</option>
           </select>
-
-          {activeClerk.role === 'notary' ? (
-            <select
-              value={clerkFilter}
-              onChange={(e) => setClerkFilter(e.target.value)}
-              className="w-1/2 py-1 px-1.5 bg-stone-100 border border-stone-200 rounded text-stone-700 focus:outline-none focus:border-amber-500"
-            >
-              <option value="all">كل الكتّاب</option>
-              {clerks.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="w-1/2 py-1 px-2 bg-stone-100 border border-stone-200 rounded text-stone-600 truncate">
-              {activeClerk.name}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* 3. TREE VIEW BODY WITH ROOT DROP ZONE */}
+      {/* 2. COMPACT SINGLE-LINE CURRENT OPEN CONTRACT BAR (سطر حالة واحد رفيع: العنوان · الشارة · زر حفظ) */}
+      <div
+        draggable
+        onDragStart={(e) =>
+          handleDragStartItem(e, {
+            type: 'active-editor-doc',
+            id: activeDocumentId || 'current_editor',
+            name: currentEditorTitle,
+            sourceFolderId: currentSavedDoc?.folderId ?? null,
+          })
+        }
+        onDragEnd={handleDragEndItem}
+        className="px-2.5 py-2 bg-amber-50/50 border-b border-stone-200 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing"
+        title="العقد المفتوح الآن — اسحبه لأي مجلد أدناه أو اضغط حفظ"
+      >
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <GripVertical className="w-3 h-3 text-amber-700/70 shrink-0" />
+          <span className="font-bold text-stone-900 truncate">
+            «{currentEditorTitle || 'عقد توثيقي جديد'}»
+          </span>
+          <span aria-hidden="true" className="text-stone-400 shrink-0">
+            ·
+          </span>
+          <span className="text-[10px] text-amber-900 shrink-0">
+            {currentOpenStatusLabel}
+          </span>
+        </div>
+
+        {onSaveCurrentToFolder && (
+          <button
+            type="button"
+            onClick={async () => {
+              await onSaveCurrentToFolder(selectedSaveFolderId);
+              expandFolderAndAncestors(selectedSaveFolderId);
+            }}
+            className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-semibold inline-flex items-center gap-1 shrink-0 transition-colors"
+            title="حفظ العقد المفتوح حالياً في الأرشيف"
+          >
+            <Save className="w-3 h-3" />
+            <span>حفظ</span>
+          </button>
+        )}
+      </div>
+
+      {/* 3. CONTRACTS LIST HEADER (العقود (العدد) + [+ مجلد] [+]) */}
+      <div className="px-2.5 py-2 border-b border-stone-200 bg-white flex items-center justify-between gap-1">
+        <div className="font-bold text-stone-900 flex items-center gap-1.5 min-w-0">
+          <Layers className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+          <span>العقود</span>
+          <span className="text-[11px] text-stone-500 font-mono tabular-nums shrink-0">
+            ({filteredDocs.length})
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {folders.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={handleExpandAll}
+                className="p-1 text-stone-400 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
+                title="توسيع المجلدات"
+              >
+                <ChevronsUpDown className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleCollapseAll}
+                className="p-1 text-stone-400 hover:text-stone-800 hover:bg-stone-100 rounded transition-colors"
+                title="طي المجلدات"
+              >
+                <ChevronsDownUp className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setTargetParentForNewFolder(null);
+              setNewFolderName('');
+              setShowNewFolderModal(true);
+            }}
+            className="flex items-center gap-1 px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded font-medium text-[11px] transition-colors whitespace-nowrap"
+            title="إنشاء مجلد تنظيمي جديد"
+          >
+            <FolderPlus className="w-3 h-3 text-amber-700" />
+            <span>+ مجلد</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onCreateContractInFolder(selectedSaveFolderId)}
+            className="flex items-center gap-1 px-2 py-1 bg-stone-900 hover:bg-stone-800 text-white rounded font-medium text-[11px] transition-colors whitespace-nowrap"
+            title="إنشاء عقد جديد"
+          >
+            <Plus className="w-3 h-3" />
+            <span>عقد جديد</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 4. CONTRACTS & FOLDERS LIST BODY */}
       <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
-        {/* Root Drop Zone Banner (Visible when dragging an item that belongs to a subfolder) */}
         {draggedItem && draggedItem.sourceFolderId !== null && (
           <div
             onDragOver={(e) => handleDragOverTarget(e, 'ROOT')}
@@ -943,14 +930,34 @@ export default function FolderTreeExplorer({
         {renderFolderNode(null, 0)}
 
         {filteredFolders.length === 0 && filteredDocs.length === 0 && (
-          <div className="text-center py-8 px-4 text-stone-400 space-y-2">
-            <Folder className="w-8 h-8 mx-auto opacity-40" />
-            <p className="text-xs text-stone-500 font-medium">
-              لا توجد مجلدات أو عقود مطابقة للبحث.
+          <div className="text-center py-8 px-4 text-stone-500 space-y-3">
+            <p className="text-xs font-medium text-stone-600">
+              {searchQuery.trim() || statusFilter !== 'all' || yearFilter !== 'all'
+                ? 'لا توجد عقود مطابقة للبحث أو التصفية الحالية.'
+                : 'الأرشيف فارغ حالياً — احفظ العقد المفتوح أو ابدأ عقداً جديداً.'}
             </p>
-            <p className="text-[11px] text-stone-400">
-              يمكنك إنشاء مجلد جديد أو الضغط على «حفظ في المجلد» لحفظ العقد المفتوح حالياً.
-            </p>
+            <div className="flex items-center justify-center gap-2">
+              {onSaveCurrentToFolder && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await onSaveCurrentToFolder(selectedSaveFolderId);
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>حفظ العقد الحالي</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onCreateContractInFolder(null)}
+                className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>عقد جديد</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

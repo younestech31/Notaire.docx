@@ -163,10 +163,10 @@ export default function ClausesPanel({
         {liveContractClauses.length === 0 ? (
           <div className="border border-dashed border-blue-200 rounded p-3 text-center bg-white/80 space-y-1">
             <div className="text-xs font-semibold text-slate-700">
-              لا توجد بنود مقسّمة بعلامة `#` في هذا العقد بعد
+              لا توجد عناوين بنود (`#`) في هذا العقد بعد
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              اكتب <code className="font-mono font-bold text-blue-900"># عنوان البند</code> في بداية أي سطر داخل الورقة أو اضغط زر <strong>«# بند بالعقد»</strong> أعلاه لتقسيم هذا العقد إلى بنود مستقلة قابلة للتفعيل والتعطيل والسحب.
+              اكتب بحرية <code className="font-mono font-bold text-blue-900">#حضر</code> ثم <code className="font-mono font-bold text-blue-900">#التعيين</code> في بداية أي سطر بالورقة (أو اضغط <strong>«# بند بالعقد»</strong> أعلاه) — يكفي العنوان أولاً ويمكنك كتابة المحتوى تحته لاحقاً.
             </p>
           </div>
         ) : (
@@ -349,9 +349,13 @@ export default function ClausesPanel({
                             </span>
                           )}
                         </div>
-                        {c.previewText && (
+                        {c.previewText ? (
                           <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                             {c.previewText}
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 italic mt-0.5">
+                            (بدون نص بعد)
                           </p>
                         )}
                       </button>
@@ -768,17 +772,18 @@ export default function ClausesPanel({
                   rows={3}
                   value={newClauseText}
                   onChange={(e) => setNewClauseText(e.target.value)}
-                  placeholder="نص البند (يمكن تضمين وسوم مثل [البائع]) أو اتركه فارغاً لحفظ النص المحدد حالياً في الورقة..."
+                  placeholder="نص البند (اختياري — يمكنك تركه فارغاً لحفظ العنوان فقط أو تضمين وسوم مثل [البائع])..."
                   className="w-full px-2 py-1 text-xs bg-white border border-slate-300 rounded"
                 />
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!newClauseTitle.trim()) return;
-                      const html = newClauseText.trim()
-                        ? `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;font-weight:bold;"># ${newClauseTitle.trim()}</p>` +
-                          newClauseText
+                      const cleanTitle = newClauseTitle.replace(/^#+\s*/, '').trim();
+                      if (!cleanTitle) return;
+                      const headingHtml = `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;font-weight:bold;"># ${cleanTitle}</p>`;
+                      const bodyHtml = newClauseText.trim()
+                        ? newClauseText
                             .trim()
                             .split(/\r?\n/)
                             .map(
@@ -788,11 +793,11 @@ export default function ClausesPanel({
                                 }</p>`
                             )
                             .join('')
-                        : undefined;
+                        : `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;"><br></p>`;
                       await onSaveNewClause(
-                        newClauseTitle.trim(),
+                        cleanTitle,
                         newClauseCategory.trim() || 'عام',
-                        html
+                        `${headingHtml}${bodyHtml}`
                       );
                       setNewClauseTitle('');
                       setNewClauseText('');

@@ -15,14 +15,16 @@ import {
 } from './editor-utils';
 
 /**
- * # New Clause Toolbar Action:
- * Converts the current line/selection (or inserts at caret) into a structured
- * .clause-container with a bold heading so it immediately links with the Clauses Sidebar.
+ * # New Clause Toolbar Action (Flexible Heading Model):
+ * Converts the current line/selection (or inserts at caret) into a bold `# عنوان البند`
+ * heading paragraph followed by an empty paragraph for free writing — without forcing
+ * a `.clause-container` wrapper or mandatory placeholder text.
  */
 export function insertOrWrapNewClauseAtSelection(
   editorEl: HTMLElement,
   savedRange: Range | null,
-  clauseIndexHint: number = 1
+  clauseIndexHint: number = 1,
+  customTitle?: string
 ): { clauseId: string; title: string; contentHtml: string } {
   editorEl.focus();
   const sel = window.getSelection();
@@ -36,11 +38,11 @@ export function insertOrWrapNewClauseAtSelection(
     sel.addRange(savedRange);
   }
 
-  let rawTitle = '';
-  if (sel && sel.rangeCount > 0) {
+  let rawTitle = customTitle ? customTitle.replace(/^#+\s*/, '').trim() : '';
+  if (!rawTitle && sel && sel.rangeCount > 0) {
     const r = sel.getRangeAt(0);
     if (!r.collapsed && editorEl.contains(r.commonAncestorContainer)) {
-      rawTitle = r.toString().trim();
+      rawTitle = r.toString().replace(/^#+\s*/, '').trim();
       r.deleteContents();
     } else if (r.collapsed && editorEl.contains(r.commonAncestorContainer)) {
       let block: Node | null = r.startContainer;
@@ -58,21 +60,15 @@ export function insertOrWrapNewClauseAtSelection(
   }
 
   const title = rawTitle || `بند رقم ${clauseIndexHint}`;
-  const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const clauseId = `hash_clause_${Date.now()}`;
   const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
 
-  const innerContentHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
+  const headingAndBlankLineHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
     title
-  )}</span></p><p dir="rtl" style="${pStyle}">اكتب نص البند أو أدرج المتغيرات [اسم_المتغير] هنا.</p>`;
+  )}</span></p><p dir="rtl" style="${pStyle}"><br></p>`;
 
-  const wrapperHtml = `<div class="clause-container" data-clause-id="${clauseId}" data-clause-order="${
-    clauseIndexHint - 1
-  }" data-clause-title="${escapeHtml(
-    title
-  )}" data-clause-locked="false">${innerContentHtml}</div><p dir="rtl" style="${pStyle}"><br></p>`;
-
-  insertHtmlAtSelection(editorEl, wrapperHtml, savedRange);
-  return { clauseId, title, contentHtml: innerContentHtml };
+  insertHtmlAtSelection(editorEl, headingAndBlankLineHtml, savedRange);
+  return { clauseId, title, contentHtml: headingAndBlankLineHtml };
 }
 
 /**
@@ -170,8 +166,10 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
 }
 
 /**
- * Safely upgrades any top-level `# عنوان البند` segments into `<div class="clause-container">`
- * on initial document load or explicit structure normalization, and stamps `data-clause-order`.
+ * Lazily upgrades top-level `# عنوان البند` segments into `<div class="clause-container">`
+ * ONLY when required by structural operations (lock, disable/hide, conditions, reorder).
+ * Preserves the segment ID (`seg.id` or `matchedPrev.id`) so the calling operation can
+ * immediately target the newly created container.
  */
 export function upgradeTopLevelHashSegmentsToContainers(
   rootEl: HTMLElement | null,
@@ -183,7 +181,7 @@ export function upgradeTopLevelHashSegmentsToContainers(
 
   segments.forEach((seg, idx) => {
     const matchedPrev = existingOutline.find(
-      (c) => c.id === seg.id || c.title === seg.title
+      (c) => c.id === seg.id || c.domIndex === seg.domIndex || c.title === seg.title
     );
     const clauseOrder =
       matchedPrev?.order !== undefined
@@ -212,10 +210,7 @@ export function upgradeTopLevelHashSegmentsToContainers(
       if (!firstEl || !firstEl.parentNode) return;
       const wrapper = document.createElement('div');
       wrapper.className = 'clause-container';
-      const newId =
-        matchedPrev?.id && !matchedPrev.id.startsWith('hash_clause_')
-          ? matchedPrev.id
-          : `clause_${Date.now()}_${idx}`;
+      const newId = matchedPrev?.id || seg.id || `clause_${Date.now()}_${idx}`;
       wrapper.setAttribute('data-clause-id', newId);
       wrapper.setAttribute('data-clause-order', String(clauseOrder));
       wrapper.setAttribute('data-clause-title', seg.title);
@@ -253,7 +248,13 @@ function buildClausePreviewAndHtml(seg: DomClauseSegment): {
           .map((c) => c.textContent || '')
           .join(' ');
       } else {
-        previewSource = (containerEl.textContent || '').replace(/^#+\s*/, '');
+        // Container has only the heading line (or single element): check if there is text after the first line
+        const rawText = (containerEl.textContent || '').trim();
+        const withoutHeading = rawText
+          .replace(/^#+\s*[^\n\r]*/, '')
+          .trim();
+        previewSource =
+          withoutHeading && withoutHeading !== seg.title ? withoutHeading : '';
       }
     }
   } else {
@@ -266,7 +267,7 @@ function buildClausePreviewAndHtml(seg: DomClauseSegment): {
         .map((e) => e.textContent || '')
         .join(' ');
     } else {
-      previewSource = (seg.elements[0]?.textContent || '').replace(/^#+\s*/, '');
+      previewSource = '';
     }
   }
 
@@ -289,7 +290,9 @@ export function extractLiveContractClausesFromDOM(
   const disabledClauses = prevOutline.filter((c) => c.enabled === false);
 
   const activeClauses: ContractOutlineClause[] = segments.map((seg, i) => {
-    const prevMatch = prevOutline.find((c) => c.id === seg.id);
+    const prevMatch = prevOutline.find(
+      (c) => c.id === seg.id || (c.enabled !== false && c.title === seg.title && c.domIndex === seg.domIndex)
+    );
     const { innerContentHtml, previewText, variables } = buildClausePreviewAndHtml(seg);
     const order =
       seg.explicitOrder !== undefined
@@ -536,6 +539,13 @@ export function scrollToContractClauseInDOM(
     target = rootEl.querySelector(
       `[data-clause-id="${CSS.escape(domIndexOrClauseId)}"]`
     ) as HTMLElement | null;
+    if (!target) {
+      const segments = collectDomClauseSegments(rootEl);
+      const matchedSeg = segments.find((s) => s.id === domIndexOrClauseId);
+      if (matchedSeg && matchedSeg.elements.length > 0) {
+        target = matchedSeg.elements[0];
+      }
+    }
   }
   if (!target && typeof domIndexOrClauseId === 'number' && domIndexOrClauseId >= 0) {
     target = (rootEl.children[domIndexOrClauseId] as HTMLElement) || null;
@@ -742,19 +752,22 @@ export function compileCandidateClausesToHtml(
       const firstParaPlain = c.paragraphsHtml[0]
         ? c.paragraphsHtml[0].replace(/<[^>]+>/g, '').trim()
         : '';
-      const hasHeadingLine =
-        firstParaPlain.startsWith('#') ||
+      const hasHashPrefix = firstParaPlain.startsWith('#');
+      const matchesTitleWithoutHash =
+        !hasHashPrefix &&
         firstParaPlain.replace(/:$/, '').trim() === cleanTitle;
 
-      const headingHtml = hasHeadingLine
-        ? ''
-        : `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
-            cleanTitle
-          )}</span></p>`;
-
-      return `<div class="clause-container" data-clause-id="clause_imp_${Date.now()}_${idx}" data-clause-order="${idx}" data-clause-title="${escapeHtml(
+      const headingHtml = `<p dir="rtl" style="${pStyle}"><span style="font-weight:bold;"># ${escapeHtml(
         cleanTitle
-      )}" data-clause-locked="false">${headingHtml}${c.paragraphsHtml.join('')}</div>`;
+      )}</span></p>`;
+
+      if (hasHashPrefix) {
+        return c.paragraphsHtml.join('');
+      }
+      if (matchesTitleWithoutHash) {
+        return `${headingHtml}${c.paragraphsHtml.slice(1).join('')}`;
+      }
+      return `${headingHtml}${c.paragraphsHtml.join('')}`;
     })
     .join('');
 }
