@@ -145,6 +145,7 @@ export function useEditorParties({
         [`${prefix}_تاريخ_الميلاد`]: party.birthDate || '',
         [`${prefix}_مكان_الميلاد`]: party.birthPlace || '',
         [`${prefix}_النسب`]: party.parentage || '',
+        [`${prefix}_الرقم_الوطني`]: party.nationalIdNin || '',
         [`${prefix}_الهوية`]: party.idCardRef || '',
         [`${prefix}_الإقامة`]: party.address || '',
       };

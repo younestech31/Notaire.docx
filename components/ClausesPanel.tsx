@@ -202,11 +202,8 @@ export default function ClausesPanel({
               يتعرف المحرر تلقائياً وفورياً أثناء الكتابة أو اللصق على:
             </p>
             <ul className="text-[10px] text-slate-500 text-right space-y-1 list-disc pr-4">
-              <li>المواد القانونية: <span className="font-semibold text-slate-700 font-mono">المادة الأولى: التمهيد</span> أو <span className="font-semibold text-slate-700 font-mono">المادة 1</span></li>
-              <li>الترقيم اللفظي: <span className="font-semibold text-slate-700 font-mono">أولاً: أصل الملكية</span>، <span className="font-semibold text-slate-700 font-mono">ثانياً: الثمن</span></li>
-              <li>صيغ البنود: <span className="font-semibold text-slate-700 font-mono">البند الأول: موضوع البيع</span></li>
-              <li>العناوين التوثيقية: <span className="font-semibold text-slate-700 font-mono">التمهيد:</span>، <span className="font-semibold text-slate-700 font-mono">شروط البيع:</span>، <span className="font-semibold text-slate-700 font-mono">أصل الملكية:</span></li>
-              <li>أو علامة الشباك السريعة: <span className="font-semibold text-slate-700 font-mono"># التعيين</span></li>
+              <li>العناوين: <span className="font-semibold text-slate-700 font-mono"># عنوان</span></li>
+              <li>أو البنود الحاوية المحددة (.clause-container)</li>
             </ul>
           </div>
         ) : (
@@ -220,7 +217,7 @@ export default function ClausesPanel({
 
               return (
                 <div
-                  key={c.id}
+                  key={`live-${c.id || 'x'}-${c.domIndex}-${idx}`}
                   draggable={!isRenaming && !isEditingCond}
                   onDragStart={(e) => {
                     setDraggedClauseId(c.id);

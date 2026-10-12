@@ -781,14 +781,7 @@ export function extractPlaceholdersGroupedByClause(
       // Check if this paragraph is a section/clause heading (e.g. starts with # or is short bold line)
       const plainText = (child.textContent || '').trim();
       const firstStrong = child.querySelector('strong, b');
-      const isHeadingParagraph =
-        plainText.startsWith('#') ||
-        (plainText.length > 2 &&
-          plainText.length <= 65 &&
-          !plainText.includes('[') &&
-          !plainText.includes('{{') &&
-          (child.style.fontWeight === 'bold' ||
-            (firstStrong && firstStrong.textContent?.trim() === plainText)));
+      const isHeadingParagraph = plainText.startsWith('#');
 
       if (isHeadingParagraph) {
         flushGeneralGroup();
@@ -927,7 +920,20 @@ export function insertHtmlAtSelection(
   }
 
   const range = sel.getRangeAt(0);
-  range.deleteContents();
+
+  const isBlock = /<(p|div|h[1-6]|li|table)/i.test(htmlToInsert);
+  let container = range.commonAncestorContainer;
+  if (container.nodeType === Node.TEXT_NODE) container = container.parentNode!;
+
+  if (isBlock && container instanceof HTMLElement && ['P', 'DIV'].includes(container.tagName)) {
+    // Force split if we are inside a P tag to ensure clean block insertion
+    // Move the range to after the container block to prevent merging
+    range.setStartAfter(container);
+    range.setEndAfter(container);
+    range.collapse(true);
+  } else {
+    range.deleteContents();
+  }
 
   const temp = document.createElement('div');
   temp.innerHTML = htmlToInsert;

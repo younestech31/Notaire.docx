@@ -293,7 +293,9 @@ export function upgradeTopLevelHashSegmentsToContainers(
 
   segments.forEach((seg, idx) => {
     const matchedPrev = existingOutline.find(
-      (c) => c.id === seg.id || c.domIndex === seg.domIndex || c.title === seg.title
+      (c) =>
+        (Boolean(seg.id) && Boolean(c.id) && c.id === seg.id) ||
+        (c.title === seg.title && c.domIndex === seg.domIndex)
     );
     const clauseOrder =
       matchedPrev?.order !== undefined
@@ -415,7 +417,9 @@ export function extractLiveContractClausesFromDOM(
 
   const activeClauses: ContractOutlineClause[] = segments.map((seg, i) => {
     const prevMatch = prevOutline.find(
-      (c) => c.id === seg.id || (c.enabled !== false && c.title === seg.title && c.domIndex === seg.domIndex)
+      (c) =>
+        (Boolean(seg.id) && Boolean(c.id) && c.id === seg.id) ||
+        (c.enabled !== false && c.title === seg.title && c.domIndex === seg.domIndex)
     );
     const { innerContentHtml, previewText, variables } = buildClausePreviewAndHtml(seg);
     const order =
@@ -426,7 +430,7 @@ export function extractLiveContractClausesFromDOM(
         : i;
 
     return {
-      id: seg.id,
+      id: seg.id || `hash_clause_${seg.domIndex}_${i}_${Date.now().toString(36)}`,
       index: i + 1,
       order,
       title: seg.title,

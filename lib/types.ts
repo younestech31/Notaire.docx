@@ -413,6 +413,7 @@ export interface SavedPartyRecord {
   birthDate: string; // تاريخ الميلاد
   birthPlace: string; // مكان الميلاد
   parentage: string; // النسب (بن/بنت)
+  nationalIdNin: string; // رقم التعريف الوطني NIN
   idCardRef: string; // رقم ونوع وثيقة الهوية
   address: string; // عنوان الإقامة
   updatedAt: string;
