@@ -25,6 +25,7 @@ import {
   Rows,
   Search,
   SeparatorHorizontal,
+  Sparkles,
   Split,
   Table as TableIcon,
   Trash2,
@@ -34,6 +35,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import {
+  EditorSmartAssistPreferences,
   ListNumberingStyle,
   ToolbarState,
 } from '@/lib/types';
@@ -118,6 +120,8 @@ interface EditorRibbonProps {
   onToggleFindReplace: () => void;
   onChangeZoom: (newZoom: number) => void;
   onSaveSelectionBookmark: () => void;
+  smartAssistPrefs?: EditorSmartAssistPreferences;
+  onChangeSmartAssistPrefs?: (next: EditorSmartAssistPreferences) => void;
 }
 
 const TEXT_COLORS = [
@@ -170,6 +174,11 @@ export default function EditorRibbon({
   onToggleFindReplace,
   onChangeZoom,
   onSaveSelectionBookmark,
+  smartAssistPrefs = {
+    enableInlineAutocomplete: true,
+    enableSlashCommands: true,
+  },
+  onChangeSmartAssistPrefs,
 }: EditorRibbonProps) {
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [tableRows, setTableRows] = useState(3);
@@ -177,6 +186,7 @@ export default function EditorRibbon({
   const [showListMenu, setShowListMenu] = useState(false);
   const [showMoreFormattingMenu, setShowMoreFormattingMenu] = useState(false);
   const [showTagInserterMenu, setShowTagInserterMenu] = useState(false);
+  const [showSmartAssistMenu, setShowSmartAssistMenu] = useState(false);
   const [tagFilterQuery, setTagFilterQuery] = useState('');
 
   const preventFocusLoss = (e: React.MouseEvent) => {
@@ -188,6 +198,7 @@ export default function EditorRibbon({
     setShowListMenu(false);
     setShowMoreFormattingMenu(false);
     setShowTagInserterMenu(false);
+    setShowSmartAssistMenu(false);
   };
 
   const btnClass = (active: boolean = false, disabled: boolean = false) =>
@@ -987,6 +998,95 @@ export default function EditorRibbon({
             <span className="font-mono font-bold text-amber-300">#</span>
             <span>بند جديد</span>
           </button>
+
+          {/* 4. SMART ASSIST PREFERENCES ([ # Autocomplete & / Quick Commands) */}
+          {onChangeSmartAssistPrefs && (
+            <div className="relative">
+              <button
+                type="button"
+                onMouseDown={preventFocusLoss}
+                onClick={() => {
+                  const next = !showSmartAssistMenu;
+                  closeAllMenus();
+                  setShowSmartAssistMenu(next);
+                }}
+                className={`inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 ${
+                  smartAssistPrefs.enableInlineAutocomplete ||
+                  smartAssistPrefs.enableSlashCommands
+                    ? 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/80'
+                    : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200/70'
+                }`}
+                title="إعدادات المساعدة الذكية أثناء الكتابة (الإكمال التلقائي للوسوم [ والبنود # وقائمة الأوامر /)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>المساعد الذكي</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+
+              {showSmartAssistMenu && (
+                <div className="absolute left-0 mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-xl p-3 z-50 space-y-2.5 text-right">
+                  <div className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5 flex items-center justify-between">
+                    <span>إعدادات المساعدة أثناء الكتابة</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  </div>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-1.5 rounded hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={smartAssistPrefs.enableInlineAutocomplete}
+                      onChange={(e) =>
+                        onChangeSmartAssistPrefs({
+                          ...smartAssistPrefs,
+                          enableInlineAutocomplete: e.target.checked,
+                        })
+                      }
+                      className="mt-0.5 rounded border-slate-300 text-blue-900 focus:ring-blue-900"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-slate-800">
+                        الإكمال التلقائي الموضعي{' '}
+                        <span className="font-mono text-[10px] bg-pink-50 text-pink-800 px-1 rounded">
+                          [
+                        </span>{' '}
+                        و{' '}
+                        <span className="font-mono text-[10px] bg-amber-50 text-amber-800 px-1 rounded">
+                          #
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 leading-relaxed">
+                        اقتراح المتغيرات عند كتابة [ وعناوين البنود القياسية عند كتابة # في بداية السطر
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-1.5 rounded hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={smartAssistPrefs.enableSlashCommands}
+                      onChange={(e) =>
+                        onChangeSmartAssistPrefs({
+                          ...smartAssistPrefs,
+                          enableSlashCommands: e.target.checked,
+                        })
+                      }
+                      className="mt-0.5 rounded border-slate-300 text-blue-900 focus:ring-blue-900"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-slate-800">
+                        قائمة الأوامر السريعة{' '}
+                        <span className="font-mono text-[10px] bg-blue-50 text-blue-900 px-1 rounded">
+                          /
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 leading-relaxed">
+                        فتح قائمة إدراج سريع (بند، وسم، جدول، طرف، فاصل صفحات) عند كتابة / في أول السطر
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -5,6 +5,9 @@ import { CheckCircle2 } from 'lucide-react';
 import EditorRibbon from './EditorRibbon';
 import EditorTopBar from './EditorTopBar';
 import EditorA4Canvas from './editor/EditorA4Canvas';
+import EditorQuickAssistPopover, {
+  QuickAssistOption,
+} from './editor/EditorQuickAssistPopover';
 import {
   EditorActivityRail,
   EditorModalsHost,
@@ -22,6 +25,7 @@ import {
   ContractOutlineClause,
   ContractPartyCard,
   DocumentRevision,
+  EditorSmartAssistPreferences,
   NotaryClause,
   OfficeTemplate,
   OfficeTemplateKind,
@@ -65,12 +69,16 @@ import {
   upgradeTopLevelHashSegmentsToContainers,
 } from '@/lib/clause-outline-engine';
 import {
+  CaretInlineTrigger,
   convertSelectionToSmartTag,
   decorateSmartTagsInDOM,
+  detectCaretInlineTrigger,
   escapeHtml,
   extractPlaceholdersFromHtml,
   extractPlaceholdersGroupedByClause,
+  findAdjacentSmartTagElement,
   insertHtmlAtSelection,
+  moveCaretOutsideSmartTag,
   normalizeNotaryContainerDOM,
   restoreSerializedSelection,
   sanitizePastedWordHTML,
@@ -281,6 +289,49 @@ export default function NotaryEditorApp() {
   );
   const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const selectedAtomicTagRef = useRef<HTMLElement | null>(null);
+
+  // Smart Assist Preferences ([ & # Inline Autocomplete + / Quick Commands)
+  const [smartAssistPrefs, setSmartAssistPrefs] =
+    useState<EditorSmartAssistPreferences>({
+      enableInlineAutocomplete: true,
+      enableSlashCommands: true,
+    });
+  const [quickAssistTrigger, setQuickAssistTrigger] =
+    useState<CaretInlineTrigger | null>(null);
+  const [quickAssistSelectedIdx, setQuickAssistSelectedIdx] =
+    useState<number>(0);
+
+  const clearAtomicSelectedTag = useCallback(() => {
+    if (selectedAtomicTagRef.current) {
+      selectedAtomicTagRef.current.classList.remove('smart-tag-selected-atomic');
+      selectedAtomicTagRef.current = null;
+    }
+    if (bodyEditorRef.current) {
+      bodyEditorRef.current
+        .querySelectorAll('.smart-tag-selected-atomic')
+        .forEach((el) => el.classList.remove('smart-tag-selected-atomic'));
+    }
+  }, [bodyEditorRef]);
+
+  const handleUpdateSmartAssistPrefs = useCallback(
+    (next: EditorSmartAssistPreferences) => {
+      setSmartAssistPrefs(next);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'notary_smart_assist_prefs_v1',
+          JSON.stringify(next)
+        );
+      }
+      if (!next.enableInlineAutocomplete && !next.enableSlashCommands) {
+        setQuickAssistTrigger(null);
+      }
+    },
+    []
+  );
 
   const ensureBodyEditable = useCallback(() => {
     if (isBodyLocked) {
@@ -460,6 +511,56 @@ export default function NotaryEditorApp() {
     ]
   );
 
+  // Two-Tier Debounced Sync (160ms for live typing, immediate for structural/blur/save actions)
+  const refreshInlineQuickAssistTrigger = useCallback(() => {
+    if (!bodyEditorRef.current || isBodyLocked) {
+      setQuickAssistTrigger(null);
+      return;
+    }
+    const detected = detectCaretInlineTrigger(bodyEditorRef.current);
+    if (!detected) {
+      setQuickAssistTrigger(null);
+      return;
+    }
+    if (
+      (detected.type === 'tag' || detected.type === 'clause') &&
+      !smartAssistPrefs.enableInlineAutocomplete
+    ) {
+      setQuickAssistTrigger(null);
+      return;
+    }
+    if (detected.type === 'slash' && !smartAssistPrefs.enableSlashCommands) {
+      setQuickAssistTrigger(null);
+      return;
+    }
+    setQuickAssistTrigger(detected);
+    setQuickAssistSelectedIdx(0);
+  }, [bodyEditorRef, isBodyLocked, smartAssistPrefs]);
+
+  const scheduleSyncPlaceholdersAndDraft = useCallback(() => {
+    clearAtomicSelectedTag();
+    refreshInlineQuickAssistTrigger();
+    if (debouncedSyncTimerRef.current) {
+      clearTimeout(debouncedSyncTimerRef.current);
+    }
+    debouncedSyncTimerRef.current = setTimeout(() => {
+      debouncedSyncTimerRef.current = null;
+      syncPlaceholdersAndDraft();
+    }, 160);
+  }, [
+    clearAtomicSelectedTag,
+    refreshInlineQuickAssistTrigger,
+    syncPlaceholdersAndDraft,
+  ]);
+
+  const flushSyncPlaceholdersAndDraft = useCallback(() => {
+    if (debouncedSyncTimerRef.current) {
+      clearTimeout(debouncedSyncTimerRef.current);
+      debouncedSyncTimerRef.current = null;
+    }
+    syncPlaceholdersAndDraft();
+  }, [syncPlaceholdersAndDraft]);
+
   // Editor DOM Formatting & Undo/Redo Hook
   const {
     savedRangeRef,
@@ -473,6 +574,7 @@ export default function NotaryEditorApp() {
     saveSelectionBookmark,
     restoreSelectionBookmarkIfNeeded,
     recordHistorySnapshot,
+    recordTypingHistorySnapshot,
     handleUndo,
     handleRedo,
     applyInlineCommand,
@@ -758,6 +860,19 @@ export default function NotaryEditorApp() {
       if (typeof window !== 'undefined') {
         const storedBackup = localStorage.getItem('notary_last_backup_at_v1');
         if (storedBackup) setLastBackupAt(storedBackup);
+        const storedAssist = localStorage.getItem('notary_smart_assist_prefs_v1');
+        if (storedAssist) {
+          try {
+            const parsed = JSON.parse(storedAssist);
+            setSmartAssistPrefs({
+              enableInlineAutocomplete:
+                parsed.enableInlineAutocomplete !== false,
+              enableSlashCommands: parsed.enableSlashCommands !== false,
+            });
+          } catch {
+            // Ignore malformed storage
+          }
+        }
         const tourDone = localStorage.getItem('notary_editor_tour_v27');
         if (!tourDone) {
           setShowOnboardingTour(true);
@@ -824,10 +939,337 @@ export default function NotaryEditorApp() {
     showToast(`تم تحويل النص المحدد إلى وسم ذكي [${createdVar}] مرتبط بهذا العقد`);
   };
 
+  // Build filtered options for Quick Assist Popover ([ tag, # clause, / slash commands)
+  const quickAssistOptions = React.useMemo<QuickAssistOption[]>(() => {
+    if (!quickAssistTrigger) return [];
+    const q = quickAssistTrigger.query.trim();
+
+    if (quickAssistTrigger.type === 'tag') {
+      const commonTags = [
+        { key: 'الطرف_الأول_الاسم', label: 'اسم ولقب الطرف الأول' },
+        { key: 'الطرف_الأول_تاريخ_الميلاد', label: 'تاريخ ميلاد الطرف الأول' },
+        { key: 'الطرف_الأول_مكان_الميلاد', label: 'مكان ميلاد الطرف الأول' },
+        { key: 'الطرف_الأول_النسب', label: 'نسب الطرف الأول' },
+        { key: 'الطرف_الأول_الهوية', label: 'مرجع هوية الطرف الأول' },
+        { key: 'الطرف_الأول_الإقامة', label: 'إقامة الطرف الأول' },
+        { key: 'الطرف_الثاني_الاسم', label: 'اسم ولقب الطرف الثاني' },
+        { key: 'الطرف_الثاني_تاريخ_الميلاد', label: 'تاريخ ميلاد الطرف الثاني' },
+        { key: 'الطرف_الثاني_مكان_الميلاد', label: 'مكان ميلاد الطرف الثاني' },
+        { key: 'الطرف_الثاني_النسب', label: 'نسب الطرف الثاني' },
+        { key: 'الطرف_الثاني_الهوية', label: 'مرجع هوية الطرف الثاني' },
+        { key: 'الطرف_الثاني_الإقامة', label: 'إقامة الطرف الثاني' },
+        { key: 'رقم_الفهرس', label: 'رقم الفهرس الرسمي' },
+        { key: 'تاريخ_العقد', label: 'تاريخ تحرير العقد' },
+        { key: 'تعيين_الحصة_الكامل', label: 'التعيين الكامل للعقار/الحصة' },
+        { key: 'المساحة', label: 'المساحة (م²)' },
+        { key: 'الثمن_بالأحرف', label: 'الثمن الإجمالي بالأحرف' },
+        { key: 'الثمن_بالأرقام', label: 'الثمن الإجمالي بالأرقام' },
+        { key: 'مراجع_التسجيل', label: 'مراجع التسجيل والطابع' },
+        { key: 'المحافظة_العقارية', label: 'المحافظة العقارية' },
+      ];
+      const allKeys = Array.from(
+        new Set([...extractedPlaceholders, ...commonTags.map((t) => t.key)])
+      );
+      const list: QuickAssistOption[] = [];
+      if (q && !allKeys.includes(q.replace(/\s+/g, '_'))) {
+        const customKey = q.replace(/\s+/g, '_');
+        list.push({
+          id: `custom_tag_${customKey}`,
+          kind: 'tag',
+          label: `إنشاء وسم جديد: ${q}`,
+          insertValue: customKey,
+          isFilled: Boolean(fieldValues[customKey]?.trim()),
+        });
+      }
+      for (const k of allKeys) {
+        const meta = commonTags.find((t) => t.key === k);
+        const label = meta?.label || k.replace(/_/g, ' ');
+        if (!q || k.includes(q) || label.includes(q)) {
+          list.push({
+            id: `tag_${k}`,
+            kind: 'tag',
+            label,
+            insertValue: k,
+            isFilled: Boolean(fieldValues[k]?.trim()),
+          });
+        }
+      }
+      return list.slice(0, 10);
+    }
+
+    if (quickAssistTrigger.type === 'clause') {
+      const standardHeadings = [
+        { title: 'حضر', subtitle: 'ديباجة حضور الأطراف أمام الموثق' },
+        { title: 'التعيين', subtitle: 'وصف وتعيين العقار أو محل العقد' },
+        { title: 'أصل الملكية', subtitle: 'تسلسل سندات الملكية السابقة' },
+        { title: 'الملكية والانتفاع', subtitle: 'انتقال الملكية والحيازة القانونية' },
+        { title: 'التكاليف والشروط', subtitle: 'الالتزامات العامة والخاصة' },
+        { title: 'الثمن', subtitle: 'مبلغ المعاملة وطريقة الدفع والقبض' },
+        { title: 'التسجيل والشهر العقاري', subtitle: 'الإجراءات الجبائية والعقارية' },
+        { title: 'الحالة المدنية والأهلية', subtitle: 'تصريحات الأطراف والأهلية' },
+        { title: 'الموطن المختار', subtitle: 'تحديد الموطن القانوني لتنفيذ العقد' },
+        { title: 'إثباتاً لما ذكر', subtitle: 'خاتمة العقد والتلاوة والتوقيع' },
+      ];
+      const list: QuickAssistOption[] = [];
+      if (q && !standardHeadings.some((h) => h.title === q)) {
+        list.push({
+          id: `custom_clause_${q}`,
+          kind: 'clause',
+          label: `عنوان بند حر: # ${q}`,
+          subtitle: 'إدراج عنوان البند كما كتبته',
+          insertValue: `# ${q}`,
+        });
+      }
+      for (const h of standardHeadings) {
+        if (!q || h.title.includes(q) || h.subtitle.includes(q)) {
+          list.push({
+            id: `clause_${h.title}`,
+            kind: 'clause',
+            label: h.title,
+            subtitle: h.subtitle,
+            insertValue: `# ${h.title}`,
+          });
+        }
+      }
+      return list;
+    }
+
+    // slash commands
+    const slashItems: QuickAssistOption[] = [
+      {
+        id: 'slash_clause',
+        kind: 'slash',
+        slashAction: 'clause',
+        label: 'إدراج عنوان بند جديد (#)',
+        subtitle: 'يضيف سطر عنوان بند مرن (# عنوان) في الموضع الحالي',
+        insertValue: '# ',
+      },
+      {
+        id: 'slash_tag',
+        kind: 'slash',
+        slashAction: 'tag',
+        label: 'إدراج وسم متغير ذكي [...]',
+        subtitle: 'يفتح قائمة المتغيرات لإدراج وسم ذكي مرتبط بالعقد',
+        insertValue: '[',
+      },
+      {
+        id: 'slash_table',
+        kind: 'slash',
+        slashAction: 'table',
+        label: 'إدراج جدول توثيقي (3 × 4)',
+        subtitle: 'جدول رسمي بعرض المساحة النصية الصافية (12 سم)',
+        insertValue: '',
+      },
+      {
+        id: 'slash_party',
+        kind: 'slash',
+        slashAction: 'party',
+        label: 'فتح بطاقات الأطراف والمتغيرات',
+        subtitle: 'استدعاء بيانات طرف من الدليل أو تعبئة الحقول',
+        insertValue: '',
+      },
+      {
+        id: 'slash_page_break',
+        kind: 'slash',
+        slashAction: 'page-break',
+        label: 'إدراج فاصل صفحات',
+        subtitle: 'بدء صفحة جديدة عند الطباعة وتصدير الوورد',
+        insertValue: '',
+      },
+    ];
+    return slashItems.filter(
+      (item) =>
+        !q ||
+        item.label.includes(q) ||
+        (item.subtitle && item.subtitle.includes(q))
+    );
+  }, [extractedPlaceholders, fieldValues, quickAssistTrigger]);
+
+  const handleSelectQuickAssistOption = useCallback(
+    (opt: QuickAssistOption) => {
+      if (!quickAssistTrigger || !bodyEditorRef.current || !ensureBodyEditable()) {
+        setQuickAssistTrigger(null);
+        return;
+      }
+
+      const { textNode, triggerOffset, caretOffset } = quickAssistTrigger;
+      recordHistorySnapshot();
+
+      try {
+        const range = document.createRange();
+        range.setStart(textNode, triggerOffset);
+        range.setEnd(textNode, caretOffset);
+        range.deleteContents();
+
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+
+        if (opt.kind === 'tag') {
+          const span = document.createElement('span');
+          span.className = 'smart-tag';
+          span.setAttribute('data-var', opt.insertValue);
+          span.textContent = `[${opt.insertValue}]`;
+          const space = document.createTextNode('\u00A0');
+          range.insertNode(space);
+          range.insertNode(span);
+          const afterRange = document.createRange();
+          afterRange.setStartAfter(space);
+          afterRange.collapse(true);
+          sel?.removeAllRanges();
+          sel?.addRange(afterRange);
+          setQuickAssistTrigger(null);
+          flushSyncPlaceholdersAndDraft();
+          return;
+        }
+
+        if (opt.kind === 'clause') {
+          const block = textNode.parentElement?.closest(
+            'p, div, li'
+          ) as HTMLElement | null;
+          const boldSpan = document.createElement('span');
+          boldSpan.style.fontWeight = 'bold';
+          boldSpan.textContent = opt.insertValue;
+          range.insertNode(boldSpan);
+          if (block) {
+            block.style.fontWeight = 'bold';
+          }
+          const afterRange = document.createRange();
+          afterRange.setStartAfter(boldSpan);
+          afterRange.collapse(true);
+          sel?.removeAllRanges();
+          sel?.addRange(afterRange);
+          setQuickAssistTrigger(null);
+          flushSyncPlaceholdersAndDraft();
+          return;
+        }
+
+        if (opt.kind === 'slash') {
+          setQuickAssistTrigger(null);
+          if (opt.slashAction === 'clause') {
+            const hashNode = document.createTextNode('# ');
+            range.insertNode(hashNode);
+            const afterRange = document.createRange();
+            afterRange.setStartAfter(hashNode);
+            afterRange.collapse(true);
+            sel?.removeAllRanges();
+            sel?.addRange(afterRange);
+            setTimeout(() => refreshInlineQuickAssistTrigger(), 10);
+          } else if (opt.slashAction === 'tag') {
+            const bracketNode = document.createTextNode('[');
+            range.insertNode(bracketNode);
+            const afterRange = document.createRange();
+            afterRange.setStartAfter(bracketNode);
+            afterRange.collapse(true);
+            sel?.removeAllRanges();
+            sel?.addRange(afterRange);
+            setTimeout(() => refreshInlineQuickAssistTrigger(), 10);
+          } else if (opt.slashAction === 'table') {
+            savedRangeRef.current = range.cloneRange();
+            handleInsertTable(3, 4);
+          } else if (opt.slashAction === 'party') {
+            setSidebarTab('parties');
+            setIsSidebarOpen(true);
+          } else if (opt.slashAction === 'page-break') {
+            savedRangeRef.current = range.cloneRange();
+            handleInsertPageBreak();
+          }
+          flushSyncPlaceholdersAndDraft();
+        }
+      } catch {
+        setQuickAssistTrigger(null);
+      }
+    },
+    [
+      bodyEditorRef,
+      ensureBodyEditable,
+      flushSyncPlaceholdersAndDraft,
+      handleInsertPageBreak,
+      handleInsertTable,
+      quickAssistTrigger,
+      recordHistorySnapshot,
+      refreshInlineQuickAssistTrigger,
+      savedRangeRef,
+    ]
+  );
+
+  const handleEditorBeforeInput = useCallback(
+    (e: React.FormEvent<HTMLDivElement>) => {
+      if (isBodyLocked) {
+        e.preventDefault();
+        return;
+      }
+      const nativeEvent = e.nativeEvent as InputEvent;
+      const inputType = nativeEvent.inputType || '';
+
+      if (inputType === 'formatBold') {
+        e.preventDefault();
+        applyInlineCommand('bold');
+        return;
+      }
+      if (inputType === 'formatItalic') {
+        e.preventDefault();
+        applyInlineCommand('italic');
+        return;
+      }
+      if (inputType === 'formatUnderline') {
+        e.preventDefault();
+        applyInlineCommand('underline');
+        return;
+      }
+
+      if (
+        inputType.startsWith('insertText') ||
+        inputType.startsWith('deleteContent') ||
+        inputType === 'insertParagraph'
+      ) {
+        recordTypingHistorySnapshot();
+      }
+    },
+    [applyInlineCommand, isBodyLocked, recordTypingHistorySnapshot]
+  );
+
   // Keyboard shortcuts inside Editor
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // 1. If Quick Assist Popover ([ # /) is open, handle navigation keys
+    if (quickAssistTrigger && quickAssistOptions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setQuickAssistSelectedIdx(
+          (prev) => (prev + 1) % quickAssistOptions.length
+        );
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setQuickAssistSelectedIdx(
+          (prev) =>
+            (prev - 1 + quickAssistOptions.length) % quickAssistOptions.length
+        );
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const chosen =
+          quickAssistOptions[quickAssistSelectedIdx] || quickAssistOptions[0];
+        if (chosen) {
+          handleSelectQuickAssistOption(chosen);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setQuickAssistTrigger(null);
+        return;
+      }
+    }
+
+    // 2. Undo / Redo / Find / Smart-Tag shortcuts
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
+      clearAtomicSelectedTag();
       handleUndo();
       return;
     }
@@ -836,7 +1278,23 @@ export default function NotaryEditorApp() {
       ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')
     ) {
       e.preventDefault();
+      clearAtomicSelectedTag();
       handleRedo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      applyInlineCommand('bold');
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'i') {
+      e.preventDefault();
+      applyInlineCommand('italic');
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'u') {
+      e.preventDefault();
+      applyInlineCommand('underline');
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
@@ -851,6 +1309,68 @@ export default function NotaryEditorApp() {
       e.preventDefault();
       handleConvertSelectionToSmartTag();
       return;
+    }
+
+    // 3. Atomic Smart Tag Navigation & 2-Step Deletion (Backspace / Delete / ArrowLeft / ArrowRight)
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (isBodyLocked) return;
+      if (
+        selectedAtomicTagRef.current &&
+        document.body.contains(selectedAtomicTagRef.current)
+      ) {
+        e.preventDefault();
+        recordHistorySnapshot();
+        const tagToRemove = selectedAtomicTagRef.current;
+        selectedAtomicTagRef.current = null;
+        const parent = tagToRemove.parentNode;
+        const nextSibling = tagToRemove.nextSibling;
+        tagToRemove.remove();
+        if (parent) {
+          const sel = window.getSelection();
+          const newRange = document.createRange();
+          if (nextSibling) {
+            newRange.setStartBefore(nextSibling);
+          } else {
+            newRange.selectNodeContents(parent);
+            newRange.collapse(false);
+          }
+          sel?.removeAllRanges();
+          sel?.addRange(newRange);
+        }
+        flushSyncPlaceholdersAndDraft();
+        return;
+      }
+
+      const direction = e.key === 'Backspace' ? 'backward' : 'forward';
+      const adjacentTag = findAdjacentSmartTagElement(direction);
+      if (adjacentTag) {
+        e.preventDefault();
+        clearAtomicSelectedTag();
+        adjacentTag.classList.add('smart-tag-selected-atomic');
+        selectedAtomicTagRef.current = adjacentTag;
+        moveCaretOutsideSmartTag(
+          adjacentTag,
+          direction === 'backward' ? 'after' : 'before'
+        );
+        return;
+      }
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      clearAtomicSelectedTag();
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // In RTL text, ArrowLeft moves forward (in reading order) and ArrowRight moves backward
+        const direction = e.key === 'ArrowLeft' ? 'forward' : 'backward';
+        const adjacentTag = findAdjacentSmartTagElement(direction);
+        if (adjacentTag) {
+          e.preventDefault();
+          moveCaretOutsideSmartTag(
+            adjacentTag,
+            direction === 'forward' ? 'after' : 'before'
+          );
+          return;
+        }
+      }
+    } else {
+      clearAtomicSelectedTag();
     }
 
     if (e.key === 'Tab') {
@@ -899,8 +1419,14 @@ export default function NotaryEditorApp() {
       }
 
       recordHistorySnapshot();
-      document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
-      syncPlaceholdersAndDraft();
+      if (bodyEditorRef.current) {
+        insertHtmlAtSelection(
+          bodyEditorRef.current,
+          '&nbsp;&nbsp;&nbsp;&nbsp;',
+          savedRangeRef.current
+        );
+      }
+      flushSyncPlaceholdersAndDraft();
     }
   };
 
@@ -1879,6 +2405,8 @@ export default function NotaryEditorApp() {
         onToggleFindReplace={() => setShowFindReplace((v) => !v)}
         onChangeZoom={setZoom}
         onSaveSelectionBookmark={saveSelectionBookmark}
+        smartAssistPrefs={smartAssistPrefs}
+        onChangeSmartAssistPrefs={handleUpdateSmartAssistPrefs}
       />
 
       <EditorModeAndSealBanners
@@ -2152,11 +2680,13 @@ export default function NotaryEditorApp() {
           headerEditorRef={headerEditorRef}
           bodyEditorRef={bodyEditorRef}
           footerEditorRef={footerEditorRef}
-          onSyncPlaceholdersAndDraft={() => syncPlaceholdersAndDraft()}
+          onSyncPlaceholdersAndDraft={scheduleSyncPlaceholdersAndDraft}
+          onFlushSyncPlaceholdersAndDraft={flushSyncPlaceholdersAndDraft}
           onDecorateEditorZonesPreservingSelection={
             decorateEditorZonesPreservingSelection
           }
           onTogglePreviewMergedMode={() => {
+            flushSyncPlaceholdersAndDraft();
             const next = !previewMergedMode;
             if (next) {
               const currentHtml =
@@ -2175,12 +2705,49 @@ export default function NotaryEditorApp() {
               setPreviewMergedMode(false);
             }
           }}
+          onEditorBeforeInput={handleEditorBeforeInput}
           onEditorKeyDown={handleEditorKeyDown}
           onEditorPaste={handleEditorPaste}
-          onEditorMouseDown={handleEditorMouseDown}
+          onEditorMouseDown={(e) => {
+            clearAtomicSelectedTag();
+            setQuickAssistTrigger(null);
+            handleEditorMouseDown(e);
+          }}
           onEditorClick={handleEditorClick}
           onEditorDoubleClick={handleEditorDoubleClick}
         />
+
+        {quickAssistTrigger && (
+          <EditorQuickAssistPopover
+            open={Boolean(quickAssistTrigger)}
+            triggerType={quickAssistTrigger.type}
+            query={quickAssistTrigger.query}
+            position={quickAssistTrigger.rect}
+            options={quickAssistOptions}
+            selectedIndex={quickAssistSelectedIdx}
+            onSelectOption={handleSelectQuickAssistOption}
+            onClose={() => setQuickAssistTrigger(null)}
+            onDisableAssistType={(type) => {
+              if (type === 'slash') {
+                handleUpdateSmartAssistPrefs({
+                  ...smartAssistPrefs,
+                  enableSlashCommands: false,
+                });
+                showToast(
+                  'تم إيقاف قائمة الأوامر السريعة (/) — يمكنك إعادة تفعيلها من زر «المساعد الذكي»'
+                );
+              } else {
+                handleUpdateSmartAssistPrefs({
+                  ...smartAssistPrefs,
+                  enableInlineAutocomplete: false,
+                });
+                showToast(
+                  'تم إيقاف الإكمال التلقائي للوسوم والبنود — يمكنك إعادة تفعيله من زر «المساعد الذكي»'
+                );
+              }
+            }}
+          />
+        )}
       </div>
 
       <EditorBottomStatusBar

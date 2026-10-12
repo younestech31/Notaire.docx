@@ -158,6 +158,15 @@
   color: #064e3b !important;
 }
 
+.notary-editor-zone .smart-tag.smart-tag-selected-atomic,
+.notary-editor-zone .smart-placeholder.smart-tag-selected-atomic {
+  background-color: #0f2744 !important;
+  color: #ffffff !important;
+  border-color: #0f2744 !important;
+  border-bottom-color: #c4a46a !important;
+  box-shadow: 0 0 0 2px rgba(15, 39, 68, 0.28);
+}
+
 /* Visual-only Clause Container inside A4 Sheet during editing */
 .notary-editor-zone .clause-container {
   position: relative;

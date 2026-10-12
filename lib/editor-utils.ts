@@ -1,5 +1,6 @@
 import {
   ClauseVariableGroup,
+  ListNumberingStyle,
   SerializedSelectionPath,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
@@ -385,20 +386,81 @@ export function normalizeNotaryContainerDOM(
 
 /**
  * Sanitizes HTML pasted from Microsoft Word or external sources while preserving
- * bold, italic, underline, colors, tables (rowSpan/colSpan/borders), and lists,
+ * bold, italic, underline, colors, tables (rowSpan/colSpan/borders), and numbered/bulleted lists,
+ * converting [tags] into smart-tags and # lines into clause headings,
  * and strictly enforcing Arial 13pt and 1.0 line spacing with 0 paragraph margins.
  */
 export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): string {
   if (!rawHtml || rawHtml.trim() === '') {
-    return fallbackText
-      .split(/\r?\n/)
-      .map(
-        (line) =>
-          `<p dir="rtl" style="margin:0;line-height:1;font-family:Arial;font-size:13pt;text-align:justify;">${
-            line.trim() ? escapeHtml(line) : '<br>'
-          }</p>`
-      )
-      .join('');
+    const lines = fallbackText.split(/\r?\n/);
+    const htmlChunks: string[] = [];
+    let activeListType: 'ol' | 'ul' | null = null;
+    let activeDataListType: ListNumberingStyle = 'decimal';
+
+    const closeActiveList = () => {
+      if (activeListType) {
+        htmlChunks.push(`</${activeListType}>`);
+        activeListType = null;
+      }
+    };
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      const orderedMatch = /^(\d+|[أبجدهوزحطيكلمنسعفصقرشتثخذضظغ])[\.\-\)]\s+(.+)$/.exec(trimmed);
+      const bulletMatch = /^([•\*\-–—])\s+(.+)$/.exec(trimmed);
+
+      if (orderedMatch) {
+        const marker = orderedMatch[1];
+        const itemText = orderedMatch[2];
+        const desiredStyle: ListNumberingStyle = /^\d+$/.test(marker)
+          ? 'decimal'
+          : 'arabic-alpha';
+        if (activeListType !== 'ol' || activeDataListType !== desiredStyle) {
+          closeActiveList();
+          activeListType = 'ol';
+          activeDataListType = desiredStyle;
+          htmlChunks.push(
+            `<ol dir="rtl" data-list-type="${desiredStyle}" style="margin:0;padding-right:22px;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;">`
+          );
+        }
+        htmlChunks.push(
+          `<li dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;">${escapeHtml(
+            itemText
+          )}</li>`
+        );
+      } else if (bulletMatch) {
+        const marker = bulletMatch[1];
+        const itemText = bulletMatch[2];
+        const desiredStyle: ListNumberingStyle = marker === '-' || marker === '–' ? 'dash' : 'bullet';
+        if (activeListType !== 'ul' || activeDataListType !== desiredStyle) {
+          closeActiveList();
+          activeListType = 'ul';
+          activeDataListType = desiredStyle;
+          htmlChunks.push(
+            `<ul dir="rtl" data-list-type="${desiredStyle}" style="margin:0;padding-right:22px;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;">`
+          );
+        }
+        htmlChunks.push(
+          `<li dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;">${escapeHtml(
+            itemText
+          )}</li>`
+        );
+      } else {
+        closeActiveList();
+        const isHashHeading = trimmed.startsWith('#');
+        htmlChunks.push(
+          `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;${
+            isHashHeading ? 'font-weight:bold;' : ''
+          }">${trimmed ? escapeHtml(rawLine) : '<br>'}</p>`
+        );
+      }
+    }
+    closeActiveList();
+
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = htmlChunks.join('');
+    decorateSmartTagsInDOM(tempContainer);
+    return tempContainer.innerHTML;
   }
 
   const cleaned = rawHtml
@@ -415,6 +477,63 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
   const parser = new DOMParser();
   const doc = parser.parseFromString(cleaned, 'text/html');
 
+  // Step 1: Convert Word MsoListParagraph ormso-list paragraphs into proper <ol> / <ul> lists
+  const topBlocks = Array.from(doc.body.children) as HTMLElement[];
+  let currentListEl: HTMLOListElement | HTMLUListElement | null = null;
+  let currentListKind: 'ol' | 'ul' | null = null;
+
+  for (const block of topBlocks) {
+    const tag = block.tagName.toUpperCase();
+    const classAttr = block.getAttribute('class') || '';
+    const styleAttr = block.getAttribute('style') || '';
+    const rawText = (block.textContent || '').replace(/\u00A0/g, ' ').trim();
+
+    const isWordListPara =
+      /MsoListParagraph/i.test(classAttr) || /mso-list/i.test(styleAttr);
+    const orderedPrefixMatch = /^(\d+|[أبجدهوزحطيكلمنسعفصقرشتثخذضظغ])[\.\-\)]\s+/.exec(
+      rawText
+    );
+    const bulletPrefixMatch = /^([•·▪◦\*\-–—])\s+/.exec(rawText);
+
+    if (
+      (tag === 'P' || tag === 'DIV') &&
+      (isWordListPara || orderedPrefixMatch || bulletPrefixMatch)
+    ) {
+      const isBullet = Boolean(bulletPrefixMatch && !orderedPrefixMatch);
+      const targetKind: 'ol' | 'ul' = isBullet ? 'ul' : 'ol';
+
+      // Strip the hardcoded Word list marker span or leading text marker
+      const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+      const firstText = walker.nextNode() as Text | null;
+      if (firstText && firstText.nodeValue) {
+        firstText.nodeValue = firstText.nodeValue
+          .replace(/^[\s\u00A0]*(\d+|[أبجدهوزحطيكلمنسعفصقرشتثخذضظغ])[\.\-\)][\s\u00A0]+/, '')
+          .replace(/^[\s\u00A0]*[•·▪◦\*\-–—][\s\u00A0]+/, '');
+      }
+
+      if (!currentListEl || currentListKind !== targetKind) {
+        currentListEl = doc.createElement(targetKind);
+        currentListKind = targetKind;
+        currentListEl.setAttribute('dir', 'rtl');
+        currentListEl.setAttribute(
+          'data-list-type',
+          targetKind === 'ul' ? 'bullet' : 'decimal'
+        );
+        block.parentNode?.insertBefore(currentListEl, block);
+      }
+
+      const li = doc.createElement('li');
+      li.setAttribute('dir', 'rtl');
+      li.innerHTML = block.innerHTML;
+      currentListEl.appendChild(li);
+      block.remove();
+    } else {
+      currentListEl = null;
+      currentListKind = null;
+    }
+  }
+
+  // Step 2: Sanitize all elements while preserving bold, underline, italic, lists, and tables
   const allNodes = Array.from(doc.body.querySelectorAll('*')) as HTMLElement[];
   for (const el of allNodes) {
     const tag = el.tagName.toUpperCase();
@@ -426,11 +545,13 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
     const computedAlign = el.style?.textAlign || el.getAttribute('align') || '';
     const fontWeight = el.style?.fontWeight || '';
     const fontStyle = el.style?.fontStyle || '';
-    const textDecoration = el.style?.textDecoration || '';
+    const textDecoration =
+      el.style?.textDecoration || el.style?.textDecorationLine || '';
     const color = el.style?.color || '';
     const bg = el.style?.backgroundColor || el.style?.background || '';
     const border = el.style?.border || '';
     const dir = el.getAttribute('dir') || el.style?.direction || 'rtl';
+    const dataListType = el.getAttribute('data-list-type');
 
     el.removeAttribute('class');
     el.removeAttribute('id');
@@ -438,6 +559,10 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
     el.removeAttribute('face');
     el.removeAttribute('size');
     el.removeAttribute('style');
+
+    if (dataListType) {
+      el.setAttribute('data-list-type', dataListType);
+    }
 
     el.style.fontFamily = STRICT_FONT_FAMILY;
     el.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
@@ -448,17 +573,34 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
       el.style.marginBottom = '0';
       el.setAttribute('dir', dir === 'ltr' ? 'ltr' : 'rtl');
       if (computedAlign) {
-        el.style.textAlign = computedAlign === 'justify' ? 'justify' : computedAlign;
+        el.style.textAlign =
+          computedAlign === 'justify' ? 'justify' : computedAlign;
+      } else {
+        el.style.textAlign = 'justify';
+      }
+      const plain = (el.textContent || '').trim();
+      if (plain.startsWith('#')) {
+        el.style.fontWeight = 'bold';
       }
     }
 
-    if (fontWeight === 'bold' || Number(fontWeight) >= 600) {
+    if (tag === 'OL' || tag === 'UL') {
+      el.setAttribute('dir', 'rtl');
+      if (!el.getAttribute('data-list-type')) {
+        el.setAttribute('data-list-type', tag === 'UL' ? 'bullet' : 'decimal');
+      }
+      el.style.marginTop = '0';
+      el.style.marginBottom = '0';
+      el.style.paddingRight = '22px';
+    }
+
+    if (tag === 'B' || tag === 'STRONG' || fontWeight === 'bold' || Number(fontWeight) >= 600) {
       el.style.fontWeight = 'bold';
     }
-    if (fontStyle === 'italic') {
+    if (tag === 'I' || tag === 'EM' || fontStyle === 'italic') {
       el.style.fontStyle = 'italic';
     }
-    if (textDecoration.includes('underline')) {
+    if (tag === 'U' || textDecoration.includes('underline')) {
       el.style.textDecoration = 'underline';
     }
     if (color && color !== 'windowtext' && color !== '#000000' && color !== 'rgb(0, 0, 0)') {
@@ -1088,3 +1230,506 @@ export function computeTextDiff(oldHtml: string, newHtml: string): DiffSegment[]
   }
   return merged;
 }
+
+/**
+ * Modern Range-based Inline Formatting Engine (replaces legacy document.execCommand where possible).
+ * Wraps or unwraps selected text in <strong>, <em>, <u>, or styled <span> while preserving selection.
+ */
+export function applyModernInlineFormattingToRange(
+  rootEl: HTMLElement,
+  command: 'bold' | 'italic' | 'underline' | 'foreColor' | 'hiliteColor',
+  value?: string
+): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  if (!rootEl.contains(range.commonAncestorContainer)) return false;
+
+  // If selection is collapsed, or spans across multiple block paragraphs,
+  // check if single block can be cleanly wrapped via Range; otherwise fallback safely.
+  if (range.collapsed) {
+    // Expand to current word at caret if user clicks Bold/Underline on a word without dragging
+    const node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE && node.nodeValue) {
+      const text = node.nodeValue;
+      const offset = range.startOffset;
+      let start = offset;
+      let end = offset;
+      while (start > 0 && !/\s/.test(text[start - 1])) start--;
+      while (end < text.length && !/\s/.test(text[end])) end++;
+      if (end > start) {
+        range.setStart(node, start);
+        range.setEnd(node, end);
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  const tagMap: Record<string, string> = {
+    bold: 'strong',
+    italic: 'em',
+    underline: 'u',
+  };
+
+  // Check if selection is already inside the target inline formatting element
+  let ancestor: HTMLElement | null =
+    range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? (range.commonAncestorContainer as HTMLElement)
+      : range.commonAncestorContainer.parentElement;
+
+  if (command === 'bold' || command === 'italic' || command === 'underline') {
+    const targetTag = tagMap[command].toUpperCase();
+    const altTag = command === 'bold' ? 'B' : command === 'italic' ? 'I' : 'U';
+
+    while (ancestor && ancestor !== rootEl) {
+      const t = ancestor.tagName.toUpperCase();
+      const hasInlineStyle =
+        (command === 'bold' &&
+          (ancestor.style.fontWeight === 'bold' ||
+            Number(ancestor.style.fontWeight) >= 600)) ||
+        (command === 'italic' && ancestor.style.fontStyle === 'italic') ||
+        (command === 'underline' &&
+          ancestor.style.textDecoration.includes('underline'));
+
+      if (t === targetTag || t === altTag || hasInlineStyle) {
+        // Unwrap formatting if the entire element is selected or contains the range
+        if (t === targetTag || t === altTag) {
+          const parent = ancestor.parentNode;
+          if (parent) {
+            const firstChild = ancestor.firstChild;
+            const lastChild = ancestor.lastChild;
+            while (ancestor.firstChild) {
+              parent.insertBefore(ancestor.firstChild, ancestor);
+            }
+            parent.removeChild(ancestor);
+            if (firstChild && lastChild) {
+              const newRange = document.createRange();
+              newRange.setStartBefore(firstChild);
+              newRange.setEndAfter(lastChild);
+              sel.removeAllRanges();
+              sel.addRange(newRange);
+            }
+            normalizeNotaryContainerDOM(rootEl);
+            return true;
+          }
+        } else if (hasInlineStyle) {
+          if (command === 'bold') ancestor.style.fontWeight = 'normal';
+          if (command === 'italic') ancestor.style.fontStyle = 'normal';
+          if (command === 'underline') ancestor.style.textDecoration = 'none';
+          return true;
+        }
+      }
+      ancestor = ancestor.parentElement;
+    }
+  }
+
+  // Ensure range doesn't split across block elements; if it stays within a block, wrap via extractContents
+  const blocks = getIntersectingBlockElements(rootEl, range);
+  if (blocks.length <= 1) {
+    try {
+      const wrapper = document.createElement(
+        command === 'bold'
+          ? 'strong'
+          : command === 'italic'
+          ? 'em'
+          : command === 'underline'
+          ? 'u'
+          : 'span'
+      );
+      if (command === 'foreColor' && value) {
+        wrapper.style.color = value;
+      } else if (command === 'hiliteColor' && value) {
+        wrapper.style.backgroundColor = value;
+      }
+      const contents = range.extractContents();
+      wrapper.appendChild(contents);
+      range.insertNode(wrapper);
+
+      const nextRange = document.createRange();
+      nextRange.selectNodeContents(wrapper);
+      sel.removeAllRanges();
+      sel.addRange(nextRange);
+      normalizeNotaryContainerDOM(rootEl);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Multi-block selection: apply formatting to each block's inline content cleanly
+  for (const block of blocks) {
+    if (command === 'bold') {
+      const isBold =
+        block.style.fontWeight === 'bold' || Number(block.style.fontWeight) >= 600;
+      block.style.fontWeight = isBold ? '' : 'bold';
+    } else if (command === 'italic') {
+      block.style.fontStyle = block.style.fontStyle === 'italic' ? '' : 'italic';
+    } else if (command === 'underline') {
+      block.style.textDecoration = block.style.textDecoration.includes('underline')
+        ? ''
+        : 'underline';
+    } else if (command === 'foreColor' && value) {
+      block.style.color = value;
+    } else if (command === 'hiliteColor' && value) {
+      block.style.backgroundColor = value === 'transparent' ? '' : value;
+    }
+  }
+  normalizeNotaryContainerDOM(rootEl);
+  return true;
+}
+
+/**
+ * Modern Range-based List Toggle (converts intersecting paragraphs to <ol>/<ul> or unwraps them back to <p>).
+ */
+export function applyModernListToggleToRange(
+  rootEl: HTMLElement,
+  style: ListNumberingStyle
+): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  if (!rootEl.contains(range.commonAncestorContainer)) return false;
+
+  const isOrdered =
+    style === 'decimal' ||
+    style === 'arabic-alpha' ||
+    style === 'arabic-abjad';
+  const targetListTag = isOrdered ? 'ol' : 'ul';
+
+  // Check if selection is already inside an <ol> or <ul>
+  let currentEl: HTMLElement | null =
+    range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? (range.commonAncestorContainer as HTMLElement)
+      : range.commonAncestorContainer.parentElement;
+
+  let existingList: HTMLElement | null = null;
+  while (currentEl && currentEl !== rootEl) {
+    if (currentEl.tagName === 'OL' || currentEl.tagName === 'UL') {
+      existingList = currentEl;
+      break;
+    }
+    currentEl = currentEl.parentElement;
+  }
+
+  if (existingList) {
+    const currentStyle = existingList.getAttribute('data-list-type');
+    const currentTag = existingList.tagName.toLowerCase();
+
+    // If same list style is clicked again, unwrap the list back into standard notarial <p> paragraphs
+    if (currentStyle === style && currentTag === targetListTag) {
+      const parent = existingList.parentNode;
+      if (!parent) return false;
+      const items = Array.from(existingList.querySelectorAll(':scope > li'));
+      let lastP: HTMLElement | null = null;
+      for (const li of items) {
+        const p = document.createElement('p');
+        p.setAttribute('dir', li.getAttribute('dir') || 'rtl');
+        p.style.margin = '0';
+        p.style.lineHeight = '1';
+        p.style.fontFamily = STRICT_FONT_FAMILY;
+        p.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+        p.style.textAlign = 'justify';
+        p.innerHTML = li.innerHTML || '<br>';
+        parent.insertBefore(p, existingList);
+        lastP = p;
+      }
+      parent.removeChild(existingList);
+      if (lastP) {
+        const newRange = document.createRange();
+        newRange.selectNodeContents(lastP);
+        newRange.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+      normalizeNotaryContainerDOM(rootEl);
+      return true;
+    }
+
+    // Otherwise switch list type/tag in-place
+    if (currentTag !== targetListTag) {
+      const replacementList = document.createElement(targetListTag);
+      replacementList.setAttribute('dir', 'rtl');
+      replacementList.setAttribute('data-list-type', style);
+      replacementList.style.margin = '0';
+      replacementList.style.paddingRight = '22px';
+      replacementList.style.lineHeight = '1';
+      replacementList.style.fontFamily = STRICT_FONT_FAMILY;
+      replacementList.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+      while (existingList.firstChild) {
+        replacementList.appendChild(existingList.firstChild);
+      }
+      existingList.parentNode?.replaceChild(replacementList, existingList);
+    } else {
+      existingList.setAttribute('data-list-type', style);
+      existingList.setAttribute('dir', 'rtl');
+    }
+    normalizeNotaryContainerDOM(rootEl);
+    return true;
+  }
+
+  // Convert intersecting block paragraphs into a new <ol> or <ul>
+  const blocks = getIntersectingBlockElements(rootEl, range).filter(
+    (b) => b.tagName === 'P' || b.tagName === 'DIV'
+  );
+  if (blocks.length === 0) return false;
+
+  const firstBlock = blocks[0];
+  const parent = firstBlock.parentNode;
+  if (!parent) return false;
+
+  const listEl = document.createElement(targetListTag);
+  listEl.setAttribute('dir', 'rtl');
+  listEl.setAttribute('data-list-type', style);
+  listEl.style.margin = '0';
+  listEl.style.paddingRight = '22px';
+  listEl.style.lineHeight = '1';
+  listEl.style.fontFamily = STRICT_FONT_FAMILY;
+  listEl.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+
+  parent.insertBefore(listEl, firstBlock);
+
+  let lastLi: HTMLElement | null = null;
+  for (const b of blocks) {
+    const li = document.createElement('li');
+    li.setAttribute('dir', b.getAttribute('dir') || 'rtl');
+    li.style.margin = '0';
+    li.style.lineHeight = '1';
+    li.style.fontFamily = STRICT_FONT_FAMILY;
+    li.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
+    li.style.textAlign = 'justify';
+    li.innerHTML = b.innerHTML || '<br>';
+    listEl.appendChild(li);
+    b.remove();
+    lastLi = li;
+  }
+
+  if (lastLi) {
+    const newRange = document.createRange();
+    newRange.selectNodeContents(lastLi);
+    newRange.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+
+  normalizeNotaryContainerDOM(rootEl);
+  return true;
+}
+
+/**
+ * Atomic Smart Tag Navigation & Deletion Helper:
+ * Detects if the collapsed caret is immediately adjacent to or inside a `.smart-tag` element.
+ */
+export function findAdjacentSmartTagElement(
+  direction: 'backward' | 'forward'
+): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  const offset = range.startOffset;
+
+  // Case 1: Caret is inside a .smart-tag
+  const parentEl =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as HTMLElement)
+      : node.parentElement;
+  const insideTag = parentEl?.closest?.(
+    '.smart-tag, .smart-placeholder'
+  ) as HTMLElement | null;
+  if (insideTag) {
+    return insideTag;
+  }
+
+  const isSmartTagNode = (n: Node | null): HTMLElement | null => {
+    if (!n || n.nodeType !== Node.ELEMENT_NODE) return null;
+    const el = n as HTMLElement;
+    if (
+      el.classList.contains('smart-tag') ||
+      el.classList.contains('smart-placeholder')
+    ) {
+      return el;
+    }
+    return null;
+  };
+
+  // Case 2: Caret is in a Text node at the very start (backward) or very end (forward)
+  if (node.nodeType === Node.TEXT_NODE) {
+    const textLen = (node.nodeValue || '').length;
+    if (direction === 'backward' && offset === 0) {
+      let prev = node.previousSibling;
+      while (
+        prev &&
+        prev.nodeType === Node.TEXT_NODE &&
+        (prev.nodeValue || '') === ''
+      ) {
+        prev = prev.previousSibling;
+      }
+      return isSmartTagNode(prev);
+    }
+    if (direction === 'forward' && offset === textLen) {
+      let next = node.nextSibling;
+      while (
+        next &&
+        next.nodeType === Node.TEXT_NODE &&
+        (next.nodeValue || '') === ''
+      ) {
+        next = next.nextSibling;
+      }
+      return isSmartTagNode(next);
+    }
+  }
+
+  // Case 3: Caret is in an Element container between child nodes
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const children = node.childNodes;
+    if (direction === 'backward' && offset > 0) {
+      return isSmartTagNode(children[offset - 1]);
+    }
+    if (direction === 'forward' && offset < children.length) {
+      return isSmartTagNode(children[offset]);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Moves the caret cleanly before or after an atomic `.smart-tag` element so the user skips over it as a single unit.
+ */
+export function moveCaretOutsideSmartTag(
+  tagEl: HTMLElement,
+  position: 'before' | 'after'
+): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  if (position === 'before') {
+    range.setStartBefore(tagEl);
+  } else {
+    range.setStartAfter(tagEl);
+  }
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/**
+ * Detects inline autocomplete or quick-command triggers at the current caret position:
+ * - `[` followed by 0–35 chars (without closing `]`) -> tag autocomplete
+ * - `#` at the start of a line -> clause heading autocomplete
+ * - `/` at the start of a line -> quick command menu
+ */
+export interface CaretInlineTrigger {
+  type: 'tag' | 'clause' | 'slash';
+  query: string;
+  rect: { top: number; left: number; bottom: number };
+  textNode: Text;
+  triggerOffset: number;
+  caretOffset: number;
+}
+
+export function detectCaretInlineTrigger(
+  rootEl: HTMLElement
+): CaretInlineTrigger | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!rootEl.contains(range.commonAncestorContainer)) return null;
+
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return null;
+  const textNode = node as Text;
+  const parentEl = textNode.parentElement;
+  if (!parentEl || parentEl.closest('.smart-tag, .smart-placeholder')) {
+    return null;
+  }
+
+  const textBeforeCaret = (textNode.nodeValue || '').slice(0, range.startOffset);
+  if (!textBeforeCaret) return null;
+
+  // Check if this text node is at the beginning of its block paragraph
+  const blockEl = parentEl.closest('p, div, li, h1, h2, h3, h4') as HTMLElement | null;
+  let fullBlockPrefix = textBeforeCaret;
+  if (blockEl) {
+    try {
+      const preRange = document.createRange();
+      preRange.selectNodeContents(blockEl);
+      preRange.setEnd(textNode, range.startOffset);
+      fullBlockPrefix = preRange.toString();
+    } catch {
+      fullBlockPrefix = textBeforeCaret;
+    }
+  }
+
+  const measureRect = (triggerIndexInNode: number) => {
+    try {
+      const measureRange = document.createRange();
+      measureRange.setStart(textNode, triggerIndexInNode);
+      measureRange.setEnd(textNode, range.startOffset);
+      const r = measureRange.getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) {
+        return { top: r.top, left: r.left, bottom: r.bottom };
+      }
+    } catch {
+      // Fallback
+    }
+    const fallbackRect = parentEl.getBoundingClientRect();
+    return {
+      top: fallbackRect.top,
+      left: fallbackRect.left,
+      bottom: fallbackRect.bottom,
+    };
+  };
+
+  // 1. Check `[` tag trigger anywhere in the line (not closed by `]`)
+  const bracketMatch = /\[([^\[\]\s]{0,35})$/.exec(textBeforeCaret);
+  if (bracketMatch) {
+    const triggerOffset = range.startOffset - bracketMatch[0].length;
+    return {
+      type: 'tag',
+      query: bracketMatch[1] || '',
+      rect: measureRect(triggerOffset),
+      textNode,
+      triggerOffset,
+      caretOffset: range.startOffset,
+    };
+  }
+
+  // 2. Check `#` clause heading trigger at start of line
+  const hashMatch = /^\s*#([^\r\n#]{0,30})$/.exec(fullBlockPrefix);
+  if (hashMatch && textBeforeCaret.includes('#')) {
+    const localHashIdx = textBeforeCaret.lastIndexOf('#');
+    if (localHashIdx !== -1) {
+      return {
+        type: 'clause',
+        query: hashMatch[1].trim(),
+        rect: measureRect(localHashIdx),
+        textNode,
+        triggerOffset: localHashIdx,
+        caretOffset: range.startOffset,
+      };
+    }
+  }
+
+  // 3. Check `/` slash command trigger at start of line
+  const slashMatch = /^\s*\/([^\r\n/\s]{0,20})$/.exec(fullBlockPrefix);
+  if (slashMatch && textBeforeCaret.includes('/')) {
+    const localSlashIdx = textBeforeCaret.lastIndexOf('/');
+    if (localSlashIdx !== -1) {
+      return {
+        type: 'slash',
+        query: slashMatch[1].trim(),
+        rect: measureRect(localSlashIdx),
+        textNode,
+        triggerOffset: localSlashIdx,
+        caretOffset: range.startOffset,
+      };
+    }
+  }
+
+  return null;
+}
+

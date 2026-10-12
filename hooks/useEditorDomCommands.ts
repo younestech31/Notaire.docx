@@ -11,6 +11,8 @@ import {
 } from '@/lib/types';
 import { loadDocumentRevisions, saveDocumentRevision } from '@/lib/storage';
 import {
+  applyModernInlineFormattingToRange,
+  applyModernListToggleToRange,
   escapeHtml,
   getIntersectingBlockElements,
   insertHtmlAtSelection,
@@ -69,6 +71,7 @@ export function useEditorDomCommands({
 
   const [undoStack, setUndoStack] = useState<HistorySnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<HistorySnapshot[]>([]);
+  const lastTypingSnapshotTimeRef = useRef<number>(0);
 
   const [toolbarState, setToolbarState] = useState<ToolbarState>({
     bold: false,
@@ -245,6 +248,7 @@ export function useEditorDomCommands({
 
   const recordHistorySnapshot = useCallback(
     (label?: string) => {
+      lastTypingSnapshotTimeRef.current = 0;
       const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
       const selection = serializeCurrentSelection({
         body: bodyEditorRef.current,
@@ -309,8 +313,45 @@ export function useEditorDomCommands({
     ]
   );
 
+  /**
+   * Coalesced Typing History Snapshot:
+   * Records a pre-typing snapshot only when starting a new typing burst (> 900ms since last keystroke),
+   * so Ctrl+Z undoes a logical sentence/phrase rather than every single letter.
+   */
+  const recordTypingHistorySnapshot = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSnapshotTimeRef.current < 900) {
+      lastTypingSnapshotTimeRef.current = now;
+      return;
+    }
+    lastTypingSnapshotTimeRef.current = now;
+    const { bodyHtml, headerHtml, footerHtml } = getEditorZonesHtml();
+    const selection = serializeCurrentSelection({
+      body: bodyEditorRef.current,
+      header: headerEditorRef.current,
+      footer: footerEditorRef.current,
+    });
+    setUndoStack((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].bodyHtml === bodyHtml) {
+        return prev;
+      }
+      return [
+        ...prev.slice(-49),
+        {
+          bodyHtml,
+          headerHtml,
+          footerHtml,
+          selection,
+          timestamp: now,
+        },
+      ];
+    });
+    setRedoStack([]);
+  }, [bodyEditorRef, footerEditorRef, getEditorZonesHtml, headerEditorRef]);
+
   const handleUndo = useCallback(() => {
     if (!ensureBodyEditable() || undoStack.length === 0) return;
+    lastTypingSnapshotTimeRef.current = 0;
     const currentSnapshot: HistorySnapshot = {
       ...getEditorZonesHtml(),
       selection: serializeCurrentSelection({
@@ -354,6 +395,7 @@ export function useEditorDomCommands({
 
   const handleRedo = useCallback(() => {
     if (!ensureBodyEditable() || redoStack.length === 0) return;
+    lastTypingSnapshotTimeRef.current = 0;
     const currentSnapshot: HistorySnapshot = {
       ...getEditorZonesHtml(),
       selection: serializeCurrentSelection({
@@ -400,7 +442,37 @@ export function useEditorDomCommands({
       if (!ensureBodyEditable()) return;
       restoreSelectionBookmarkIfNeeded();
       recordHistorySnapshot();
-      document.execCommand(command, false, value);
+
+      const sel = window.getSelection();
+      const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+      const activeZone =
+        range && headerEditorRef.current?.contains(range.commonAncestorContainer)
+          ? headerEditorRef.current
+          : range &&
+            footerEditorRef.current?.contains(range.commonAncestorContainer)
+          ? footerEditorRef.current
+          : bodyEditorRef.current;
+
+      let handledByRangeEngine = false;
+      if (
+        activeZone &&
+        (command === 'bold' ||
+          command === 'italic' ||
+          command === 'underline' ||
+          command === 'foreColor' ||
+          command === 'hiliteColor')
+      ) {
+        handledByRangeEngine = applyModernInlineFormattingToRange(
+          activeZone,
+          command,
+          value
+        );
+      }
+
+      if (!handledByRangeEngine) {
+        document.execCommand(command, false, value);
+      }
+
       if (bodyEditorRef.current)
         normalizeNotaryContainerDOM(bodyEditorRef.current);
       syncToolbarWithSelection();
@@ -409,6 +481,8 @@ export function useEditorDomCommands({
     [
       bodyEditorRef,
       ensureBodyEditable,
+      footerEditorRef,
+      headerEditorRef,
       recordHistorySnapshot,
       restoreSelectionBookmarkIfNeeded,
       syncPlaceholdersAndDraft,
@@ -529,29 +603,36 @@ export function useEditorDomCommands({
       if (!bodyEditorRef.current) return;
       recordHistorySnapshot();
 
-      const isOrdered =
-        style === 'decimal' ||
-        style === 'arabic-alpha' ||
-        style === 'arabic-abjad';
-      document.execCommand(
-        isOrdered ? 'insertOrderedList' : 'insertUnorderedList',
-        false
+      const handledByRangeEngine = applyModernListToggleToRange(
+        bodyEditorRef.current,
+        style
       );
 
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
-        while (node && node !== bodyEditorRef.current) {
-          if (
-            node.nodeType === Node.ELEMENT_NODE &&
-            ['OL', 'UL'].includes((node as HTMLElement).tagName)
-          ) {
-            const listEl = node as HTMLElement;
-            listEl.setAttribute('data-list-type', style);
-            listEl.setAttribute('dir', 'rtl');
-            break;
+      if (!handledByRangeEngine) {
+        const isOrdered =
+          style === 'decimal' ||
+          style === 'arabic-alpha' ||
+          style === 'arabic-abjad';
+        document.execCommand(
+          isOrdered ? 'insertOrderedList' : 'insertUnorderedList',
+          false
+        );
+
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+          while (node && node !== bodyEditorRef.current) {
+            if (
+              node.nodeType === Node.ELEMENT_NODE &&
+              ['OL', 'UL'].includes((node as HTMLElement).tagName)
+            ) {
+              const listEl = node as HTMLElement;
+              listEl.setAttribute('data-list-type', style);
+              listEl.setAttribute('dir', 'rtl');
+              break;
+            }
+            node = node.parentNode;
           }
-          node = node.parentNode;
         }
       }
 
@@ -716,6 +797,7 @@ export function useEditorDomCommands({
     restoreSelectionBookmarkIfNeeded,
     syncToolbarWithSelection,
     recordHistorySnapshot,
+    recordTypingHistorySnapshot,
     handleUndo,
     handleRedo,
     applyInlineCommand,

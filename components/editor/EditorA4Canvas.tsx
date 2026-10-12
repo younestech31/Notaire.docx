@@ -18,8 +18,10 @@ interface EditorA4CanvasProps {
   bodyEditorRef: React.RefObject<HTMLDivElement | null>;
   footerEditorRef: React.RefObject<HTMLDivElement | null>;
   onSyncPlaceholdersAndDraft: () => void;
+  onFlushSyncPlaceholdersAndDraft?: () => void;
   onDecorateEditorZonesPreservingSelection: () => void;
   onTogglePreviewMergedMode?: () => void;
+  onEditorBeforeInput?: (e: React.FormEvent<HTMLDivElement>) => void;
   onEditorKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onEditorPaste: (e: React.ClipboardEvent<HTMLDivElement>) => void;
   onEditorMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
@@ -40,14 +42,23 @@ export default function EditorA4Canvas({
   bodyEditorRef,
   footerEditorRef,
   onSyncPlaceholdersAndDraft,
+  onFlushSyncPlaceholdersAndDraft,
   onDecorateEditorZonesPreservingSelection,
   onTogglePreviewMergedMode,
+  onEditorBeforeInput,
   onEditorKeyDown,
   onEditorPaste,
   onEditorMouseDown,
   onEditorClick,
   onEditorDoubleClick,
 }: EditorA4CanvasProps) {
+  const handleZoneBlur = () => {
+    onDecorateEditorZonesPreservingSelection();
+    if (onFlushSyncPlaceholdersAndDraft) {
+      onFlushSyncPlaceholdersAndDraft();
+    }
+  };
+
   return (
     <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-[#F7F5F0]">
       {/* Top Horizontal A4 Margin Ruler Indicator (21cm total: 7cm Right | 12cm Content | 2cm Left) */}
@@ -158,13 +169,14 @@ export default function EditorA4Canvas({
                 contentEditable={!previewMergedMode && !isBodyLocked}
                 suppressContentEditableWarning
                 dir="rtl"
+                onBeforeInput={onEditorBeforeInput}
                 onInput={onSyncPlaceholdersAndDraft}
                 onKeyUp={(e) => {
                   if (e.key === ']' || e.key === '}') {
                     onDecorateEditorZonesPreservingSelection();
                   }
                 }}
-                onBlur={onDecorateEditorZonesPreservingSelection}
+                onBlur={handleZoneBlur}
                 onKeyDown={onEditorKeyDown}
                 onPaste={onEditorPaste}
                 onClick={onEditorClick}
@@ -189,13 +201,14 @@ export default function EditorA4Canvas({
                 contentEditable={!isBodyLocked}
                 suppressContentEditableWarning
                 dir="rtl"
+                onBeforeInput={onEditorBeforeInput}
                 onInput={onSyncPlaceholdersAndDraft}
                 onKeyUp={(e) => {
                   if (e.key === ']' || e.key === '}') {
                     onDecorateEditorZonesPreservingSelection();
                   }
                 }}
-                onBlur={onDecorateEditorZonesPreservingSelection}
+                onBlur={handleZoneBlur}
                 onKeyDown={onEditorKeyDown}
                 onPaste={onEditorPaste}
                 onMouseDown={onEditorMouseDown}
@@ -255,13 +268,14 @@ export default function EditorA4Canvas({
                 contentEditable={!previewMergedMode && !isBodyLocked}
                 suppressContentEditableWarning
                 dir="rtl"
+                onBeforeInput={onEditorBeforeInput}
                 onInput={onSyncPlaceholdersAndDraft}
                 onKeyUp={(e) => {
                   if (e.key === ']' || e.key === '}') {
                     onDecorateEditorZonesPreservingSelection();
                   }
                 }}
-                onBlur={onDecorateEditorZonesPreservingSelection}
+                onBlur={handleZoneBlur}
                 onKeyDown={onEditorKeyDown}
                 onPaste={onEditorPaste}
                 onClick={onEditorClick}

@@ -393,6 +393,11 @@ export interface ToolbarState {
   canSplitCell: boolean;
 }
 
+export interface EditorSmartAssistPreferences {
+  enableInlineAutocomplete: boolean;
+  enableSlashCommands: boolean;
+}
+
 export interface SavedPartyRecord {
   id: string;
   fullName: string; // الاسم واللقب
