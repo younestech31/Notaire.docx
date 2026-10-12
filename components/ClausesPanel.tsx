@@ -52,7 +52,7 @@ export interface ClausesPanelProps {
   onEditClauseInEditor: (clause: NotaryClause) => void;
   onDeleteClause: (id: string) => Promise<void>;
   fieldValues: Record<string, string>;
-  onOpenSmartVariablesModal: (focusKey?: string) => void;
+  onOpenSmartVariablesModal?: (focusKey?: string) => void;
   onSaveSelectionBookmark: () => void;
 }
 
@@ -586,7 +586,7 @@ export default function ClausesPanel({
                         <button
                           key={v}
                           type="button"
-                          onClick={() => onOpenSmartVariablesModal(v)}
+                          onClick={() => onOpenSmartVariablesModal?.(v)}
                           className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
                             fieldValues[v]?.trim()
                               ? 'bg-emerald-50 text-emerald-900 border-emerald-200'

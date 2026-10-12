@@ -9,13 +9,7 @@ import {
   Bold,
   ChevronDown,
   Columns,
-  Download,
-  Edit3,
-  FileOutput,
-  FormInput,
-  GitCompare,
   Highlighter,
-  History,
   Image as ImageIcon,
   IndentDecrease,
   IndentIncrease,
@@ -36,16 +30,45 @@ import {
   Trash2,
   Underline,
   Undo2,
-  Upload,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import {
-  DerivedDocTemplate,
   ListNumberingStyle,
-  PartyField,
   ToolbarState,
 } from '@/lib/types';
+
+const COMMON_NOTARIAL_TAGS: { key: string; label: string }[] = [
+  { key: 'رقم_الفهرس', label: 'رقم الفهرس الرسمي' },
+  { key: 'رقم_الإيداع', label: 'رقم ملف الإيداع' },
+  { key: 'تاريخ_العقد', label: 'تاريخ تحرير العقد' },
+  { key: 'البائع_1_الاسم', label: 'اسم ولقب البائع 1' },
+  { key: 'البائع_1_تاريخ_الميلاد', label: 'تاريخ ميلاد البائع 1' },
+  { key: 'البائع_1_مكان_الميلاد', label: 'مكان ميلاد البائع 1' },
+  { key: 'البائع_1_النسب', label: 'نسب البائع 1 (بن/بنت)' },
+  { key: 'البائع_1_الرقم_الوطني', label: 'الرقم الوطني NIN للبائع 1' },
+  { key: 'البائع_1_العنوان', label: 'عنوان إقامة البائع 1' },
+  { key: 'المشتري_1_الاسم', label: 'اسم ولقب المشتري 1' },
+  { key: 'المشتري_1_تاريخ_الميلاد', label: 'تاريخ ميلاد المشتري 1' },
+  { key: 'المشتري_1_مكان_الميلاد', label: 'مكان ميلاد المشتري 1' },
+  { key: 'المشتري_1_النسب', label: 'نسب المشتري 1 (بن/بنت)' },
+  { key: 'المشتري_1_الرقم_الوطني', label: 'الرقم الوطني NIN للمشتري 1' },
+  { key: 'المشتري_1_العنوان', label: 'عنوان إقامة المشتري 1' },
+  { key: 'رقم_الحصة', label: 'رقم الحصة العقارية' },
+  { key: 'طبيعة_الحصة', label: 'طبيعة الحصة' },
+  { key: 'الطابق', label: 'الطابق والعمارة' },
+  { key: 'المساحة', label: 'المساحة (م²)' },
+  { key: 'الأجزاء_المشتركة', label: 'الحصة في الأجزاء المشتركة' },
+  { key: 'تعيين_الحصة_الكامل', label: 'التعيين الكامل للحصة' },
+  { key: 'مراجع_الوصف_التقسيمي', label: 'مراجع الوصف التقسيمي' },
+  { key: 'الثمن_بالأحرف', label: 'الثمن الإجمالي بالأحرف' },
+  { key: 'الثمن_بالأرقام', label: 'الثمن الإجمالي بالأرقام' },
+  { key: 'طريقة_الدفع', label: 'طريقة الدفع والقبض' },
+  { key: 'مفتشية_التسجيل', label: 'مفتشية التسجيل والطابع' },
+  { key: 'مراجع_التسجيل', label: 'مراجع التسجيل' },
+  { key: 'المحافظة_العقارية', label: 'المحافظة العقارية' },
+  { key: 'مراجع_الشهر', label: 'مراجع الشهر العقاري' },
+];
 
 interface EditorRibbonProps {
   toolbarState: ToolbarState;
@@ -56,33 +79,13 @@ interface EditorRibbonProps {
   showHeaderFooter: boolean;
   pageNumberingEnabled: boolean;
   showFindReplace: boolean;
-  unfilledCount: number;
-  totalVariablesCount: number;
-  revisionsCount?: number;
-  partyFields: PartyField[];
+  unfilledCount?: number;
+  totalVariablesCount?: number;
   extractedPlaceholders: string[];
   fieldValues: Record<string, string>;
-  derivedTemplates: DerivedDocTemplate[];
-  activeEditingDerivedId?: string | null;
-  onOpenSmartVariablesModal: () => void;
   onConvertSelectionToSmartTag: () => void;
   onInsertSmartTagAtCaret: (varKey: string) => void;
   onInsertNewClauseHeadingAtCaret: () => void;
-  onOpenVersionDiffModal: () => void;
-  onOpenSnapshotsHistoryModal?: () => void;
-  onGenerateDerivedDoc: (tpl: DerivedDocTemplate) => void;
-  onEditDerivedTemplateInEditor: (tpl: DerivedDocTemplate) => void;
-  onSaveCurrentAsDerivedTemplate?: (
-    name: string,
-    code: string,
-    description: string
-  ) => Promise<void>;
-  onImportDocxForDerivedTemplate?: (
-    tpl: DerivedDocTemplate,
-    file: File
-  ) => Promise<void>;
-  onDeleteDerivedTemplate?: (id: string) => Promise<void>;
-  onOpenWordTemplatesModal?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onToggleBold: () => void;
@@ -142,26 +145,11 @@ export default function EditorRibbon({
   showHeaderFooter,
   pageNumberingEnabled,
   showFindReplace,
-  unfilledCount,
-  totalVariablesCount,
-  revisionsCount = 0,
-  partyFields,
   extractedPlaceholders,
   fieldValues,
-  derivedTemplates,
-  activeEditingDerivedId,
-  onOpenSmartVariablesModal,
   onConvertSelectionToSmartTag,
   onInsertSmartTagAtCaret,
   onInsertNewClauseHeadingAtCaret,
-  onOpenVersionDiffModal,
-  onOpenSnapshotsHistoryModal,
-  onGenerateDerivedDoc,
-  onEditDerivedTemplateInEditor,
-  onSaveCurrentAsDerivedTemplate,
-  onImportDocxForDerivedTemplate,
-  onDeleteDerivedTemplate,
-  onOpenWordTemplatesModal,
   onUndo,
   onRedo,
   onToggleBold,
@@ -188,10 +176,8 @@ export default function EditorRibbon({
   const [tableCols, setTableCols] = useState(4);
   const [showListMenu, setShowListMenu] = useState(false);
   const [showMoreFormattingMenu, setShowMoreFormattingMenu] = useState(false);
-  const [showNotaryDocsMenu, setShowNotaryDocsMenu] = useState(false);
   const [showTagInserterMenu, setShowTagInserterMenu] = useState(false);
   const [tagFilterQuery, setTagFilterQuery] = useState('');
-  const [newDerivedName, setNewDerivedName] = useState('');
 
   const preventFocusLoss = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -201,7 +187,6 @@ export default function EditorRibbon({
     setShowTablePicker(false);
     setShowListMenu(false);
     setShowMoreFormattingMenu(false);
-    setShowNotaryDocsMenu(false);
     setShowTagInserterMenu(false);
   };
 
@@ -214,11 +199,18 @@ export default function EditorRibbon({
         : 'text-slate-700 hover:bg-slate-200/80 hover:text-slate-900'
     }`;
 
+  const allTagKeys = Array.from(
+    new Set([
+      ...extractedPlaceholders,
+      ...COMMON_NOTARIAL_TAGS.map((t) => t.key),
+    ])
+  );
+
   return (
     <div className="bg-white border-b border-slate-200 select-none no-print">
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
         {/* ===================================================================
-            المجموعة 2: تنسيق (غامق/مائل/تسطير، محاذاة، قائمة، جدول، ترويسة + «المزيد»)
+            المجموعة 1: تنسيق المتن والفقرات والجداول
            =================================================================== */}
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] font-bold text-slate-400 px-1.5 py-0.5 bg-slate-100 rounded">
@@ -569,7 +561,19 @@ export default function EditorRibbon({
             <span>ترويسة</span>
           </button>
 
-          {/* «المزيد ▾» Dropdown: Page Break, Colors, Indent, Direction, Page Numbering, Search, Zoom */}
+          {/* Search & Replace Direct Button */}
+          <button
+            type="button"
+            onMouseDown={preventFocusLoss}
+            onClick={onToggleFindReplace}
+            className={btnClass(showFindReplace)}
+            title="بحث واستبدال داخل المتن"
+          >
+            <Search className="w-4 h-4 ml-1" />
+            <span>بحث</span>
+          </button>
+
+          {/* «المزيد ▾» Dropdown: Page Break, Colors, Indent, Direction, Page Numbering, Zoom */}
           <div className="relative">
             <button
               type="button"
@@ -582,8 +586,8 @@ export default function EditorRibbon({
                 closeAllMenus();
                 setShowMoreFormattingMenu(next);
               }}
-              className={btnClass(showMoreFormattingMenu || showFindReplace)}
-              title="المزيد من أدوات التنسيق (فاصل صفحة، ألوان، مسافة بادئة، بحث، تكبير)"
+              className={btnClass(showMoreFormattingMenu)}
+              title="المزيد من أدوات التنسيق (فاصل صفحة، ألوان، مسافة بادئة، تكبير)"
             >
               <MoreHorizontal className="w-4 h-4 ml-1" />
               <span>المزيد</span>
@@ -598,7 +602,7 @@ export default function EditorRibbon({
                   <span className="tabular-nums">هوامش 7/2/1/6 سم</span>
                 </div>
 
-                {/* Page Break, Page Numbering, Find & Replace */}
+                {/* Page Break, Page Numbering, Stamp */}
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
@@ -626,33 +630,16 @@ export default function EditorRibbon({
                         : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
                     }`}
                   >
-                    <span>رقم الصفحة</span>
+                    <span>ترقيم ../..</span>
                     <span>{pageNumberingEnabled ? '✓' : ''}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onMouseDown={preventFocusLoss}
-                    onClick={() => {
-                      onToggleFindReplace();
-                      setShowMoreFormattingMenu(false);
-                    }}
-                    className={`px-2 py-1.5 border rounded flex items-center gap-1.5 font-medium ${
-                      showFindReplace
-                        ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold'
-                        : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
-                    }`}
-                  >
-                    <Search className="w-3.5 h-3.5 text-amber-800" />
-                    <span>بحث واستبدال</span>
-                  </button>
-
                   <label
-                    className="px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded flex items-center gap-1.5 text-slate-800 font-medium cursor-pointer"
+                    className="col-span-2 px-2 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded flex items-center justify-center gap-1.5 text-slate-800 font-medium cursor-pointer"
                     onMouseDown={onSaveSelectionBookmark}
                   >
                     <ImageIcon className="w-3.5 h-3.5 text-blue-900" />
-                    <span>ختم / شعار</span>
+                    <span>إدراج ختم أو شعار في المتن</span>
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
@@ -807,39 +794,14 @@ export default function EditorRibbon({
         </div>
 
         {/* ===================================================================
-            المجموعة 3: توثيق (استمارة المتغيرات أولاً، تحويل لوسم، إدراج وسم، بند جديد + المشتقات والنسخ في قائمة منسدلة)
+            المجموعة 2: الوسوم التوثيقية وهيكل البنود
            =================================================================== */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[10px] font-bold text-pink-900 px-1.5 py-0.5 bg-pink-50 border border-pink-200/70 rounded">
-            توثيق
+            الوسوم والبنود
           </span>
 
-          {/* 1. SMART VARIABLES FORM BUTTON (FIRST & PROMINENT) */}
-          <button
-            type="button"
-            onMouseDown={preventFocusLoss}
-            onClick={onOpenSmartVariablesModal}
-            className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-xs font-bold border transition-colors whitespace-nowrap shrink-0 shadow-2xs ${
-              unfilledCount > 0
-                ? 'bg-amber-50 border-amber-400 text-amber-950 hover:bg-amber-100'
-                : 'bg-emerald-50 border-emerald-400 text-emerald-950 hover:bg-emerald-100'
-            }`}
-            title="فتح استمارة المتغيرات المقسمة حسب البنود لتعبئة بيانات العقد والوثائق المشتقة"
-          >
-            <FormInput className="w-3.5 h-3.5 text-pink-800" />
-            <span>استمارة المتغيرات</span>
-            {unfilledCount > 0 ? (
-              <span className="px-1.5 py-0.2 text-[10px] font-bold bg-red-600 text-white rounded tabular-nums">
-                {unfilledCount}
-              </span>
-            ) : totalVariablesCount > 0 ? (
-              <span className="px-1.5 py-0.2 text-[10px] font-bold bg-emerald-700 text-white rounded">
-                ✓
-              </span>
-            ) : null}
-          </button>
-
-          {/* 2. 1-CLICK SELECTION TO SMART TAG CONVERTER */}
+          {/* 1. 1-CLICK SELECTION TO SMART TAG CONVERTER */}
           <button
             type="button"
             disabled={isBodyLocked}
@@ -865,7 +827,7 @@ export default function EditorRibbon({
             <span>تحويل لوسم</span>
           </button>
 
-          {/* 3. QUICK SMART TAG INSERTER DROPDOWN */}
+          {/* 2. QUICK SMART TAG INSERTER DROPDOWN */}
           <div className="relative">
             <button
               type="button"
@@ -919,7 +881,7 @@ export default function EditorRibbon({
                   </span>
                 </button>
                 <div className="text-[11px] font-bold text-slate-900 pt-1 border-t border-slate-100">
-                  أو أدرج وسماً جاهزاً عند موضع المؤشر:
+                  أدرج وسماً عند المؤشر:
                 </div>
                 <div className="flex items-center gap-1.5">
                   <input
@@ -956,20 +918,15 @@ export default function EditorRibbon({
                 </div>
 
                 <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded">
-                  {Array.from(
-                    new Set([
-                      ...extractedPlaceholders,
-                      ...partyFields.map((f) => f.key),
-                    ])
-                  )
+                  {allTagKeys
                     .filter((k) => {
                       if (!tagFilterQuery.trim()) return true;
                       const q = tagFilterQuery.trim();
-                      const meta = partyFields.find((f) => f.key === k);
+                      const meta = COMMON_NOTARIAL_TAGS.find((t) => t.key === k);
                       return k.includes(q) || (meta?.label && meta.label.includes(q));
                     })
                     .map((key) => {
-                      const meta = partyFields.find((f) => f.key === key);
+                      const meta = COMMON_NOTARIAL_TAGS.find((t) => t.key === key);
                       const label = meta?.label || key.replace(/_/g, ' ');
                       const isFilled = Boolean(
                         fieldValues[key] && fieldValues[key].trim()
@@ -1005,7 +962,7 @@ export default function EditorRibbon({
             )}
           </div>
 
-          {/* 4. # NEW CLAUSE HEADING & CONTAINER AT CARET */}
+          {/* 3. # NEW CLAUSE HEADING & CONTAINER AT CARET */}
           <button
             type="button"
             disabled={isBodyLocked}
@@ -1030,192 +987,6 @@ export default function EditorRibbon({
             <span className="font-mono font-bold text-amber-300">#</span>
             <span>بند جديد</span>
           </button>
-
-          {/* 5. DROPDOWN: DERIVED DOCUMENTS & VERSION COMPARISON (الوثائق المشتقة ومقارنة النسخ في قائمة منسدلة) */}
-          <div className="relative">
-            <button
-              type="button"
-              onMouseDown={preventFocusLoss}
-              onClick={() => {
-                const next = !showNotaryDocsMenu;
-                closeAllMenus();
-                setShowNotaryDocsMenu(next);
-              }}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-semibold bg-blue-900 text-white hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0"
-              title="الوثائق المشتقة وسجل المراجعات ومقارنة النسخ"
-            >
-              <FileOutput className="w-3.5 h-3.5" />
-              <span>المشتقات والنسخ</span>
-              {revisionsCount > 0 && (
-                <span className="px-1.5 py-0.1 text-[10px] bg-blue-950 text-amber-300 rounded font-mono tabular-nums">
-                  {revisionsCount}
-                </span>
-              )}
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-
-            {showNotaryDocsMenu && (
-              <div className="absolute left-0 mt-1 w-96 max-w-[92vw] bg-white border border-slate-200 rounded-lg shadow-xl p-2.5 z-50 space-y-2.5">
-                {/* Top Quick Actions: Revision History Table & Side-by-Side Diff */}
-                <div className="grid grid-cols-2 gap-1.5 pb-2 border-b border-slate-100">
-                  {onOpenSnapshotsHistoryModal && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenSnapshotsHistoryModal();
-                        setShowNotaryDocsMenu(false);
-                      }}
-                      className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold rounded flex items-center justify-between border border-slate-200"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        <History className="w-3.5 h-3.5 text-blue-900" />
-                        <span>سجل المراجعات</span>
-                      </span>
-                      <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200 tabular-nums">
-                        {revisionsCount}
-                      </span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenVersionDiffModal();
-                      setShowNotaryDocsMenu(false);
-                    }}
-                    className="py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-950 text-xs font-bold rounded flex items-center justify-center gap-1.5 border border-blue-200"
-                  >
-                    <GitCompare className="w-3.5 h-3.5 text-blue-900" />
-                    <span>مقارنة النسخ (Diff)</span>
-                  </button>
-                </div>
-
-                {onOpenWordTemplatesModal && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenWordTemplatesModal();
-                      setShowNotaryDocsMenu(false);
-                    }}
-                    className="w-full py-1.5 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-900 text-xs font-bold rounded flex items-center justify-between border border-slate-200"
-                  >
-                    <span>قوالب Word الرسمية والمشتقة</span>
-                    <span className="text-[10px] font-mono text-blue-900">إدارة القوالب</span>
-                  </button>
-                )}
-
-                <div className="px-1.5 py-0.5 text-[11px] font-bold text-slate-800 flex items-center justify-between">
-                  <span>توليد الوثائق المشتقة ({derivedTemplates.length}):</span>
-                  <span className="text-[10px] font-normal text-slate-500">
-                    تعتمد على استمارة المتغيرات
-                  </span>
-                </div>
-
-                <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded">
-                  {derivedTemplates.map((dt) => {
-                    const isEditing = activeEditingDerivedId === dt.id;
-                    return (
-                      <div
-                        key={dt.id}
-                        className={`flex items-center justify-between gap-1.5 px-2 py-1.5 transition-colors ${
-                          isEditing ? 'bg-amber-50' : 'hover:bg-slate-50'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onGenerateDerivedDoc(dt);
-                            setShowNotaryDocsMenu(false);
-                          }}
-                          className="flex-1 text-right text-xs font-semibold text-slate-800 hover:text-blue-900 flex items-center gap-1.5 min-w-0"
-                          title={`توليد وتصدير "${dt.name}" بصيغة Word (.docx)`}
-                        >
-                          <Download className="w-3.5 h-3.5 text-blue-800 shrink-0" />
-                          <span className="truncate">{dt.name}</span>
-                        </button>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onEditDerivedTemplateInEditor(dt);
-                              setShowNotaryDocsMenu(false);
-                            }}
-                            className="px-1.5 py-0.5 text-[10px] text-slate-600 hover:text-blue-900 bg-slate-100 hover:bg-blue-50 rounded inline-flex items-center gap-0.5"
-                            title="فتح وتعديل قالب هذه الوثيقة المشتقة داخل محرر A4"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            <span>تعديل</span>
-                          </button>
-
-                          {onImportDocxForDerivedTemplate && (
-                            <label
-                              className="px-1.5 py-0.5 text-[10px] text-slate-600 hover:text-blue-900 bg-slate-100 hover:bg-blue-50 rounded cursor-pointer inline-flex items-center gap-0.5"
-                              title="استبدال هذا القالب المشتق بملف Word (.docx) من جهازك"
-                            >
-                              <Upload className="w-3 h-3" />
-                              <span>.docx</span>
-                              <input
-                                type="file"
-                                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    onImportDocxForDerivedTemplate(dt, file);
-                                    e.target.value = '';
-                                    setShowNotaryDocsMenu(false);
-                                  }
-                                }}
-                              />
-                            </label>
-                          )}
-
-                          {onDeleteDerivedTemplate && !dt.id.startsWith('derived_') && (
-                            <button
-                              type="button"
-                              onClick={() => onDeleteDerivedTemplate(dt.id)}
-                              className="p-1 text-slate-400 hover:text-red-600"
-                              title="حذف القالب المشتق المخصص"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {onSaveCurrentAsDerivedTemplate && (
-                  <div className="pt-2 border-t border-slate-200 flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={newDerivedName}
-                      onChange={(e) => setNewDerivedName(e.target.value)}
-                      placeholder="اسم مشتق جديد لحفظ المحرر الحالي..."
-                      className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-blue-900 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!newDerivedName.trim()) return;
-                        await onSaveCurrentAsDerivedTemplate(
-                          newDerivedName.trim(),
-                          `custom_${Date.now()}`,
-                          'قالب وثيقة مشتقة مخصص للمكتب'
-                        );
-                        setNewDerivedName('');
-                      }}
-                      className="px-2.5 py-1 bg-slate-900 text-white text-[11px] font-medium rounded hover:bg-slate-800 shrink-0"
-                    >
-                      + حفظ كمشتق
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

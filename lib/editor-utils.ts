@@ -5,59 +5,6 @@ import {
   STRICT_FONT_SIZE_PT,
 } from './types';
 import { lookupPlaceholderValue, normalizePlaceholderKey } from './docx-engine';
-import {
-  buildNotarialPaginationClosingText,
-  computeDocumentMetrics,
-  getArabicOrdinalPageWord,
-  injectNotarialPaginationIntoHtml,
-  stripNotarialPaginationFromHtml,
-} from './notarial-pagination';
-import {
-  applyPartyCardsToFieldValues,
-  buildPartyCardsVariableMap,
-  CandidateImportedClause,
-  compileCandidateClausesToHtml,
-  deleteContractClauseFromDOM,
-  extractLiveContractClausesFromDOM,
-  insertOrWrapNewClauseAtSelection,
-  moveContractClauseInDOM,
-  renameContractClauseInDOM,
-  reorderContractClausesInDOM,
-  reorderLiveContractClausesInDOM,
-  scrollToContractClauseByIdInDOM,
-  scrollToContractClauseInDOM,
-  segmentHtmlIntoCandidateClauses,
-  setContractClauseLockedInDOM,
-  toggleContractClauseEnabledInDOM,
-  toggleContractClauseLockedInDOM,
-  upgradeTopLevelHashSegmentsToContainers,
-} from './clause-outline-engine';
-
-export type { CandidateImportedClause };
-export {
-  buildNotarialPaginationClosingText,
-  computeDocumentMetrics,
-  getArabicOrdinalPageWord,
-  injectNotarialPaginationIntoHtml,
-  stripNotarialPaginationFromHtml,
-  applyPartyCardsToFieldValues,
-  buildPartyCardsVariableMap,
-  compileCandidateClausesToHtml,
-  deleteContractClauseFromDOM,
-  extractLiveContractClausesFromDOM,
-  insertOrWrapNewClauseAtSelection,
-  moveContractClauseInDOM,
-  renameContractClauseInDOM,
-  reorderContractClausesInDOM,
-  reorderLiveContractClausesInDOM,
-  scrollToContractClauseByIdInDOM,
-  scrollToContractClauseInDOM,
-  segmentHtmlIntoCandidateClauses,
-  setContractClauseLockedInDOM,
-  toggleContractClauseEnabledInDOM,
-  toggleContractClauseLockedInDOM,
-  upgradeTopLevelHashSegmentsToContainers,
-};
 
 /**
  * Computes the DOM index path of a node relative to rootEl.

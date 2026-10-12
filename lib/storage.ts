@@ -7,6 +7,7 @@ import type {
   DownloadArchiveItem,
   NotaryClerk,
   NotaryClause,
+  OfficeTemplate,
   PartyField,
   PublicationTrack,
   RegistrationBatch,
@@ -20,6 +21,7 @@ import { getDesktopBridge } from './desktop-bridge';
 import {
   DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
+  DEFAULT_OFFICE_TEMPLATES,
   DEFAULT_PARTY_FIELDS,
   type OfficeStore,
   type OfficeStoreRuntimeInfo,
@@ -33,6 +35,7 @@ import { desktopOfficeStore } from './storage-desktop';
 export {
   DEFAULT_DERIVED_DOC_TEMPLATES,
   DEFAULT_NOTARY_CLERKS,
+  DEFAULT_OFFICE_TEMPLATES,
   DEFAULT_PARTY_FIELDS,
 };
 
@@ -69,7 +72,28 @@ export function deleteNotaryClause(id: string): Promise<void> {
   return getActiveOfficeStore().deleteNotaryClause(id);
 }
 
-// 2. Derived Document Templates
+// 2. Unified Office Templates
+export function loadOfficeTemplates(): Promise<OfficeTemplate[]> {
+  return getActiveOfficeStore().loadOfficeTemplates();
+}
+
+export function saveOfficeTemplate(template: OfficeTemplate): Promise<void> {
+  return getActiveOfficeStore().saveOfficeTemplate(template);
+}
+
+export function deleteOfficeTemplate(id: string): Promise<void> {
+  return getActiveOfficeStore().deleteOfficeTemplate(id);
+}
+
+export function exportOfficeTemplatesJson(): Promise<string> {
+  return getActiveOfficeStore().exportOfficeTemplatesJson();
+}
+
+export function importOfficeTemplatesJson(templates: unknown[]): Promise<number> {
+  return getActiveOfficeStore().importOfficeTemplatesJson(templates);
+}
+
+// 2a. Derived Document Templates
 export function loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]> {
   return getActiveOfficeStore().loadDerivedDocTemplates();
 }

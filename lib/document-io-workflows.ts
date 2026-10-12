@@ -1,26 +1,25 @@
 import {
   CustomTemplate,
   DerivedDocTemplate,
-  DownloadArchiveItem,
+  DocumentRevision,
+  OfficeTemplate,
   STRICT_FONT_FAMILY,
   STRICT_FONT_SIZE_PT,
   SubdivisionEstate,
   SubdivisionLot,
 } from './types';
 import {
-  exportCustomTemplatesJson,
   exportFullBackupBundle,
-  importCustomTemplatesJson,
-  loadCustomTemplates,
-  loadDownloadArchive,
-  saveCustomTemplate,
-  saveDownloadArchiveItem,
-  sealContractOriginal,
+  exportOfficeTemplatesJson,
+  importOfficeTemplatesJson,
+  loadDocumentRevisions,
+  loadOfficeTemplates,
+  saveDocumentRevision,
+  saveOfficeTemplate,
 } from './storage';
 import {
   downloadNotaryDocx,
   importNotaryDocxFile,
-  mergePlaceholdersIntoHtml,
 } from './docx-engine';
 import { escapeHtml, extractPlaceholdersFromHtml } from './editor-utils';
 
@@ -73,7 +72,12 @@ export function buildFullSubdivisionTableHtml(estate: SubdivisionEstate): string
   )}</p><table dir="rtl" style="width:100%;max-width:120mm;border-collapse:collapse;table-layout:fixed;margin:0;"><tbody>${rowsHtml}</tbody></table><p dir="rtl" style="margin:0;line-height:1;"><br></p>`;
 }
 
-export async function exportAndSealContractToWord(params: {
+/**
+ * Exports the contract as a .docx file and records a lightweight 'export' event
+ * in DocumentRevision without sealing the official original (sealing is strictly
+ * reserved for officiallyIndexAndSealContract).
+ */
+export async function exportContractToWord(params: {
   docId: string;
   docTitle: string;
   bodyHtml: string;
@@ -82,15 +86,13 @@ export async function exportAndSealContractToWord(params: {
   showHeaderFooter: boolean;
   pageNumberingEnabled: boolean;
   fieldValues: Record<string, string>;
-  year: number;
-  indexNumber: string;
+  authorName?: string;
 }): Promise<{
-  relativePath: string;
-  sha256: string;
-  downloads: DownloadArchiveItem[];
+  fileName: string;
+  revisions: DocumentRevision[];
 }> {
   const titleToUse = params.docTitle || 'عقد_توثيقي';
-  const docxBytes = await downloadNotaryDocx({
+  await downloadNotaryDocx({
     title: titleToUse,
     bodyHtml: params.bodyHtml,
     headerHtml: params.showHeaderFooter ? params.headerHtml : '',
@@ -99,44 +101,38 @@ export async function exportAndSealContractToWord(params: {
     fieldValues: params.fieldValues,
   });
 
-  const sealed = await sealContractOriginal({
-    documentId: params.docId,
-    year: params.year,
-    indexNumber: params.indexNumber,
-    docxBytes,
-  });
-
-  const archiveItem: DownloadArchiveItem = {
-    id: `dl_${Date.now()}`,
+  const fileName = `${titleToUse}.docx`;
+  const exportRevision: DocumentRevision = {
+    id: `rev_exp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     documentId: params.docId,
     documentTitle: titleToUse,
-    docTypeCode: 'acte',
-    docTypeLabel: `الأصل المعتمد (${sealed.relativePath})`,
-    fileName: `${titleToUse}.docx`,
-    bodyHtml: params.bodyHtml,
-    headerHtml: params.showHeaderFooter ? params.headerHtml : '',
-    footerHtml: params.showHeaderFooter ? params.footerHtml : '',
+    author: params.authorName || 'الموثق الرئيسي',
+    bodyHtml: '', // Lightweight revision event without duplicating full HTML
     fieldValues: { ...params.fieldValues },
     createdAt: new Date().toISOString(),
+    eventType: 'export',
+    fileName,
+    docTypeCode: 'acte',
+    summary: `تصدير ملف وورد (${fileName})`,
   };
-  await saveDownloadArchiveItem(archiveItem);
-  const downloads = await loadDownloadArchive();
+  await saveDocumentRevision(exportRevision);
+  const revisions = await loadDocumentRevisions();
 
   return {
-    relativePath: sealed.relativePath,
-    sha256: sealed.sha256,
-    downloads,
+    fileName,
+    revisions,
   };
 }
 
 export async function generateAndDownloadDerivedDoc(params: {
   docId: string;
   docTitle: string;
-  tpl: DerivedDocTemplate;
+  tpl: OfficeTemplate | DerivedDocTemplate;
   fieldValues: Record<string, string>;
+  authorName?: string;
 }): Promise<{
   missingVarsCount: number;
-  downloads: DownloadArchiveItem[];
+  revisions: DocumentRevision[];
 }> {
   const { docId, docTitle, tpl, fieldValues } = params;
   const requiredVars = extractPlaceholdersFromHtml(
@@ -154,44 +150,56 @@ export async function generateAndDownloadDerivedDoc(params: {
     bodyHtml: tpl.bodyHtml,
     headerHtml: tpl.headerHtml,
     footerHtml: tpl.footerHtml,
-    pageNumberingEnabled: true,
+    pageNumberingEnabled:
+      'pageNumberingEnabled' in tpl ? tpl.pageNumberingEnabled !== false : true,
     fieldValues,
   });
 
-  const archiveItem: DownloadArchiveItem = {
-    id: `dl_${Date.now()}`,
+  const docTypeCode =
+    'docTypeCode' in tpl && tpl.docTypeCode
+      ? tpl.docTypeCode
+      : 'code' in tpl
+      ? tpl.code
+      : 'extrait';
+  const fileName = `${fileTitle}.docx`;
+
+  const derivedRevision: DocumentRevision = {
+    id: `rev_drv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     documentId: docId,
     documentTitle: docTitle || 'عقد توثيقي',
-    docTypeCode: tpl.code,
-    docTypeLabel: tpl.name,
-    fileName: `${fileTitle}.docx`,
-    bodyHtml: mergePlaceholdersIntoHtml(tpl.bodyHtml, fieldValues),
-    headerHtml: mergePlaceholdersIntoHtml(tpl.headerHtml, fieldValues),
-    footerHtml: mergePlaceholdersIntoHtml(tpl.footerHtml, fieldValues),
+    author: params.authorName || 'الموثق الرئيسي',
+    bodyHtml: '', // Lightweight revision event without duplicating full HTML
     fieldValues: { ...fieldValues },
     createdAt: new Date().toISOString(),
+    eventType: 'derived',
+    fileName,
+    docTypeCode,
+    summary: `توليد وتصدير وثيقة مشتقة: ${tpl.name} (${fileName})`,
   };
-  await saveDownloadArchiveItem(archiveItem);
-  const downloads = await loadDownloadArchive();
+  await saveDocumentRevision(derivedRevision);
+  const revisions = await loadDocumentRevisions();
 
   return {
     missingVarsCount: missingVars.length,
-    downloads,
+    revisions,
   };
 }
 
 export async function importDocxFilesAsTemplates(files: FileList): Promise<{
   importedCount: number;
-  templates: CustomTemplate[];
+  officeTemplates: OfficeTemplate[];
+  templates: OfficeTemplate[];
 }> {
   let importedCount = 0;
   for (const file of Array.from(files)) {
     try {
       const res = await importNotaryDocxFile(file);
-      const newTpl: CustomTemplate = {
+      const newTpl: OfficeTemplate = {
         id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: res.title,
+        kind: 'contract',
         category: 'نماذج وورد مستوردة',
+        docTypeCode: 'acte',
         bodyHtml: res.bodyHtml,
         headerHtml: res.headerHtml,
         footerHtml: res.footerHtml,
@@ -200,18 +208,22 @@ export async function importDocxFilesAsTemplates(files: FileList): Promise<{
         sourceFileName: file.name,
         updatedAt: new Date().toISOString(),
       };
-      await saveCustomTemplate(newTpl);
+      await saveOfficeTemplate(newTpl);
       importedCount++;
     } catch {
       // Skip invalid file
     }
   }
-  const templates = await loadCustomTemplates();
-  return { importedCount, templates };
+  const officeTemplates = await loadOfficeTemplates();
+  return {
+    importedCount,
+    officeTemplates,
+    templates: officeTemplates,
+  };
 }
 
 export async function downloadTemplatesJsonFile(): Promise<void> {
-  const jsonStr = await exportCustomTemplatesJson();
+  const jsonStr = await exportOfficeTemplatesJson();
   const blob = new Blob([jsonStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -225,16 +237,21 @@ export async function downloadTemplatesJsonFile(): Promise<void> {
 
 export async function importTemplatesJsonFile(file: File): Promise<{
   count: number;
-  templates: CustomTemplate[];
+  officeTemplates: OfficeTemplate[];
+  templates: OfficeTemplate[];
 }> {
   const text = await file.text();
   const parsed = JSON.parse(text);
   if (!Array.isArray(parsed)) {
     throw new Error('ملف JSON غير صالح كقائمة قوالب');
   }
-  const count = await importCustomTemplatesJson(parsed);
-  const templates = await loadCustomTemplates();
-  return { count, templates };
+  const count = await importOfficeTemplatesJson(parsed);
+  const officeTemplates = await loadOfficeTemplates();
+  return {
+    count,
+    officeTemplates,
+    templates: officeTemplates,
+  };
 }
 
 export async function downloadOfficeBackupBundleFile(): Promise<string> {

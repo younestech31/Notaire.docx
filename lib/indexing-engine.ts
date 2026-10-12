@@ -254,6 +254,8 @@ export async function officiallyIndexAndSealContract(params: {
     bodyHtml: updatedDocument.bodyHtml,
     fieldValues: updatedFieldValues,
     createdAt: nowIso,
+    eventType: 'seal',
+    fileName: sealResult.relativePath,
     summary: `فهرسة رسمية برقم (${parsedIndex.formatted}) وإيداع (${depositNo}) وختم الأصل ببصمة SHA-256 (${sealResult.sha256.slice(0, 12)})`,
   };
   await saveDocumentRevision(revision);
@@ -380,9 +382,10 @@ export async function syncRegistrationBatchToContracts(
       documentId: updatedDoc.id,
       documentTitle: updatedDoc.title,
       author: authorName,
-      bodyHtml: updatedDoc.bodyHtml,
+      bodyHtml: '',
       fieldValues: nextFieldValues,
       createdAt: nowIso,
+      eventType: 'lifecycle',
       summary: `تحديث دفعة التسجيل (${
         batch.status === 'registered'
           ? 'مسجل'
@@ -500,9 +503,10 @@ export async function syncPublicationTrackToContract(
     documentId: updatedDoc.id,
     documentTitle: updatedDoc.title,
     author: authorName,
-    bodyHtml: updatedDoc.bodyHtml,
+    bodyHtml: '',
     fieldValues: nextFieldValues,
     createdAt: nowIso,
+    eventType: 'lifecycle',
     summary: `تحديث مسار الشهر العقاري (${
       track.status === 'published'
         ? 'مشهر'

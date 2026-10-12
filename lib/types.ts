@@ -113,6 +113,40 @@ export interface WordTemplateDefinition {
   updatedAt: string;
 }
 
+export type OfficeTemplateKind =
+  | 'contract'
+  | 'extract'
+  | 'registration'
+  | 'fiscal'
+  | 'other';
+
+export interface OfficeTemplate {
+  id: string;
+  name: string;
+  kind: OfficeTemplateKind;
+  category: string;
+  description?: string;
+  code?: DerivedDocCode;
+  docTypeCode?: DerivedDocCode;
+  bodyHtml: string;
+  headerHtml: string;
+  footerHtml: string;
+  pageNumberingEnabled: boolean;
+  extractedPlaceholders: string[];
+  defaultFieldValues?: Record<string, string>;
+  sourceFileName?: string;
+  isDefault?: boolean;
+  updatedAt: string;
+}
+
+export type DocumentRevisionEventType =
+  | 'save'
+  | 'snapshot'
+  | 'export'
+  | 'derived'
+  | 'seal'
+  | 'lifecycle';
+
 export interface DocumentRevision {
   id: string;
   documentId: string;
@@ -122,6 +156,11 @@ export interface DocumentRevision {
   fieldValues: Record<string, string>;
   createdAt: string;
   summary: string;
+  eventType?: DocumentRevisionEventType;
+  fileName?: string;
+  docType?: string;
+  docTypeLabel?: string;
+  docTypeCode?: DerivedDocCode;
 }
 
 export interface DownloadArchiveItem {
@@ -402,18 +441,20 @@ export interface BackupBundle {
   exportedAt: string;
   clerks?: NotaryClerk[];
   folders?: ContractFolder[];
-  templates: CustomTemplate[];
+  officeTemplates?: OfficeTemplate[];
+  templates?: CustomTemplate[];
   documents: SavedDocument[];
   estates: SubdivisionEstate[];
   clauses: NotaryClause[];
-  derivedTemplates: DerivedDocTemplate[];
+  derivedTemplates?: DerivedDocTemplate[];
+  wordTemplates?: WordTemplateDefinition[];
   revisions: DocumentRevision[];
-  downloads: DownloadArchiveItem[];
+  downloads?: DownloadArchiveItem[];
   savedParties?: SavedPartyRecord[];
   savedProperties?: SavedPropertyRecord[];
   registrationBatches?: RegistrationBatch[];
   publicationTracks?: PublicationTrack[];
-  defaultFields: PartyField[];
+  defaultFields?: PartyField[];
   sealedOriginals?: SerializedSealedOriginal[];
 }
 

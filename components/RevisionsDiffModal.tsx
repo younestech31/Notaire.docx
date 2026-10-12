@@ -13,7 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { DocumentRevision } from '@/lib/types';
-import { computeDocumentMetrics, computeTextDiff } from '@/lib/editor-utils';
+import { computeTextDiff } from '@/lib/editor-utils';
+import { computeDocumentMetrics } from '@/lib/notarial-pagination';
 
 export interface VersionDiffModalProps {
   isOpen: boolean;
@@ -405,7 +406,30 @@ export function SnapshotsHistoryModal({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {revisions.map((rev) => {
-                      const revMetrics = computeDocumentMetrics(rev.bodyHtml);
+                      const hasBodySnapshot = Boolean(rev.bodyHtml && rev.bodyHtml.trim());
+                      const revMetrics = hasBodySnapshot
+                        ? computeDocumentMetrics(rev.bodyHtml)
+                        : { wordCount: 0, charCount: 0, estimatedPages: 0 };
+                      const eventTypeLabel =
+                        rev.eventType === 'seal'
+                          ? 'فهرسة وختم SHA-256'
+                          : rev.eventType === 'export'
+                          ? 'تنزيل Word (.docx)'
+                          : rev.eventType === 'derived'
+                          ? 'وثيقة مشتقة'
+                          : rev.eventType === 'lifecycle'
+                          ? 'تحديث تسجيل/شهر'
+                          : 'حفظ نسخة نصية';
+                      const eventTypeClass =
+                        rev.eventType === 'seal'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                          : rev.eventType === 'export'
+                          ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                          : rev.eventType === 'derived'
+                          ? 'bg-amber-50 text-amber-900 border-amber-200'
+                          : rev.eventType === 'lifecycle'
+                          ? 'bg-purple-50 text-purple-900 border-purple-200'
+                          : 'bg-slate-100 text-slate-800 border-slate-200';
                       return (
                         <tr
                           key={rev.id}
@@ -421,40 +445,65 @@ export function SnapshotsHistoryModal({
                             </span>
                           </td>
                           <td className="py-2.5 px-3">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${eventTypeClass}`}
+                              >
+                                {eventTypeLabel}
+                              </span>
+                              {rev.docTypeLabel && (
+                                <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  {rev.docTypeLabel}
+                                </span>
+                              )}
+                            </div>
                             <div className="font-bold text-slate-900">
                               {rev.summary || 'مراجعة محفوظة'}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              {revMetrics.wordCount} كلمة
+                            <div className="text-[10px] text-slate-500 font-mono flex flex-wrap items-center gap-2">
+                              {hasBodySnapshot ? (
+                                <span>{revMetrics.wordCount} كلمة</span>
+                              ) : (
+                                <span>سجل حدث (دون تكرار متن HTML)</span>
+                              )}
+                              {rev.fileName && (
+                                <span className="text-blue-900 font-semibold">
+                                  · {rev.fileName}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="py-2.5 px-3">
                             <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onOpenDiffComparison(rev);
-                                  onClose();
-                                }}
-                                className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-blue-50 hover:border-blue-300 text-blue-950 text-[11px] font-semibold rounded inline-flex items-center gap-1"
-                                title="مقارنة هذه النسخة مع النسخة الحالية جنباً إلى جنب"
-                              >
-                                <GitCompare className="w-3.5 h-3.5 text-blue-900" />
-                                <span>مقارنة</span>
-                              </button>
+                              {hasBodySnapshot && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onOpenDiffComparison(rev);
+                                      onClose();
+                                    }}
+                                    className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-blue-50 hover:border-blue-300 text-blue-950 text-[11px] font-semibold rounded inline-flex items-center gap-1"
+                                    title="مقارنة هذه النسخة مع النسخة الحالية جنباً إلى جنب"
+                                  >
+                                    <GitCompare className="w-3.5 h-3.5 text-blue-900" />
+                                    <span>مقارنة</span>
+                                  </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onRestoreSnapshot(rev);
-                                  onClose();
-                                }}
-                                className="px-2 py-1 bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-medium rounded inline-flex items-center gap-1"
-                                title="استعادة هذه النسخة إلى المحرر"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                <span>استعادة</span>
-                              </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onRestoreSnapshot(rev);
+                                      onClose();
+                                    }}
+                                    className="px-2 py-1 bg-blue-900 hover:bg-blue-800 text-white text-[11px] font-medium rounded inline-flex items-center gap-1"
+                                    title="استعادة هذه النسخة إلى المحرر"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    <span>استعادة</span>
+                                  </button>
+                                </>
+                              )}
 
                               <button
                                 type="button"

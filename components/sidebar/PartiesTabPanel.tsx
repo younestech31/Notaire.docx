@@ -26,18 +26,18 @@ interface PartiesTabPanelProps {
   partyCards: ContractPartyCard[];
   onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
   onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
-  partyFields: PartyField[];
+  partyFields?: PartyField[];
   extractedPlaceholders: string[];
   clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
-  fieldInputTypes: Record<string, VariableInputType>;
-  onOpenSmartVariablesModal: (focusKey?: string) => void;
+  fieldInputTypes?: Record<string, VariableInputType>;
+  onOpenSmartVariablesModal?: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
-  onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onAddCustomField: (key: string, label: string) => void;
+  onChangeFieldInputType?: (key: string, inputType: 'text' | 'number' | 'date') => void;
+  onAddCustomField?: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
-  onBakeAllPlaceholdersIntoDocument: (explicitValues?: Record<string, string>) => void;
+  onBakeAllPlaceholdersIntoDocument?: (explicitValues?: Record<string, string>) => void;
   estates: SubdivisionEstate[];
   selectedEstateId: string;
   selectedLotNumber: string;
@@ -48,8 +48,8 @@ interface PartiesTabPanelProps {
   onInsertFullSubdivisionTableAtCaret: (estate: SubdivisionEstate) => void;
   savedParties: SavedPartyRecord[];
   savedProperties: SavedPropertyRecord[];
-  onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
-  onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
+  onRecallPartyToRole?: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
+  onSaveCurrentPartyToDirectory?: (role: 'party1' | 'party2') => void;
   onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
   onSaveCurrentPropertyToDirectory: () => void;
   onSaveSelectionBookmark: () => void;
@@ -59,18 +59,18 @@ export default function PartiesTabPanel({
   partyCards = [],
   onUpdatePartyCards,
   onSavePartyCardToDirectory,
-  partyFields,
+  partyFields = [],
   extractedPlaceholders,
   clauseGroups,
   unfilledCount,
   fieldValues,
   fieldInputTypes = {},
-  onOpenSmartVariablesModal,
+  onOpenSmartVariablesModal = () => {},
   onUpdateFieldValue,
-  onChangeFieldInputType,
-  onAddCustomField,
+  onChangeFieldInputType = () => {},
+  onAddCustomField = () => {},
   onInsertPlaceholderAtCaret,
-  onBakeAllPlaceholdersIntoDocument,
+  onBakeAllPlaceholdersIntoDocument = () => {},
   estates,
   selectedEstateId,
   selectedLotNumber,
@@ -81,8 +81,8 @@ export default function PartiesTabPanel({
   onInsertFullSubdivisionTableAtCaret,
   savedParties,
   savedProperties,
-  onRecallPartyToRole,
-  onSaveCurrentPartyToDirectory,
+  onRecallPartyToRole = () => {},
+  onSaveCurrentPartyToDirectory = () => {},
   onRecallPropertyRecord,
   onSaveCurrentPropertyToDirectory,
   onSaveSelectionBookmark,
@@ -191,35 +191,6 @@ export default function PartiesTabPanel({
 
       {partiesSubTab === 'fields' ? (
         <div className="space-y-4">
-          {/* Smart Variables Modal Launcher Card */}
-          <div className="p-3 bg-pink-50/60 border border-pink-200 rounded-md space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-pink-950">
-                استمارة المتغيرات الموحدة
-              </span>
-              {unfilledCount > 0 ? (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded tabular-nums">
-                  {unfilledCount} غير معبأة !
-                </span>
-              ) : (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-700 text-white rounded">
-                  مكتمل ✓
-                </span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-600">
-              تُغذي هذه البيانات كلاً من العقد الأصلي وجميع الوثائق المشتقة (المستخرج، إجراء الشهر، شهادة البيع، الصيغة التنفيذية).
-            </p>
-            <button
-              type="button"
-              onClick={() => onOpenSmartVariablesModal()}
-              className="w-full py-1.5 px-3 bg-pink-800 text-white text-xs font-semibold rounded hover:bg-pink-900 inline-flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <FormInput className="w-3.5 h-3.5" />
-              <span>فتح استمارة المتغيرات الكاملة</span>
-            </button>
-          </div>
-
           {/* STRUCTURED MULTI-PARTY CARDS */}
           {onUpdatePartyCards && (
             <div className="border border-blue-200 bg-blue-50/25 rounded-md p-3 space-y-2.5">
@@ -833,137 +804,86 @@ export default function PartiesTabPanel({
             )}
           </div>
 
-          {/* Dynamic Variables Grouped by Clause */}
+          {/* Free Smart Tags [...] in Current Contract */}
           <div className="space-y-2.5">
             <div className="text-xs font-bold text-slate-900 flex items-center justify-between border-b border-slate-200 pb-1.5">
               <span>
-                متغيرات هذا العقد المستخرجة من `[...]` ({extractedPlaceholders.length})
+                وسوم العقد الحرة `[...]` (
+                <span className="tabular-nums">{extractedPlaceholders.length}</span>)
               </span>
-              {extractedPlaceholders.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
-                  className="text-[11px] text-pink-800 font-semibold hover:underline"
-                >
-                  دمج الكل في النص
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {unfilledCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded tabular-nums">
+                    {unfilledCount} غير مملوء
+                  </span>
+                )}
+                {extractedPlaceholders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onBakeAllPlaceholdersIntoDocument(fieldValues)}
+                    className="text-[11px] text-pink-800 font-semibold hover:underline"
+                  >
+                    دمج الكل في النص
+                  </button>
+                )}
+              </div>
             </div>
 
-            {clauseGroups.length > 0 ? (
-              clauseGroups.map((group) => (
-                <div
-                  key={group.clauseId}
-                  className="border border-pink-200 bg-pink-50/30 rounded-md p-2.5 space-y-2"
-                >
-                  <div className="text-[11px] font-bold text-pink-950 border-b border-pink-200/70 pb-1 flex items-center justify-between">
-                    <span className="truncate">{group.clauseTitle}</span>
-                    <span className="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-pink-200 shrink-0 tabular-nums">
-                      {group.variables.length} متغير
-                    </span>
-                  </div>
-                  {group.clauseReferenceText && (
-                    <div className="p-2 bg-white/80 border border-pink-200/60 rounded text-[11px] text-slate-600 leading-relaxed line-clamp-3">
-                      <span className="font-bold text-blue-900">مرجع البند: </span>
-                      {group.clauseReferenceText}
-                    </div>
-                  )}
-                  {group.variables.map((key) => {
-                    const meta = partyFields.find((f) => f.key === key);
-                    const label = meta?.label || key.replace(/_/g, ' ');
-                    const perContractType = fieldInputTypes[key];
-                    const resolvedType = perContractType || meta?.inputType;
-                    const currentType: 'text' | 'number' | 'date' =
-                      resolvedType === 'number'
-                        ? 'number'
-                        : resolvedType === 'date'
-                        ? 'date'
-                        : 'text';
-                    return (
-                      <div
-                        key={key}
-                        className="space-y-1 bg-white p-2 rounded border border-slate-200"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <label className="text-[11px] font-semibold text-slate-800 truncate">
-                            {label}
-                          </label>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <div className="inline-flex items-center bg-slate-100 rounded p-0.5 text-[9px]">
-                              <button
-                                type="button"
-                                onClick={() => onChangeFieldInputType(key, 'text')}
-                                className={`px-1 rounded ${
-                                  currentType === 'text'
-                                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                                    : 'text-slate-500'
-                                }`}
-                              >
-                                نص
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onChangeFieldInputType(key, 'number')}
-                                className={`px-1 rounded ${
-                                  currentType === 'number'
-                                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
-                                    : 'text-slate-500'
-                                }`}
-                              >
-                                رقم
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onChangeFieldInputType(key, 'date')}
-                                className={`px-1 rounded ${
-                                  currentType === 'date'
-                                    ? 'bg-white text-blue-900 font-bold shadow-2xs'
-                                    : 'text-slate-500'
-                                }`}
-                              >
-                                تاريخ
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                onSaveSelectionBookmark();
-                              }}
-                              onClick={() => onInsertPlaceholderAtCaret(key)}
-                              className="text-[10px] text-pink-800 font-semibold hover:underline"
-                            >
-                              +وسم
-                            </button>
-                          </div>
-                        </div>
-                        <input
-                          type={
-                            currentType === 'date'
-                              ? 'date'
-                              : currentType === 'number'
-                              ? 'number'
-                              : 'text'
-                          }
-                          value={fieldValues[key] || ''}
-                          onChange={(e) => onUpdateFieldValue(key, e.target.value)}
-                          placeholder={`أدخل ${label} [${key}]...`}
-                          className={`w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-800 focus:outline-none ${
-                            currentType === 'number' ? 'tabular-nums font-mono' : ''
-                          }`}
-                        />
+            {extractedPlaceholders.length > 0 ? (
+              <div className="border border-pink-200 bg-pink-50/25 rounded-md p-2.5 space-y-2 max-h-72 overflow-y-auto">
+                <div className="text-[10px] text-slate-600">
+                  انقر على أي وسم داخل ورقة العقد لتحريره مباشرة عبر النافذة السريعة، أو عدّل قيمته هنا:
+                </div>
+                {extractedPlaceholders.map((key) => {
+                  const label = key.replace(/_/g, ' ');
+                  const currentType = fieldInputTypes[key] || 'text';
+                  return (
+                    <div
+                      key={key}
+                      className="space-y-1 bg-white p-2 rounded border border-slate-200"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <label className="text-[11px] font-semibold text-slate-800 truncate">
+                          {label}
+                        </label>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            onSaveSelectionBookmark();
+                          }}
+                          onClick={() => onInsertPlaceholderAtCaret(key)}
+                          className="text-[10px] font-mono text-pink-800 font-semibold hover:underline shrink-0"
+                        >
+                          + [{key}]
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              ))
+                      <input
+                        type={
+                          currentType === 'date'
+                            ? 'date'
+                            : currentType === 'number'
+                            ? 'number'
+                            : 'text'
+                        }
+                        value={fieldValues[key] || ''}
+                        onChange={(e) => onUpdateFieldValue(key, e.target.value)}
+                        placeholder={`قيمة [${key}]...`}
+                        className={`w-full px-2 py-1 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-800 focus:outline-none ${
+                          currentType === 'number' ? 'tabular-nums font-mono' : ''
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="border border-dashed border-pink-200 bg-pink-50/20 rounded-md p-3.5 text-center space-y-1.5">
+              <div className="border border-dashed border-pink-200 bg-pink-50/20 rounded-md p-3 text-center space-y-1">
                 <div className="text-xs font-bold text-slate-800">
-                  لا توجد وسوم `[...]` مكتوبة في هذا العقد حالياً
+                  لا توجد وسوم إضافية `[...]` في المتن
                 </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  تُستخرج حقول هذه الاستمارة حصرياً من الوسوم المكتوبة بصيغة <code className="font-mono font-bold text-pink-800">[اسم_المتغير]</code> داخل ورقة العقد المفتوح حالياً.
+                <p className="text-[11px] text-slate-500">
+                  تُملأ بيانات الأطراف تلقائياً من البطاقات أعلاه، ويمكنك إدراج أي وسم حر أدناه.
                 </p>
               </div>
             )}
@@ -972,7 +892,7 @@ export default function PartiesTabPanel({
           {/* Insert New Variable Directly Into Current Contract at Caret */}
           <div className="border border-slate-200 rounded-md p-2.5 bg-white">
             <div className="text-xs font-semibold text-slate-800 mb-1.5">
-              إدراج وسم متغير جديد `[...]` في العقد عند المؤشر
+              إدراج وسم حر جديد `[...]` في العقد عند المؤشر
             </div>
             <div className="flex items-center gap-1.5">
               <input
@@ -982,12 +902,12 @@ export default function PartiesTabPanel({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newFieldKey.trim()) {
                     const clean = newFieldKey.trim().replace(/\s+/g, '_');
-                    onAddCustomField(clean, newFieldKey.trim());
+                    onAddCustomField?.(clean, newFieldKey.trim());
                     onInsertPlaceholderAtCaret(clean);
                     setNewFieldKey('');
                   }
                 }}
-                placeholder="مثال: تسمية_الشركة أو البائع أو الثمن"
+                placeholder="مثال: الثمن_بالأحرف أو طريقة_الدفع"
                 className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded focus:border-blue-800 focus:outline-none"
               />
               <button
@@ -999,7 +919,7 @@ export default function PartiesTabPanel({
                 onClick={() => {
                   const clean = newFieldKey.trim().replace(/\s+/g, '_');
                   if (clean) {
-                    onAddCustomField(clean, newFieldKey.trim());
+                    onAddCustomField?.(clean, newFieldKey.trim());
                     onInsertPlaceholderAtCaret(clean);
                     setNewFieldKey('');
                   }

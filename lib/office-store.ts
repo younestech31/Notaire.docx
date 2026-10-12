@@ -7,6 +7,8 @@ import {
   type DownloadArchiveItem,
   type NotaryClerk,
   type NotaryClause,
+  type OfficeTemplate,
+  type OfficeTemplateKind,
   type PartyField,
   type PublicationTrack,
   type RegistrationBatch,
@@ -56,12 +58,19 @@ export interface OfficeStore {
   saveNotaryClause(clause: NotaryClause): Promise<void>;
   deleteNotaryClause(id: string): Promise<void>;
 
-  // 2. Derived Document Templates
+  // 2. Unified Office Templates
+  loadOfficeTemplates(): Promise<OfficeTemplate[]>;
+  saveOfficeTemplate(template: OfficeTemplate): Promise<void>;
+  deleteOfficeTemplate(id: string): Promise<void>;
+  exportOfficeTemplatesJson(): Promise<string>;
+  importOfficeTemplatesJson(templates: unknown[]): Promise<number>;
+
+  // 2a. Legacy Derived Document Templates (shimmed to OfficeTemplate)
   loadDerivedDocTemplates(): Promise<DerivedDocTemplate[]>;
   saveDerivedDocTemplate(tpl: DerivedDocTemplate): Promise<void>;
   deleteDerivedDocTemplate(id: string): Promise<void>;
 
-  // 2b. Word Templates
+  // 2b. Legacy Word Templates (shimmed to OfficeTemplate)
   loadWordTemplates(): Promise<WordTemplateDefinition[]>;
   saveWordTemplate(tpl: WordTemplateDefinition): Promise<void>;
   deleteWordTemplate(id: string): Promise<void>;
@@ -71,13 +80,13 @@ export interface OfficeStore {
   saveDocumentRevision(rev: DocumentRevision): Promise<void>;
   deleteDocumentRevision(id: string): Promise<void>;
 
-  // 4. Download Archive
+  // 4. Download Archive (legacy compat)
   loadDownloadArchive(): Promise<DownloadArchiveItem[]>;
   saveDownloadArchiveItem(item: DownloadArchiveItem): Promise<void>;
   deleteDownloadArchiveItem(id: string): Promise<void>;
   clearDownloadArchive(): Promise<void>;
 
-  // 5. Custom Templates
+  // 5. Legacy Custom Templates (shimmed to OfficeTemplate)
   loadCustomTemplates(): Promise<CustomTemplate[]>;
   saveCustomTemplate(template: CustomTemplate): Promise<void>;
   deleteCustomTemplate(id: string): Promise<void>;
@@ -440,4 +449,328 @@ export function base64ToUint8Array(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+export function extractTemplatePlaceholders(
+  ...htmlFragments: Array<string | undefined>
+): string[] {
+  const combined = htmlFragments.filter(Boolean).join('\n');
+  const set = new Set<string>();
+  const dataVarRegex = /data-var=["']([^"']+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = dataVarRegex.exec(combined)) !== null) {
+    if (m[1]?.trim()) set.add(m[1].trim());
+  }
+  const bracketRegex = /\[([^\[\]\n]{1,60})\]/g;
+  while ((m = bracketRegex.exec(combined)) !== null) {
+    const candidate = m[1]?.trim();
+    if (candidate && !candidate.startsWith('فهرس:')) {
+      set.add(candidate);
+    }
+  }
+  return Array.from(set);
+}
+
+export function inferKindFromDerivedCode(code?: string): OfficeTemplateKind {
+  if (!code) return 'extract';
+  if (code === 'publication' || code === 'br4bis') return 'registration';
+  if (code === 'fiscal') return 'fiscal';
+  if (code === 'acte') return 'contract';
+  if (code === 'recu_depot') return 'other';
+  return 'extract';
+}
+
+export function migrateDerivedTemplateToOfficeTemplate(
+  tpl: DerivedDocTemplate
+): OfficeTemplate {
+  const kind = inferKindFromDerivedCode(tpl.code);
+  const category =
+    kind === 'registration'
+      ? 'استمارات التسجيل والشهر'
+      : kind === 'fiscal'
+      ? 'الوضعية الجبائية'
+      : kind === 'other'
+      ? 'وثائق المكتب'
+      : 'مستخرجات ونسخ';
+  return {
+    id: tpl.id,
+    name: tpl.name,
+    kind,
+    category,
+    description: tpl.description || '',
+    code: tpl.code,
+    docTypeCode: tpl.code,
+    bodyHtml: tpl.bodyHtml || '',
+    headerHtml: tpl.headerHtml || '',
+    footerHtml: tpl.footerHtml || '',
+    pageNumberingEnabled: true,
+    extractedPlaceholders: extractTemplatePlaceholders(
+      tpl.headerHtml,
+      tpl.bodyHtml,
+      tpl.footerHtml
+    ),
+    isDefault: tpl.id.startsWith('derived_'),
+    updatedAt: tpl.updatedAt || '2026-01-01T00:00:00.000Z',
+  };
+}
+
+export function migrateCustomTemplateToOfficeTemplate(
+  tpl: CustomTemplate
+): OfficeTemplate {
+  const cat = tpl.category || 'عقود رسمية';
+  const kind: OfficeTemplateKind =
+    cat.includes('مستخرج') || cat.includes('نسخ')
+      ? 'extract'
+      : cat.includes('شهر') || cat.includes('تسجيل')
+      ? 'registration'
+      : cat.includes('جبائ')
+      ? 'fiscal'
+      : 'contract';
+  return {
+    id: tpl.id,
+    name: tpl.name,
+    kind,
+    category: cat,
+    description: tpl.description || '',
+    docTypeCode: kind === 'contract' ? 'acte' : undefined,
+    bodyHtml: tpl.bodyHtml || '',
+    headerHtml: tpl.headerHtml || '',
+    footerHtml: tpl.footerHtml || '',
+    pageNumberingEnabled: tpl.pageNumberingEnabled !== false,
+    extractedPlaceholders:
+      Array.isArray(tpl.extractedPlaceholders) &&
+      tpl.extractedPlaceholders.length > 0
+        ? tpl.extractedPlaceholders
+        : extractTemplatePlaceholders(
+            tpl.headerHtml,
+            tpl.bodyHtml,
+            tpl.footerHtml
+          ),
+    defaultFieldValues: tpl.defaultFieldValues,
+    sourceFileName: tpl.sourceFileName,
+    updatedAt: tpl.updatedAt || new Date().toISOString(),
+  };
+}
+
+export function migrateWordTemplateToOfficeTemplate(
+  tpl: WordTemplateDefinition
+): OfficeTemplate {
+  const kind: OfficeTemplateKind =
+    tpl.type === 'original' || tpl.type === 'copy'
+      ? 'contract'
+      : tpl.type === 'extract'
+      ? 'extract'
+      : tpl.type === 'registration'
+      ? 'registration'
+      : tpl.type === 'fiscal'
+      ? 'fiscal'
+      : 'other';
+  const category =
+    kind === 'contract'
+      ? 'عقود رسمية'
+      : kind === 'registration'
+      ? 'استمارات التسجيل والشهر'
+      : kind === 'fiscal'
+      ? 'الوضعية الجبائية'
+      : 'مستخرجات ونسخ';
+  return {
+    id: tpl.id,
+    name: tpl.name,
+    kind,
+    category,
+    description: tpl.description || '',
+    docTypeCode: tpl.type,
+    bodyHtml: tpl.bodyHtml || '',
+    headerHtml: tpl.headerHtml || '',
+    footerHtml: tpl.footerHtml || '',
+    pageNumberingEnabled: true,
+    extractedPlaceholders: extractTemplatePlaceholders(
+      tpl.headerHtml,
+      tpl.bodyHtml,
+      tpl.footerHtml
+    ),
+    isDefault: Boolean(tpl.isDefault),
+    updatedAt: tpl.updatedAt || '2026-01-01T00:00:00.000Z',
+  };
+}
+
+export function officeTemplateToCustomTemplate(
+  tpl: OfficeTemplate
+): CustomTemplate {
+  return {
+    id: tpl.id,
+    name: tpl.name,
+    category: tpl.category || 'عقود رسمية',
+    description: tpl.description || '',
+    bodyHtml: tpl.bodyHtml || '',
+    headerHtml: tpl.headerHtml || '',
+    footerHtml: tpl.footerHtml || '',
+    pageNumberingEnabled: tpl.pageNumberingEnabled !== false,
+    extractedPlaceholders: tpl.extractedPlaceholders || [],
+    defaultFieldValues: tpl.defaultFieldValues,
+    sourceFileName: tpl.sourceFileName,
+    updatedAt: tpl.updatedAt,
+  };
+}
+
+export function officeTemplateToDerivedDocTemplate(
+  tpl: OfficeTemplate
+): DerivedDocTemplate {
+  return {
+    id: tpl.id,
+    code: tpl.docTypeCode || (tpl.kind === 'registration' ? 'publication' : 'extrait'),
+    name: tpl.name,
+    description: tpl.description || '',
+    bodyHtml: tpl.bodyHtml || '',
+    headerHtml: tpl.headerHtml || '',
+    footerHtml: tpl.footerHtml || '',
+    updatedAt: tpl.updatedAt,
+  };
+}
+
+export function normalizeAnyTemplateToOfficeTemplate(
+  raw: unknown
+): OfficeTemplate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.name !== 'string' || !obj.name.trim()) return null;
+
+  if (
+    typeof obj.kind === 'string' &&
+    ['contract', 'extract', 'registration', 'fiscal', 'other'].includes(obj.kind)
+  ) {
+    const t = obj as unknown as OfficeTemplate;
+    return {
+      id:
+        t.id ||
+        `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: t.name,
+      kind: t.kind,
+      category: t.category || 'عقود رسمية',
+      description: t.description || '',
+      docTypeCode: t.docTypeCode,
+      bodyHtml: t.bodyHtml || '',
+      headerHtml: t.headerHtml || '',
+      footerHtml: t.footerHtml || '',
+      pageNumberingEnabled: t.pageNumberingEnabled !== false,
+      extractedPlaceholders: Array.isArray(t.extractedPlaceholders)
+        ? t.extractedPlaceholders
+        : extractTemplatePlaceholders(t.headerHtml, t.bodyHtml, t.footerHtml),
+      defaultFieldValues: t.defaultFieldValues,
+      sourceFileName: t.sourceFileName,
+      isDefault: Boolean(t.isDefault),
+      updatedAt: t.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  if (typeof obj.code === 'string') {
+    return migrateDerivedTemplateToOfficeTemplate(
+      obj as unknown as DerivedDocTemplate
+    );
+  }
+
+  if (typeof obj.type === 'string') {
+    return migrateWordTemplateToOfficeTemplate(
+      obj as unknown as WordTemplateDefinition
+    );
+  }
+
+  return migrateCustomTemplateToOfficeTemplate(
+    obj as unknown as CustomTemplate
+  );
+}
+
+export const DEFAULT_OFFICE_TEMPLATES: OfficeTemplate[] = [
+  ...DEFAULT_DERIVED_DOC_TEMPLATES.map(migrateDerivedTemplateToOfficeTemplate),
+  {
+    id: 'derived_fiscal_card',
+    name: 'بطاقة الوضعية الجبائية للعقد (Fiscal Position)',
+    kind: 'fiscal',
+    category: 'الوضعية الجبائية',
+    docTypeCode: 'fiscal',
+    description:
+      'بطاقة تلخيص العناصر الجبائية الخمسة للعقد التوثيقي وأصل الملكية — قابلة للتعديل والتصدير',
+    headerHtml: '',
+    footerHtml: '',
+    pageNumberingEnabled: true,
+    isDefault: true,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    bodyHtml: `
+      <p dir="rtl" style="${pCenterBold}">بطاقة الوضعية الجبائية للعقد</p>
+      <p dir="rtl" style="${pStyle}">فهرس رقم: <span class="smart-tag" data-var="رقم_الفهرس">[رقم_الفهرس]</span> — بتاريخ: <span class="smart-tag" data-var="تاريخ_العقد">[تاريخ_العقد]</span> — مفتشية التسجيل: <span class="smart-tag" data-var="مفتشية_التسجيل">[مفتشية_التسجيل]</span></p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">1. تعيين المبيع الجبائي:</span> <span class="smart-tag" data-var="تعيين_المبيع_الجبائي">[تعيين_المبيع_الجبائي]</span> — <span class="smart-tag" data-var="تعيين_الحصة_الكامل">[تعيين_الحصة_الكامل]</span></p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">2. أصل الملكية وثمن الاقتناء السابق:</span> <span class="smart-tag" data-var="أصل_الملكية_وثمن_الشراء_السابق">[أصل_الملكية_وثمن_الشراء_السابق]</span></p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">3. البيانات الجبائية للبائع:</span> <span class="smart-tag" data-var="الطرف_الأول_الاسم">[الطرف_الأول_الاسم]</span> — <span class="smart-tag" data-var="بيانات_البائع_الجبائية">[بيانات_البائع_الجبائية]</span></p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">4. البيانات الجبائية للمشتري:</span> <span class="smart-tag" data-var="الطرف_الثاني_الاسم">[الطرف_الثاني_الاسم]</span> — <span class="smart-tag" data-var="بيانات_المشتري_الجبائية">[بيانات_المشتري_الجبائية]</span></p>
+      <p dir="rtl" style="${pStyle}"><span style="font-weight:bold;">5. الثمن وطريقة الدفع:</span> <span class="smart-tag" data-var="الثمن_بالأحرف">[الثمن_بالأحرف]</span> (<span class="smart-tag" data-var="الثمن_بالأرقام">[الثمن_بالأرقام]</span>) — <span class="smart-tag" data-var="طريقة_الدفع">[طريقة_الدفع]</span>.</p>
+    `.trim(),
+    extractedPlaceholders: [
+      'رقم_الفهرس',
+      'تاريخ_العقد',
+      'مفتشية_التسجيل',
+      'تعيين_المبيع_الجبائي',
+      'تعيين_الحصة_الكامل',
+      'أصل_الملكية_وثمن_الشراء_السابق',
+      'الطرف_الأول_الاسم',
+      'بيانات_البائع_الجبائية',
+      'الطرف_الثاني_الاسم',
+      'بيانات_المشتري_الجبائية',
+      'الثمن_بالأحرف',
+      'الثمن_بالأرقام',
+      'طريقة_الدفع',
+    ],
+  },
+];
+
+export function mergeLegacyStoresIntoOfficeTemplates(params: {
+  existingOffice: OfficeTemplate[];
+  legacyCustom?: CustomTemplate[];
+  legacyDerived?: DerivedDocTemplate[];
+  legacyWord?: WordTemplateDefinition[];
+  seedDefaults?: boolean;
+}): OfficeTemplate[] {
+  const byId = new Map<string, OfficeTemplate>();
+
+  if (params.seedDefaults !== false) {
+    for (const defTpl of DEFAULT_OFFICE_TEMPLATES) {
+      byId.set(defTpl.id, defTpl);
+    }
+  }
+
+  for (const d of params.legacyDerived || []) {
+    if (d && d.id && d.name) {
+      byId.set(d.id, migrateDerivedTemplateToOfficeTemplate(d));
+    }
+  }
+
+  for (const w of params.legacyWord || []) {
+    if (w && w.id && w.name) {
+      // Skip duplicate default word templates that overlap with derived_extrait / derived_publication
+      if (
+        w.isDefault &&
+        (w.id === 'tpl_extract' ||
+          w.id === 'tpl_registration' ||
+          w.id === 'tpl_fiscal')
+      ) {
+        continue;
+      }
+      byId.set(w.id, migrateWordTemplateToOfficeTemplate(w));
+    }
+  }
+
+  for (const c of params.legacyCustom || []) {
+    if (c && c.id && c.name) {
+      byId.set(c.id, migrateCustomTemplateToOfficeTemplate(c));
+    }
+  }
+
+  for (const o of params.existingOffice || []) {
+    if (o && o.id && o.name) {
+      byId.set(o.id, o);
+    }
+  }
+
+  return Array.from(byId.values()).sort((a, b) =>
+    (b.updatedAt || '').localeCompare(a.updatedAt || '')
+  );
 }

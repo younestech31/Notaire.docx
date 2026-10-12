@@ -14,6 +14,7 @@ import {
 import {
   DerivedDocTemplate,
   NotaryClause,
+  OfficeTemplate,
   SavedDocument,
 } from '@/lib/types';
 import { isContractOfficiallyIndexed } from '@/lib/indexing-engine';
@@ -27,7 +28,7 @@ export function EditorModeAndSealBanners({
   onFinishEditingDerivedTemplate,
   onFinishEditingClause,
 }: {
-  editingDerivedTpl: DerivedDocTemplate | null;
+  editingDerivedTpl: OfficeTemplate | DerivedDocTemplate | null;
   editingClauseObj: NotaryClause | null;
   activeDocument: SavedDocument | null;
   unlockIndexedBody: boolean;
@@ -37,12 +38,12 @@ export function EditorModeAndSealBanners({
 }) {
   return (
     <>
-      {/* Contextual Banner when Editing a Derived Document Template or Clause inside the A4 Editor */}
+      {/* Contextual Banner when Editing an Office Template or Clause inside the A4 Editor */}
       {(editingDerivedTpl || editingClauseObj) && (
         <div className="bg-amber-100 border-b border-amber-300 px-6 py-2 flex flex-wrap items-center justify-between gap-3 no-print">
           <div className="text-xs font-bold text-amber-950">
             {editingDerivedTpl
-              ? `وضع تعديل قالب الوثيقة المشتقة: "${editingDerivedTpl.name}" — يمكنك تعديل النص والجداول ووسوم [...] بحرية تامة.`
+              ? `وضع تعديل قالب المكتب: "${editingDerivedTpl.name}" — يمكنك تعديل النص والجداول ووسوم [...] بحرية تامة.`
               : `وضع تعديل صياغة البند الجاهز: "${editingClauseObj?.title}"`}
           </div>
           <div className="flex items-center gap-2">

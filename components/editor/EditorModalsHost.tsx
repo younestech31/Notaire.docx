@@ -17,10 +17,8 @@ import {
   MultiSourceStartModal,
   OnboardingTourModal,
   SaveAsTemplateModal,
-  SmartVariablesModal,
   SnapshotsHistoryModal,
   VersionDiffModal,
-  WordTemplatesModal,
 } from '@/components/SmartModals';
 import {
   ClauseVariableGroup,
@@ -29,6 +27,8 @@ import {
   DocumentRevision,
   DownloadArchiveItem,
   NotaryClerk,
+  OfficeTemplate,
+  OfficeTemplateKind,
   PartyField,
   SavedDocument,
   SavedPartyRecord,
@@ -38,7 +38,6 @@ import {
   WordTemplateDefinition,
 } from '@/lib/types';
 import { DocxImportResult } from '@/lib/docx-engine';
-import { parseContractIntoClauses } from '@/lib/docx-template-engine';
 
 interface EditorActivityRailProps {
   unfilledCount: number;
@@ -110,33 +109,33 @@ export function EditorActivityRail({
 interface EditorModalsHostProps {
   docId: string;
   docTitle: string;
-  activeClerk: NotaryClerk;
+  activeClerk?: NotaryClerk;
   inlinePopover: InlineVariablePopoverState | null;
   onCloseInlinePopover: () => void;
-  showSmartVarsModal: boolean;
-  onCloseSmartVarsModal: () => void;
-  focusedVarKey: string | null;
+  showSmartVarsModal?: boolean;
+  onCloseSmartVarsModal?: () => void;
+  focusedVarKey?: string | null;
   onOpenSmartVarsModalForKey: (varKey: string) => void;
   extractedPlaceholders: string[];
-  clauseGroups: ClauseVariableGroup[];
-  partyFields: PartyField[];
+  clauseGroups?: ClauseVariableGroup[];
+  partyFields?: PartyField[];
   fieldValues: Record<string, string>;
   fieldInputTypes: Record<string, VariableInputType>;
-  estates: SubdivisionEstate[];
-  selectedEstateId: string;
-  selectedLotNumber: string;
-  savedParties: SavedPartyRecord[];
-  savedProperties: SavedPropertyRecord[];
-  onSelectEstateAndLot: (estateId: string, lotNumber: string) => void;
-  onRecallPartyToRole: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
-  onSaveCurrentPartyToDirectory: (role: 'party1' | 'party2') => void;
-  onDeleteSavedParty: (id: string) => void;
-  onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
-  onSaveCurrentPropertyToDirectory: () => void;
-  onDeleteSavedProperty: (id: string) => void;
+  estates?: SubdivisionEstate[];
+  selectedEstateId?: string;
+  selectedLotNumber?: string;
+  savedParties?: SavedPartyRecord[];
+  savedProperties?: SavedPropertyRecord[];
+  onSelectEstateAndLot?: (estateId: string, lotNumber: string) => void;
+  onRecallPartyToRole?: (party: SavedPartyRecord, role: 'party1' | 'party2') => void;
+  onSaveCurrentPartyToDirectory?: (role: 'party1' | 'party2') => void;
+  onDeleteSavedParty?: (id: string) => void;
+  onRecallPropertyRecord?: (prop: SavedPropertyRecord) => void;
+  onSaveCurrentPropertyToDirectory?: () => void;
+  onDeleteSavedProperty?: (id: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
   onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onBakeAllIntoDocument: (explicitValues?: Record<string, string>) => void;
+  onBakeAllIntoDocument?: (explicitValues?: Record<string, string>) => void;
   showVersionDiffModal: boolean;
   onCloseVersionDiffModal: () => void;
   revisions: DocumentRevision[];
@@ -154,6 +153,8 @@ interface EditorModalsHostProps {
   onCloseSaveAsTemplateModal: () => void;
   onConfirmSaveCustomTemplate: (data: {
     name: string;
+    kind?: OfficeTemplateKind;
+    code?: string;
     category: string;
     description: string;
     clearFilledValues: boolean;
@@ -168,56 +169,37 @@ interface EditorModalsHostProps {
   onFinishOnboardingTour: () => void;
   showMultiSourceModal: boolean;
   onCloseMultiSourceModal: () => void;
-  templates: CustomTemplate[];
+  templates: (OfficeTemplate | CustomTemplate)[];
   documents: SavedDocument[];
-  downloads: DownloadArchiveItem[];
+  downloads?: DownloadArchiveItem[];
   onStartBlank: (clearPreviousClauses?: boolean) => void;
   onSelectTemplateFromMultiSource: (
-    tpl: CustomTemplate,
+    tpl: OfficeTemplate | CustomTemplate,
     mode: 'replace' | 'insert',
     clearPreviousClauses?: boolean
   ) => void;
   onSelectSavedDocFromMultiSource: (doc: SavedDocument) => void;
   onImportDocxFileFromMultiSource: (file: File) => Promise<void>;
-  onSelectDownloadArchiveItemFromMultiSource: (item: DownloadArchiveItem) => void;
-  showWordTemplatesModal: boolean;
-  onCloseWordTemplatesModal: () => void;
-  wordTemplates: WordTemplateDefinition[];
-  outlineClauses: ContractOutlineClause[];
-  onSaveWordTemplate: (tpl: WordTemplateDefinition) => Promise<void>;
-  onDeleteWordTemplate: (id: string) => Promise<void>;
+  onSelectDownloadArchiveItemFromMultiSource?: (item: DownloadArchiveItem) => void;
+  showWordTemplatesModal?: boolean;
+  onCloseWordTemplatesModal?: () => void;
+  wordTemplates?: WordTemplateDefinition[];
+  outlineClauses?: ContractOutlineClause[];
+  onSaveWordTemplate?: (tpl: WordTemplateDefinition) => Promise<void>;
+  onDeleteWordTemplate?: (id: string) => Promise<void>;
 }
 
 export function EditorModalsHost({
   docId,
   docTitle,
-  activeClerk,
   inlinePopover,
   onCloseInlinePopover,
-  showSmartVarsModal,
-  onCloseSmartVarsModal,
-  focusedVarKey,
   onOpenSmartVarsModalForKey,
   extractedPlaceholders,
-  clauseGroups,
-  partyFields,
   fieldValues,
   fieldInputTypes,
-  estates,
-  selectedEstateId,
-  selectedLotNumber,
-  savedParties,
-  savedProperties,
-  onSelectEstateAndLot,
-  onRecallPartyToRole,
-  onSaveCurrentPartyToDirectory,
-  onDeleteSavedParty,
-  onRecallPropertyRecord,
-  onSaveCurrentPropertyToDirectory,
-  onDeleteSavedProperty,
   onUpdateFieldValue,
   onChangeFieldInputType,
-  onBakeAllIntoDocument,
   showVersionDiffModal,
   onCloseVersionDiffModal,
   revisions,
@@ -243,26 +225,18 @@ export function EditorModalsHost({
   onCloseMultiSourceModal,
   templates,
   documents,
-  downloads,
   onStartBlank,
   onSelectTemplateFromMultiSource,
   onSelectSavedDocFromMultiSource,
   onImportDocxFileFromMultiSource,
-  onSelectDownloadArchiveItemFromMultiSource,
-  showWordTemplatesModal,
-  onCloseWordTemplatesModal,
-  wordTemplates,
-  outlineClauses,
-  onSaveWordTemplate,
-  onDeleteWordTemplate,
 }: EditorModalsHostProps) {
   const contractRevs = revisions.filter((r) => r.documentId === docId);
   const diffRevs = diffComparisonRevision
     ? [
         diffComparisonRevision,
-        ...contractRevs.filter((r) => r.id !== diffComparisonRevision.id),
+        ...contractRevs.filter((r) => r.id !== diffComparisonRevision.id && r.bodyHtml),
       ]
-    : contractRevs;
+    : contractRevs.filter((r) => Boolean(r.bodyHtml && r.bodyHtml.trim()));
 
   return (
     <>
@@ -276,32 +250,6 @@ export function EditorModalsHost({
         onChangeInputType={onChangeFieldInputType}
         onOpenFullModal={onOpenSmartVarsModalForKey}
         onClose={onCloseInlinePopover}
-      />
-
-      <SmartVariablesModal
-        isOpen={showSmartVarsModal}
-        onClose={onCloseSmartVarsModal}
-        focusedVarKey={focusedVarKey}
-        extractedPlaceholders={extractedPlaceholders}
-        clauseGroups={clauseGroups}
-        partyFields={partyFields}
-        fieldValues={fieldValues}
-        fieldInputTypes={fieldInputTypes}
-        estates={estates}
-        selectedEstateId={selectedEstateId}
-        selectedLotNumber={selectedLotNumber}
-        savedParties={savedParties}
-        savedProperties={savedProperties}
-        onSelectEstateAndLot={onSelectEstateAndLot}
-        onRecallPartyToRole={onRecallPartyToRole}
-        onSaveCurrentPartyToDirectory={onSaveCurrentPartyToDirectory}
-        onDeleteSavedParty={onDeleteSavedParty}
-        onRecallPropertyRecord={onRecallPropertyRecord}
-        onSaveCurrentPropertyToDirectory={onSaveCurrentPropertyToDirectory}
-        onDeleteSavedProperty={onDeleteSavedProperty}
-        onUpdateFieldValue={onUpdateFieldValue}
-        onChangeFieldInputType={onChangeFieldInputType}
-        onBakeAllIntoDocument={onBakeAllIntoDocument}
       />
 
       <VersionDiffModal
@@ -352,57 +300,10 @@ export function EditorModalsHost({
         onClose={onCloseMultiSourceModal}
         templates={templates}
         documents={documents}
-        downloads={downloads}
         onStartBlank={onStartBlank}
         onSelectTemplate={onSelectTemplateFromMultiSource}
         onSelectSavedDoc={onSelectSavedDocFromMultiSource}
         onImportDocxFile={onImportDocxFileFromMultiSource}
-        onSelectDownloadArchiveItem={onSelectDownloadArchiveItemFromMultiSource}
-      />
-
-      <WordTemplatesModal
-        isOpen={showWordTemplatesModal}
-        onClose={onCloseWordTemplatesModal}
-        wordTemplates={wordTemplates}
-        onSaveWordTemplate={onSaveWordTemplate}
-        onDeleteWordTemplate={onDeleteWordTemplate}
-        contractData={{
-          officeName: activeClerk.name,
-          officeAddr: 'مكتب التوثيق الرسمي',
-          typeActe: docTitle,
-          client1:
-            fieldValues['الطرف_الأول_الاسم'] ||
-            fieldValues['البائع'] ||
-            fieldValues['الموكل'] ||
-            '',
-          client2:
-            fieldValues['الطرف_الثاني_الاسم'] ||
-            fieldValues['المشتري'] ||
-            fieldValues['الوكيل'] ||
-            '',
-          dateActe: fieldValues['تاريخ_العقد'] || new Date().toLocaleDateString('ar-DZ'),
-          clauses: (() => {
-            const parsedFromSheet = parseContractIntoClauses(
-              modalActiveBodyHtml,
-              fieldValues
-            );
-            if (parsedFromSheet.length > 0) {
-              return parsedFromSheet.map((c) => ({
-                title: c.title,
-                contentHtml: c.bodyHtml,
-              }));
-            }
-            if (outlineClauses.length > 0) {
-              return outlineClauses.map((c) => ({
-                title: c.title,
-                contentHtml: c.contentHtml,
-              }));
-            }
-            return [];
-          })(),
-          rawContractBodyHtml: modalActiveBodyHtml,
-          fieldValues,
-        }}
       />
     </>
   );

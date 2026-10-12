@@ -35,6 +35,7 @@ import {
   CustomTemplate,
   DocumentRevision,
   DownloadArchiveItem,
+  OfficeTemplate,
   PartyField,
   SavedDocument,
   SavedPartyRecord,
@@ -43,13 +44,13 @@ import {
   VariableInputType,
   WordTemplateDefinition,
 } from '@/lib/types';
+import { computeTextDiff } from '@/lib/editor-utils';
+import { computeDocumentMetrics } from '@/lib/notarial-pagination';
 import {
   CandidateImportedClause,
   compileCandidateClausesToHtml,
-  computeDocumentMetrics,
-  computeTextDiff,
   segmentHtmlIntoCandidateClauses,
-} from '@/lib/editor-utils';
+} from '@/lib/clause-outline-engine';
 import { DocxImportResult } from '@/lib/docx-engine';
 import { exportTemplateAsDocx, renderTemplateWithContractData } from '@/lib/docx-template-engine';
 
@@ -581,18 +582,18 @@ export { VersionDiffModal, SnapshotsHistoryModal } from './RevisionsDiffModal';
 interface MultiSourceStartModalProps {
   isOpen: boolean;
   onClose: () => void;
-  templates: CustomTemplate[];
+  templates: (OfficeTemplate | CustomTemplate)[];
   documents: SavedDocument[];
-  downloads: DownloadArchiveItem[];
+  downloads?: DownloadArchiveItem[];
   onStartBlank: (clearPreviousClauses?: boolean) => void;
   onSelectTemplate: (
-    tpl: CustomTemplate,
+    tpl: OfficeTemplate | CustomTemplate,
     mode: 'replace' | 'insert',
     clearPreviousClauses: boolean
   ) => void;
   onSelectSavedDoc: (doc: SavedDocument) => void;
   onImportDocxFile: (file: File) => void;
-  onSelectDownloadArchiveItem: (item: DownloadArchiveItem) => void;
+  onSelectDownloadArchiveItem?: (item: DownloadArchiveItem) => void;
 }
 
 export function MultiSourceStartModal({
@@ -600,14 +601,12 @@ export function MultiSourceStartModal({
   onClose,
   templates,
   documents,
-  downloads,
   onStartBlank,
   onSelectTemplate,
   onSelectSavedDoc,
   onImportDocxFile,
-  onSelectDownloadArchiveItem,
 }: MultiSourceStartModalProps) {
-  const [sourceTab, setSourceTab] = useState<'blank' | 'templates' | 'docs' | 'archive'>('blank');
+  const [sourceTab, setSourceTab] = useState<'blank' | 'templates' | 'docs'>('blank');
   const [templateLoadMode, setTemplateLoadMode] = useState<'replace' | 'insert'>('replace');
   const [clearPreviousClauses, setClearPreviousClauses] = useState<boolean>(true);
 
@@ -638,7 +637,7 @@ export function MultiSourceStartModal({
         </div>
 
         {/* Source Tabs */}
-        <div className="grid grid-cols-4 gap-1 p-2 bg-slate-100 border-b border-slate-200 text-xs font-medium">
+        <div className="grid grid-cols-3 gap-1 p-2 bg-slate-100 border-b border-slate-200 text-xs font-medium">
           <button
             type="button"
             onClick={() => setSourceTab('blank')}
@@ -664,16 +663,7 @@ export function MultiSourceStartModal({
               sourceTab === 'docs' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
             }`}
           >
-            المسودات السابقة ({documents.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSourceTab('archive')}
-            className={`py-1.5 rounded ${
-              sourceTab === 'archive' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-            }`}
-          >
-            من أرشيف التحميلات ({downloads.length})
+            العقود المحفوظة ({documents.length})
           </button>
         </div>
 
@@ -791,7 +781,7 @@ export function MultiSourceStartModal({
                     <div>
                       <div className="text-xs font-bold text-slate-900">{tpl.name}</div>
                       <div className="text-[11px] text-slate-500">
-                        {tpl.category} · {tpl.extractedPlaceholders.length} وسم ذكي
+                        {tpl.category} · {(tpl.extractedPlaceholders || []).length} وسم ذكي
                       </div>
                     </div>
                     <button
@@ -839,42 +829,6 @@ export function MultiSourceStartModal({
                       className="px-3 py-1 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800"
                     >
                       فتح العقد
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {sourceTab === 'archive' && (
-            <div className="space-y-2">
-              {downloads.length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-500">
-                  أرشيف التحميلات فارغ حالياً.
-                </div>
-              ) : (
-                downloads.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between p-3 border border-slate-200 rounded hover:bg-slate-50"
-                  >
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">
-                        {item.documentTitle} — ({item.docTypeLabel})
-                      </div>
-                      <div className="text-[11px] text-slate-500 tabular-nums">
-                        {new Date(item.createdAt).toLocaleString('ar-DZ')} · {item.fileName}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelectDownloadArchiveItem(item);
-                        onClose();
-                      }}
-                      className="px-3 py-1 bg-blue-900 text-white text-xs font-medium rounded hover:bg-blue-800"
-                    >
-                      استيراد للمحرر
                     </button>
                   </div>
                 ))

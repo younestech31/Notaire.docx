@@ -26,7 +26,7 @@ import {
   CandidateImportedClause,
   compileCandidateClausesToHtml,
   segmentHtmlIntoCandidateClauses,
-} from '@/lib/editor-utils';
+} from '@/lib/clause-outline-engine';
 import {
   exportTemplateAsDocx,
   renderTemplateWithContractData,
@@ -447,7 +447,7 @@ export function DocxImportPreviewModal({
 }
 
 // =========================================================
-// 2. SAVE AS OFFICE TEMPLATE MODAL (حفظ كقالب مكتب مخصص)
+// 2. SAVE AS OFFICE TEMPLATE MODAL (حفظ كقالب مكتب موحد)
 // =========================================================
 interface SaveAsTemplateModalProps {
   isOpen: boolean;
@@ -457,6 +457,8 @@ interface SaveAsTemplateModalProps {
   currentFieldValues: Record<string, string>;
   onConfirmSave: (data: {
     name: string;
+    kind?: 'contract' | 'extract' | 'registration' | 'fiscal' | 'other';
+    code?: string;
     category: string;
     description: string;
     clearFilledValues: boolean;
@@ -472,6 +474,10 @@ export function SaveAsTemplateModal({
   onConfirmSave,
 }: SaveAsTemplateModalProps) {
   const [enteredName, setEnteredName] = useState<string | null>(null);
+  const [kind, setKind] = useState<
+    'contract' | 'extract' | 'registration' | 'fiscal' | 'other'
+  >('contract');
+  const [code, setCode] = useState<string>('');
   const [category, setCategory] = useState<string>('عقود البيع');
   const [customCategory, setCustomCategory] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -496,8 +502,19 @@ export function SaveAsTemplateModal({
     'عقود الإيجار',
     'وكالات وتفويضات',
     'شركات وتجارة',
-    'قروض ورهون',
+    'مستخرجات ووثائق مشتقة',
     'عام',
+  ];
+
+  const kindOptions: {
+    value: 'contract' | 'extract' | 'registration' | 'fiscal' | 'other';
+    label: string;
+  }[] = [
+    { value: 'contract', label: 'عقد توثيقي' },
+    { value: 'extract', label: 'مستخرج' },
+    { value: 'registration', label: 'تسجيل وشهر' },
+    { value: 'fiscal', label: 'جبائي' },
+    { value: 'other', label: 'أخرى' },
   ];
 
   const handleSave = () => {
@@ -505,6 +522,8 @@ export function SaveAsTemplateModal({
     const finalCategory = customCategory.trim() || category;
     onConfirmSave({
       name: templateName.trim(),
+      kind,
+      code: code.trim() || undefined,
       category: finalCategory,
       description: description.trim(),
       clearFilledValues,
@@ -522,10 +541,10 @@ export function SaveAsTemplateModal({
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                حفظ العقد الحالي كقالب في مكتبة المكتب
+                حفظ كقالب في مكتبة المكتب الموحدة
               </h2>
               <div className="text-[11px] text-slate-500">
-                يُخزن محلياً في قاعدة بيانات المكتب للرجوع إليه وتطبيقه على أي عقد جديد
+                يُخزن محلياً كقالب عقد أو مستخرج أو استمارة تسجيل للرجوع إليه وتوليد الوثائق منه
               </div>
             </div>
           </div>
@@ -548,6 +567,35 @@ export function SaveAsTemplateModal({
               placeholder="مثال: عقد بيع شقة بنظام التمليك المشترك - مكتبنا"
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:border-blue-900 focus:outline-none"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700">نوع قالب المكتب</label>
+            <div className="grid grid-cols-5 gap-1">
+              {kindOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setKind(opt.value)}
+                  className={`py-1.5 px-1.5 rounded text-[11px] font-semibold border text-center transition-colors ${
+                    kind === opt.value
+                      ? 'bg-blue-900 text-white border-blue-900'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {kind !== 'contract' && (
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="رمز الوثيقة المشتقة الاختياري (مثال: مستخرج_عقد / إشعار_إيداع)..."
+                className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:border-blue-900 focus:outline-none mt-1 font-mono"
+              />
+            )}
           </div>
 
           <div className="space-y-1.5">

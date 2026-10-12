@@ -397,3 +397,91 @@ test('DOCX Engine: generates valid .docx with multi-page ../.. pagination, table
   assert.ok(docXml.includes('../..'));
   assert.ok(docXml.includes('الصفحة الثانية والأخيرة'));
 });
+
+test('Unified OfficeTemplate Migration & Lightweight Export Revisions: migrates legacy templates and stores lightweight export logs', async () => {
+  const rootDir = createInMemoryDirHandle('office_unified_migration');
+  const bridge = createLocalFileSystemBridge(rootDir, 'مجلد_المكتب_الموحد');
+
+  (globalThis as unknown as { window: Record<string, unknown> }).window = {
+    __NOTAIRE_DESKTOP__: bridge,
+  };
+
+  try {
+    // Seed legacy stores (CustomTemplate, DerivedDocTemplate, WordTemplateDefinition)
+    await desktopOfficeStore.saveCustomTemplate({
+      id: 'legacy_custom_1',
+      name: 'قالب عقد بيع قديم',
+      category: 'عقود البيع',
+      description: 'قالب من المنظومة الأولى',
+      headerHtml: '',
+      bodyHtml: '<p>نص عقد البيع القديم [البائع]</p>',
+      footerHtml: '',
+      pageNumberingEnabled: true,
+      extractedPlaceholders: ['البائع'],
+      updatedAt: '2026-03-01T10:00:00.000Z',
+    });
+
+    await desktopOfficeStore.saveDerivedDocTemplate({
+      id: 'legacy_derived_1',
+      code: 'G1',
+      name: 'استمارة مستخرج ضريبي قديمة',
+      description: 'قالب من منظومة المشتقات القديمة',
+      headerHtml: '',
+      bodyHtml: '<p>مستخرج للضرائب [البائع]</p>',
+      footerHtml: '',
+      updatedAt: '2026-03-02T10:00:00.000Z',
+    });
+
+    await desktopOfficeStore.saveWordTemplate({
+      id: 'legacy_word_1',
+      name: 'قالب وورد قديم',
+      type: 'extract',
+      description: 'قالب من منظومة وورد القديمة',
+      headerHtml: '',
+      bodyHtml: '<p>مراسلة إدارية [الموثق]</p>',
+      footerHtml: '',
+      updatedAt: '2026-03-03T10:00:00.000Z',
+    });
+
+    // Load unified OfficeTemplates — should automatically migrate all three legacy templates + built-in derived templates
+    const unified = await desktopOfficeStore.loadOfficeTemplates();
+    const migratedContract = unified.find((t) => t.id === 'legacy_custom_1');
+    const migratedExtract = unified.find((t) => t.id === 'legacy_derived_1');
+    const migratedWord = unified.find((t) => t.id === 'legacy_word_1');
+
+    assert.ok(migratedContract, 'Legacy CustomTemplate must be migrated');
+    assert.equal(migratedContract.kind, 'contract');
+
+    assert.ok(migratedExtract, 'Legacy DerivedDocTemplate must be migrated');
+    assert.equal(migratedExtract.kind, 'extract');
+    assert.equal(migratedExtract.code, 'G1');
+    assert.equal(migratedExtract.docTypeCode, 'G1');
+
+    assert.ok(migratedWord, 'Legacy WordTemplateDefinition must be migrated');
+
+    // Save a lightweight export revision (eventType: 'export', empty bodyHtml)
+    await desktopOfficeStore.saveDocumentRevision({
+      id: 'rev_export_1',
+      documentId: 'doc_1',
+      documentTitle: 'عقد بيع عقاري',
+      author: 'الأستاذ الموثق',
+      bodyHtml: '',
+      fieldValues: {},
+      summary: 'تصدير نسخة Word يومية: عقد_بيع.docx',
+      createdAt: '2026-03-10T12:00:00.000Z',
+      eventType: 'export',
+      fileName: 'عقد_بيع.docx',
+      docTypeCode: 'acte',
+    });
+
+    const revisions = await desktopOfficeStore.loadDocumentRevisions();
+    const exportRev = revisions.find((r) => r.id === 'rev_export_1');
+    assert.ok(exportRev);
+    assert.equal(exportRev.eventType, 'export');
+    assert.equal(exportRev.bodyHtml, '');
+    assert.equal(exportRev.fileName, 'عقد_بيع.docx');
+  } finally {
+    delete (globalThis as unknown as { window?: unknown }).window;
+  }
+});
+

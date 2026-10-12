@@ -21,6 +21,8 @@ import {
   DownloadArchiveItem,
   NotaryClerk,
   NotaryClause,
+  OfficeTemplate,
+  OfficeTemplateKind,
   PartyField,
   SavedContractDerivedDoc,
   SavedDocument,
@@ -68,18 +70,18 @@ interface SidebarWorkspaceProps {
   partyCards?: ContractPartyCard[];
   onUpdatePartyCards?: (nextCards: ContractPartyCard[]) => void;
   onSavePartyCardToDirectory?: (card: ContractPartyCard) => void;
-  partyFields: PartyField[];
+  partyFields?: PartyField[];
   extractedPlaceholders: string[];
   clauseGroups: ClauseVariableGroup[];
   unfilledCount: number;
   fieldValues: Record<string, string>;
   fieldInputTypes?: Record<string, VariableInputType>;
-  onOpenSmartVariablesModal: (focusKey?: string) => void;
+  onOpenSmartVariablesModal?: (focusKey?: string) => void;
   onUpdateFieldValue: (key: string, value: string) => void;
   onChangeFieldInputType: (key: string, inputType: 'text' | 'number' | 'date') => void;
-  onAddCustomField: (key: string, label: string) => void;
+  onAddCustomField?: (key: string, label: string) => void;
   onInsertPlaceholderAtCaret: (key: string) => void;
-  onInsertValueAtCaret: (value: string) => void;
+  onInsertValueAtCaret?: (value: string) => void;
   onBakeAllPlaceholdersIntoDocument: (explicitValues?: Record<string, string>) => void;
   estates: SubdivisionEstate[];
   selectedEstateId: string;
@@ -97,21 +99,26 @@ interface SidebarWorkspaceProps {
   onRecallPropertyRecord: (prop: SavedPropertyRecord) => void;
   onSaveCurrentPropertyToDirectory: () => void;
   onDeleteSavedProperty: (id: string) => void;
-  // 3. Office Templates & Editable Derived Document Templates
-  templates: CustomTemplate[];
+  // 3. Unified Office Templates (Contracts, Extracts, Registration, Fiscal, Other)
+  templates: (OfficeTemplate | CustomTemplate)[];
   onImportDocxAsTemplate: (files: FileList) => Promise<void>;
-  onSaveCurrentAsTemplate: (name: string, category: string) => Promise<void>;
+  onSaveCurrentAsTemplate: (
+    name: string,
+    category: string,
+    kind?: OfficeTemplateKind,
+    code?: string
+  ) => Promise<void>;
   onOpenSaveAsTemplateModal?: () => void;
   onExportTemplatesJson?: () => void;
   onImportTemplatesJson?: (file: File) => void;
-  onLoadTemplateFull: (tpl: CustomTemplate, clearPreviousClauses?: boolean) => void;
-  onInsertTemplateAtCaret: (tpl: CustomTemplate) => void;
-  onExportTemplateDocx: (tpl: CustomTemplate) => Promise<void>;
+  onLoadTemplateFull: (tpl: OfficeTemplate | CustomTemplate, clearPreviousClauses?: boolean) => void;
+  onInsertTemplateAtCaret: (tpl: OfficeTemplate | CustomTemplate) => void;
+  onExportTemplateDocx: (tpl: OfficeTemplate | CustomTemplate) => Promise<void>;
   onDeleteTemplate: (id: string) => Promise<void>;
-  derivedTemplates: DerivedDocTemplate[];
-  activeEditingDerivedId: string | null;
-  onGenerateDerivedDoc: (tpl: DerivedDocTemplate) => void;
-  onEditDerivedTemplateInEditor: (tpl: DerivedDocTemplate) => void;
+  derivedTemplates?: DerivedDocTemplate[];
+  activeEditingDerivedId?: string | null;
+  onGenerateDerivedDoc?: (tpl: OfficeTemplate | DerivedDocTemplate) => void;
+  onEditDerivedTemplateInEditor?: (tpl: OfficeTemplate | DerivedDocTemplate) => void;
   onSaveCurrentAsDerivedTemplate: (name: string, code: string, description: string) => Promise<void>;
   onImportDocxForDerivedTemplate: (tpl: DerivedDocTemplate, file: File) => Promise<void>;
   onDeleteDerivedTemplate: (id: string) => Promise<void>;
@@ -214,7 +221,10 @@ export default function SidebarWorkspace({
   onInsertTemplateAtCaret,
   onExportTemplateDocx,
   onDeleteTemplate,
-  derivedTemplates,
+  derivedTemplates = [],
+  activeEditingDerivedId,
+  onGenerateDerivedDoc,
+  onEditDerivedTemplateInEditor,
   documents,
   activeDocumentId,
   currentEditorTitle,
@@ -440,6 +450,17 @@ export default function SidebarWorkspace({
             onInsertTemplateAtCaret={onInsertTemplateAtCaret}
             onExportTemplateDocx={onExportTemplateDocx}
             onDeleteTemplate={onDeleteTemplate}
+            onGenerateDerivedDoc={
+              onGenerateDerivedDoc
+                ? (tpl) => onGenerateDerivedDoc(tpl)
+                : undefined
+            }
+            onEditTemplateInEditor={
+              onEditDerivedTemplateInEditor
+                ? (tpl) => onEditDerivedTemplateInEditor(tpl)
+                : undefined
+            }
+            activeEditingTemplateId={activeEditingDerivedId}
             onSaveSelectionBookmark={onSaveSelectionBookmark}
           />
         )}
