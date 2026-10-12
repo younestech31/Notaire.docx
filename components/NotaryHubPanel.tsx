@@ -87,41 +87,57 @@ export default function NotaryHubPanel({
     [savedDocuments, activeSavedDoc?.year, currentYear]
   );
 
-  // Indexing state
-  const [depositNo, setDepositNo] = useState('');
-  const [indexNo, setIndexNo] = useState('');
-  const [contractDate, setContractDate] = useState(
-    () => fieldValues['تاريخ_العقد'] || new Date().toISOString().slice(0, 10)
-  );
+  // Indexing state derived with document-scoped user overrides
+  const defaultIndexNo =
+    activeSavedDoc?.indexNumber ||
+    fieldValues['رقم_الفهرس'] ||
+    suggestedNextIndex;
+  const defaultDepositNo =
+    activeSavedDoc?.depositNumber ||
+    fieldValues['رقم_الإيداع'] ||
+    suggestedNextDeposit;
+  const defaultContractDate =
+    fieldValues['تاريخ_العقد'] ||
+    (activeSavedDoc?.indexedAt ? activeSavedDoc.indexedAt.slice(0, 10) : '') ||
+    new Date().toISOString().slice(0, 10);
+
+  const [indexingDraft, setIndexingDraft] = useState<{
+    docId?: string | null;
+    depositNo?: string;
+    indexNo?: string;
+    contractDate?: string;
+  }>({});
   const [isSealing, setIsSealing] = useState(false);
 
-  // Sync suggested index/deposit numbers when active document or savedDocuments change
-  useEffect(() => {
-    const existingIdx =
-      activeSavedDoc?.indexNumber ||
-      fieldValues['رقم_الفهرس'] ||
-      suggestedNextIndex;
-    const existingDep =
-      activeSavedDoc?.depositNumber ||
-      fieldValues['رقم_الإيداع'] ||
-      suggestedNextDeposit;
-    const existingDate =
-      fieldValues['تاريخ_العقد'] ||
-      (activeSavedDoc?.indexedAt ? activeSavedDoc.indexedAt.slice(0, 10) : '') ||
-      new Date().toISOString().slice(0, 10);
+  const isSameDraftDoc = indexingDraft.docId === activeDocumentId;
+  const depositNo =
+    isSameDraftDoc && indexingDraft.depositNo !== undefined
+      ? indexingDraft.depositNo
+      : defaultDepositNo;
+  const indexNo =
+    isSameDraftDoc && indexingDraft.indexNo !== undefined
+      ? indexingDraft.indexNo
+      : defaultIndexNo;
+  const contractDate =
+    isSameDraftDoc && indexingDraft.contractDate !== undefined
+      ? indexingDraft.contractDate
+      : defaultContractDate;
 
-    setIndexNo(existingIdx);
-    setDepositNo(existingDep);
-    setContractDate(existingDate);
-  }, [
-    activeDocumentId,
-    activeSavedDoc?.indexNumber,
-    activeSavedDoc?.depositNumber,
-    activeSavedDoc?.indexedAt,
-    fieldValues,
-    suggestedNextIndex,
-    suggestedNextDeposit,
-  ]);
+  const setDepositNo = (val: string) =>
+    setIndexingDraft((prev) => ({
+      ...(prev.docId === activeDocumentId ? prev : { docId: activeDocumentId }),
+      depositNo: val,
+    }));
+  const setIndexNo = (val: string) =>
+    setIndexingDraft((prev) => ({
+      ...(prev.docId === activeDocumentId ? prev : { docId: activeDocumentId }),
+      indexNo: val,
+    }));
+  const setContractDate = (val: string) =>
+    setIndexingDraft((prev) => ({
+      ...(prev.docId === activeDocumentId ? prev : { docId: activeDocumentId }),
+      contractDate: val,
+    }));
 
   // Registration Batches state
   const [batches, setBatches] = useState<RegistrationBatch[]>([]);

@@ -140,11 +140,19 @@ export default function NotaryEditorApp() {
   const [previewMergedMode, setPreviewMergedMode] = useState<boolean>(false);
   const [mergedPreviewHtml, setMergedPreviewHtml] = useState<string>('');
   const [printPaginatedHtml, setPrintPaginatedHtml] = useState<string>('');
-  const [unlockIndexedBody, setUnlockIndexedBody] = useState<boolean>(false);
+  const [unlockedDocId, setUnlockedDocId] = useState<string | null>(null);
+  const unlockIndexedBody = unlockedDocId === docId;
+  const setUnlockIndexedBody = useCallback(
+    (value: React.SetStateAction<boolean>) => {
+      setUnlockedDocId((prev) => {
+        const current = prev === docId;
+        const next = typeof value === 'function' ? value(current) : value;
+        return next ? docId : null;
+      });
+    },
+    [docId]
+  );
   const [zoom, setZoom] = useState<number>(100);
-  useEffect(() => {
-    setUnlockIndexedBody(false);
-  }, [docId]);
 
   // Mode for editing an OfficeTemplate or a Clause directly inside the A4 Editor
   const [editingDerivedTpl, setEditingDerivedTpl] = useState<
