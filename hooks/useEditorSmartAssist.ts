@@ -4,7 +4,11 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { QuickAssistOption } from '@/components/editor/EditorQuickAssistPopover';
 import { InlineVariablePopoverState } from '@/components/InlineVariablePopover';
 import { SidebarTab } from '@/components/SidebarWorkspace';
-import { EditorSmartAssistPreferences } from '@/lib/types';
+import {
+  EditorSmartAssistPreferences,
+  STRICT_FONT_FAMILY,
+  STRICT_FONT_SIZE_PT,
+} from '@/lib/types';
 import {
   CaretInlineTrigger,
   detectCaretInlineTrigger,
@@ -49,6 +53,7 @@ interface UseEditorSmartAssistParams {
   >;
   setSidebarTab: React.Dispatch<React.SetStateAction<SidebarTab>>;
   setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  showToast?: (msg: string) => void;
 }
 
 export function useEditorSmartAssist({
@@ -78,6 +83,7 @@ export function useEditorSmartAssist({
   setInlinePopover,
   setSidebarTab,
   setIsSidebarOpen,
+  showToast,
 }: UseEditorSmartAssistParams) {
   const selectedAtomicTagRef = useRef<HTMLElement | null>(null);
 
@@ -323,28 +329,41 @@ export function useEditorSmartAssist({
 
   const handleSelectQuickAssistOption = useCallback(
     (opt: QuickAssistOption) => {
-      if (
-        !quickAssistTrigger ||
-        !bodyEditorRef.current ||
-        !ensureBodyEditable()
-      ) {
+      if (!bodyEditorRef.current || !ensureBodyEditable()) {
         setQuickAssistTrigger(null);
         return;
       }
-
-      const { textNode, triggerOffset, caretOffset } = quickAssistTrigger;
       recordHistorySnapshot();
 
       try {
-        const range = document.createRange();
-        range.setStart(textNode, triggerOffset);
-        range.setEnd(textNode, caretOffset);
-        range.deleteContents();
-
         const sel = window.getSelection();
-        if (sel) {
-          sel.removeAllRanges();
-          sel.addRange(range);
+        if (!sel || sel.rangeCount === 0) {
+          showToast?.('يرجى تحديد مكان المؤشر في نص العقد');
+          setQuickAssistTrigger(null);
+          return;
+        }
+        const range = sel.getRangeAt(0);
+        if (!bodyEditorRef.current.contains(range.commonAncestorContainer)) {
+          showToast?.('المؤشر خارج مساحة نص العقد');
+          setQuickAssistTrigger(null);
+          return;
+        }
+
+        if (quickAssistTrigger) {
+          try {
+            const tRange = document.createRange();
+            tRange.setStart(
+              quickAssistTrigger.textNode,
+              quickAssistTrigger.triggerOffset
+            );
+            tRange.setEnd(
+              quickAssistTrigger.textNode,
+              quickAssistTrigger.caretOffset
+            );
+            tRange.deleteContents();
+          } catch {
+            // ignore if textNode detached
+          }
         }
 
         if (opt.kind === 'tag') {
@@ -358,29 +377,18 @@ export function useEditorSmartAssist({
           const afterRange = document.createRange();
           afterRange.setStartAfter(space);
           afterRange.collapse(true);
-          sel?.removeAllRanges();
-          sel?.addRange(afterRange);
+          sel.removeAllRanges();
+          sel.addRange(afterRange);
           setQuickAssistTrigger(null);
           flushSyncPlaceholdersAndDraft();
           return;
         }
 
         if (opt.kind === 'clause') {
-          const block = textNode.parentElement?.closest(
-            'p, div, li'
-          ) as HTMLElement | null;
-          const boldSpan = document.createElement('span');
-          boldSpan.style.fontWeight = 'bold';
-          boldSpan.textContent = opt.insertValue;
-          range.insertNode(boldSpan);
-          if (block) {
-            block.style.fontWeight = 'bold';
-          }
-          const afterRange = document.createRange();
-          afterRange.setStartAfter(boldSpan);
-          afterRange.collapse(true);
-          sel?.removeAllRanges();
-          sel?.addRange(afterRange);
+          const clauseId = `clause_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const pStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;`;
+          const clauseHtml = `<p dir="rtl" style="${pStyle}" data-clause-id="${clauseId}"><span style="font-weight:bold;">${opt.insertValue}</span></p><p dir="rtl" style="${pStyle}"><br></p>`;
+          insertHtmlAtSelection(bodyEditorRef.current, clauseHtml, range);
           setQuickAssistTrigger(null);
           flushSyncPlaceholdersAndDraft();
           return;
@@ -394,8 +402,8 @@ export function useEditorSmartAssist({
             const afterRange = document.createRange();
             afterRange.setStartAfter(hashNode);
             afterRange.collapse(true);
-            sel?.removeAllRanges();
-            sel?.addRange(afterRange);
+            sel.removeAllRanges();
+            sel.addRange(afterRange);
             setTimeout(() => refreshInlineQuickAssistTrigger(), 10);
           } else if (opt.slashAction === 'tag') {
             const bracketNode = document.createTextNode('[');
@@ -403,8 +411,8 @@ export function useEditorSmartAssist({
             const afterRange = document.createRange();
             afterRange.setStartAfter(bracketNode);
             afterRange.collapse(true);
-            sel?.removeAllRanges();
-            sel?.addRange(afterRange);
+            sel.removeAllRanges();
+            sel.addRange(afterRange);
             setTimeout(() => refreshInlineQuickAssistTrigger(), 10);
           } else if (opt.slashAction === 'table') {
             savedRangeRef.current = range.cloneRange();
@@ -420,6 +428,7 @@ export function useEditorSmartAssist({
         }
       } catch {
         setQuickAssistTrigger(null);
+        showToast?.('حدث خطأ أثناء تطبيق الإجراء السريع');
       }
     },
     [
@@ -434,6 +443,7 @@ export function useEditorSmartAssist({
       savedRangeRef,
       setIsSidebarOpen,
       setSidebarTab,
+      showToast,
     ]
   );
 

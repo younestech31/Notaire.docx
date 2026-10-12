@@ -226,9 +226,9 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
       const rawTitle =
         child.getAttribute('data-clause-title') ||
         child.querySelector('strong, b, h1, h2, h3, h4')?.textContent?.trim() ||
-        `بند رقم ${segments.length + 1}`;
+        `بند`;
       const cleanTitle = rawTitle.replace(/^#+\s*/, '').replace(/:$/, '').trim();
-      const cId = child.getAttribute('data-clause-id') || `dom_container_${idx}`;
+      const cId = child.getAttribute('data-clause-id') || '';
       const locked =
         child.getAttribute('data-clause-locked') === 'true' ||
         child.getAttribute('contenteditable') === 'false';
@@ -242,7 +242,7 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
 
       segments.push({
         id: cId,
-        title: cleanTitle || `بند رقم ${segments.length + 1}`,
+        title: cleanTitle || `بند`,
         domIndex: idx,
         isContainer: true,
         locked,
@@ -257,7 +257,7 @@ function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
     const headingInfo = detectNotaryClauseHeading(child);
     if (headingInfo.isHeading) {
       flushSegment();
-      const cId = child.getAttribute('data-clause-id') || `hash_clause_${idx}`;
+      const cId = child.getAttribute('data-clause-id') || '';
 
       currentSegment = {
         id: cId,
@@ -305,8 +305,10 @@ export function upgradeTopLevelHashSegmentsToContainers(
 
     if (seg.isContainer) {
       const containerEl = seg.elements[0];
-      if (!containerEl.getAttribute('data-clause-id')) {
-        containerEl.setAttribute('data-clause-id', matchedPrev?.id || seg.id);
+      let cId = containerEl.getAttribute('data-clause-id');
+      if (!cId) {
+        cId = matchedPrev?.id || seg.id || `clause_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        containerEl.setAttribute('data-clause-id', cId);
       }
       containerEl.setAttribute('data-clause-order', String(clauseOrder));
       containerEl.setAttribute('data-clause-title', seg.title);
@@ -323,10 +325,14 @@ export function upgradeTopLevelHashSegmentsToContainers(
     } else {
       const firstEl = seg.elements[0];
       if (!firstEl || !firstEl.parentNode) return;
+      let cId = firstEl.getAttribute('data-clause-id');
+      if (!cId) {
+        cId = matchedPrev?.id || seg.id || `clause_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        firstEl.setAttribute('data-clause-id', cId);
+      }
       const wrapper = document.createElement('div');
       wrapper.className = 'clause-container';
-      const newId = matchedPrev?.id || seg.id || `clause_${Date.now()}_${idx}`;
-      wrapper.setAttribute('data-clause-id', newId);
+      wrapper.setAttribute('data-clause-id', cId);
       wrapper.setAttribute('data-clause-order', String(clauseOrder));
       wrapper.setAttribute('data-clause-title', seg.title);
       if (seg.clauseKind) {

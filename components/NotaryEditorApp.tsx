@@ -499,6 +499,7 @@ export default function NotaryEditorApp() {
     setInlinePopover,
     setSidebarTab,
     setIsSidebarOpen,
+    showToast,
   });
 
   // 10. Document Switching, Word Import/Export, Snapshots & Template Workflows Hook
@@ -764,13 +765,11 @@ export default function NotaryEditorApp() {
       if (
         bodyEditorRef.current &&
         previewBackupHtmlRef.current &&
-        (!bodyEditorRef.current.innerHTML.trim() ||
-          bodyEditorRef.current.innerHTML === '<br>' ||
-          bodyEditorRef.current.innerHTML === '<p><br></p>' ||
-          bodyEditorRef.current.innerHTML === INITIAL_EMPTY_PARAGRAPH)
+        (bodyEditorRef.current.textContent || '').trim().length <
+          (previewBackupHtmlRef.current.replace(/<[^>]+>/g, '') || '').trim().length / 2
       ) {
         bodyEditorRef.current.innerHTML = previewBackupHtmlRef.current;
-        normalizeNotaryContainerDOM(bodyEditorRef.current);
+        normalizeNotaryContainerDOM(bodyEditorRef.current, false);
       }
       setTimeout(() => {
         flushSyncPlaceholdersAndDraft();

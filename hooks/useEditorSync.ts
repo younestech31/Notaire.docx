@@ -227,14 +227,6 @@ export function useEditorSync({
         return;
       }
 
-      if (
-        previewBackupHtmlRef.current &&
-        bodyHtml.replace(/<[^>]+>/g, '').trim().length <
-          previewBackupHtmlRef.current.replace(/<[^>]+>/g, '').trim().length / 2
-      ) {
-        return;
-      }
-
       if (editingDerivedTpl || editingClauseObj) {
         return;
       }
