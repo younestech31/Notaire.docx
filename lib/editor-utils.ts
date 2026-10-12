@@ -450,10 +450,10 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
       } else {
         closeActiveList();
         const isHashHeading = trimmed.startsWith('#');
-        htmlChunks.push(
+      htmlChunks.push(
           `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:justify;${
             isHashHeading ? 'font-weight:bold;' : ''
-          }">${trimmed ? escapeHtml(rawLine) : '<br>'}</p>`
+          }">${trimmed ? escapeHtml(collapseExtraSpacesInText(rawLine).trim()) : '<br>'}</p>`
         );
       }
     }
@@ -463,6 +463,7 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
       const tempContainer = document.createElement('div');
       tempContainer.innerHTML = htmlChunks.join('');
       decorateSmartTagsInDOM(tempContainer);
+      collapseExtraSpacesInDom(tempContainer);
       return tempContainer.innerHTML;
     }
     // SSR / Node test fallback: string-based smart-tag replacement
@@ -642,6 +643,7 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
   }
 
   decorateSmartTagsInDOM(doc.body);
+  collapseExtraSpacesInDom(doc.body);
   return doc.body.innerHTML;
 }
 
@@ -1754,3 +1756,26 @@ export function detectCaretInlineTrigger(
   return null;
 }
 
+/**
+ * Collapses multiple whitespace characters (including NBSP variants) into a single space.
+ */
+export function collapseExtraSpacesInText(text: string): string {
+  return text
+    .replace(/[\u00A0\u2007\u202F]/g, ' ')  // NBSP variants → space
+    .replace(/[ \t\f\v]+/g, ' ');           // runs → one space
+}
+
+export function collapseExtraSpacesInDom(rootEl: HTMLElement): void {
+  if (!rootEl) return;
+  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) nodes.push(n as Text);
+  for (const t of nodes) {
+    if (!t.parentElement) continue;
+    if (t.parentElement.closest('[data-notary-pagination="true"]')) continue;
+    // Keep smart-tag display as single token; still collapse internal doubles if any
+    const next = collapseExtraSpacesInText(t.nodeValue || '');
+    if (next !== t.nodeValue) t.nodeValue = next;
+  }
+}

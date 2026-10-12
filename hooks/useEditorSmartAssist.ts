@@ -16,6 +16,7 @@ import {
   insertHtmlAtSelection,
   moveCaretOutsideSmartTag,
   sanitizePastedWordHTML,
+  collapseExtraSpacesInDom,
 } from '@/lib/editor-utils';
 import { insertTableRowAtCell } from '@/lib/table-grid';
 
@@ -726,6 +727,7 @@ export function useEditorSmartAssist({
         const range =
           sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : savedRangeRef.current;
         insertHtmlAtSelection(bodyEditorRef.current, cleanHtml, range);
+        collapseExtraSpacesInDom(bodyEditorRef.current);
         syncPlaceholdersAndDraft();
       }
     },
