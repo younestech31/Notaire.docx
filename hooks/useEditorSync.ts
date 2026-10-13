@@ -19,7 +19,9 @@ import {
 import {
   computeDocumentMetrics,
   injectNotarialPaginationIntoHtml,
+  stripNotarialPaginationFromHtml,
 } from '@/lib/notarial-pagination';
+import { purifyNotarialBodyHtml } from '@/lib/notarial-body-purifier';
 import {
   applyPartyCardsToFieldValues,
   extractLiveContractClausesFromDOM,
@@ -291,6 +293,12 @@ export function useEditorSync({
           );
           await saveActiveDraftSession(draft);
           await saveDocumentRecord(draft);
+          if (bodyEditorRef.current) {
+            const cleanBody = purifyNotarialBodyHtml(stripNotarialPaginationFromHtml(bodyEditorRef.current.innerHTML));
+            if (bodyEditorRef.current.innerHTML !== cleanBody) {
+              bodyEditorRef.current.innerHTML = cleanBody;
+            }
+          }
           const updatedDocs = await loadSavedDocuments();
           setDocuments(updatedDocs);
           setActiveDocument((prev) => (prev?.id === draft.id ? draft : prev));

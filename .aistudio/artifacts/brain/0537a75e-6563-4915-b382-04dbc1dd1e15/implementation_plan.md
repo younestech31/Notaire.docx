@@ -1,26 +1,36 @@
-# Implementation Plan - Dense Notarial Body Purification & Clean Pagination
+# Implementation Plan - Final Precision Fixes: Live Density & Accurate Pagination
 
 ## Objective
-Implement strict notarial body purification (zero empty lines, paragraph-after-paragraph density, fixed 7/2/1/6 margins, clean export/preview-only pagination) as requested.
+Implement the 5 targeted precision fixes:
+1. Remove trailing paragraph generator (`trailingP`) in `normalizeNotaryContainerDOM` (`lib/editor-utils.ts`).
+2. Reflect purification in editor state after successful save/autosave (`NotaryEditorApp.tsx` / `storage-browser.ts`).
+3. Compute exact `pageCount` from pagination injection output in `generateNotaryDocxBlob` (`lib/docx-engine.ts`) before final `normalizeAllNotaryFieldValues`.
+4. Drop empty paragraphs at source in `convertXmlParagraphToHtml` (`lib/docx-importer.ts`).
+5. Add corresponding unit tests in `tests/notarial-core.test.ts`.
 
 ## Proposed Changes
 
-### 1. New Utility: `lib/notarial-body-purifier.ts`
-- Implement `purifyNotarialBodyHtml(html: string, options?: { keepSingleEmptyShell?: boolean }): string`.
-- Removes empty `<p>`/`<div>` without visible text, folds consecutive `<br>`, strips old pagination markers, preserves tables, images, `.smart-tag`, clause headers, and enforces strict base inline styles (`margin:0; line-height:1; font-family:Arial; font-size:13pt`).
+### 1. `lib/editor-utils.ts` (`normalizeNotaryContainerDOM`)
+- Remove the code block adding `trailingP` after tables, page breaks, or clauses.
+- Retain only the single empty shell check (`<p dir="rtl"><br></p>`) when container has zero text/blocks.
 
-### 2. Hook up Purification & Prevent Source Empty Paragraphs
-- **`lib/docx-importer.ts`**: Return `''` for empty paragraphs in `convertXmlParagraphToHtml`, and purify final imported HTML.
-- **`lib/editor-utils.ts`**: Update `sanitizePastedWordHTML` to ignore empty lines and run `purifyNotarialBodyHtml` on output.
-- **`lib/docx-engine.ts`**: Purify `bodyHtml` (and header/footer) before merging placeholders and injecting pagination in `generateNotaryDocxBlob`. Pass real `pageCount`.
-- **`lib/indexing-engine.ts`**: Purify contract body before sealing original.
+### 2. Editor State Sync After Save (`NotaryEditorApp.tsx`)
+- In save/autosave handlers, after `saveActiveDraftSession` or `saveDocumentRecord`, update the editor's active document `bodyHtml` state with the purified version (`purifyNotarialBodyHtml(doc.bodyHtml)`).
 
-### 3. Clean Pagination Layer (`lib/notarial-pagination.ts`)
-- Ensure stored document drafts strip pagination markers before saving to IndexedDB/localStorage.
-- Apply `purifyNotarialBodyHtml` -> `injectNotarialPaginationIntoHtml` exclusively during preview and `.docx` export.
+### 3. DOCX Export Accurate Page Count (`lib/docx-engine.ts`)
+- In `generateNotaryDocxBlob`:
+  1. Purify `bodyHtml`.
+  2. Merge initial placeholders.
+  3. Inject pagination (`injectNotarialPaginationIntoHtml`) -> `mergedBodyHtml`.
+  4. Count pages accurately from `mergedBodyHtml` (e.g. counting `data-notary-pagination` elements + 1, or parsing closing pagination text).
+  5. Re-run `normalizeAllNotaryFieldValues` with the exact computed `pageCount`.
+  6. Regenerate final merged body & headers/footers with updated field values.
 
-### 4. Unit Tests (`tests/notarial-core.test.ts`)
-- Add tests for body purification, empty paragraph dropping, pagination on purified text, and `pages2lettre_acte` accuracy.
+### 4. Docx Importer (`lib/docx-importer.ts`)
+- In `convertXmlParagraphToHtml`, ensure empty paragraphs without text, page breaks, or tables return `''`.
+
+### 5. Unit Tests (`tests/notarial-core.test.ts`)
+- Add unit tests for importer empty paragraph dropping and DOCX export page count accuracy.
 
 ## Verification
 - Run `npm test` and `compile_applet`.

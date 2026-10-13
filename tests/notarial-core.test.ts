@@ -739,5 +739,19 @@ test('Notarial Body Purifier: removes empty paragraphs and enforces dense format
   assert.ok(purified.includes('خلية جدول'));
 });
 
+test('DOCX Export & Importer: true pageCount and empty paragraph drop', async () => {
+  const longBody = Array.from({ length: 60 }, (_, i) => `<p dir="rtl">سلسلة نصية طويلة رقم ${i} لامتلاد الصفحات في التوثيق الرسمي الجزائري.</p>`).join('\n');
+  const blob = await generateNotaryDocxBlob({
+    title: 'عقد اختبار الصفحات',
+    bodyHtml: longBody,
+    pageNumberingEnabled: true,
+  });
+  assert.ok(blob);
+
+  const emptyPResult = purifyNotarialBodyHtml('<p><br></p><p>   </p><p>محتوى حقيقي</p>');
+  assert.ok(emptyPResult.includes('محتوى حقيقي'));
+  assert.ok(!emptyPResult.includes('<br>'));
+});
+
 
 

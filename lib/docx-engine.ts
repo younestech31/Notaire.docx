@@ -1026,31 +1026,61 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const zip = new JSZip();
   const purifiedBodyHtml = purifyNotarialBodyHtml(options.bodyHtml);
 
-  const pageCount = options.pageCount || (options.fieldValues?.['pages_acte'] ? parseInt(options.fieldValues['pages_acte'], 10) : undefined) || 1;
-  const normalizedFieldValues = options.fieldValues
+  const initialPageCount = options.pageCount || (options.fieldValues?.['pages_acte'] ? parseInt(options.fieldValues['pages_acte'], 10) : undefined) || 1;
+  const initialNormalized = options.fieldValues
     ? normalizeAllNotaryFieldValues(options.fieldValues, {
         contractBodyHtml: purifiedBodyHtml,
-        pageCount,
+        pageCount: initialPageCount,
       })
     : normalizeAllNotaryFieldValues({}, {
         contractBodyHtml: purifiedBodyHtml,
         pageCount: 1,
       });
 
-  const rawMergedBody = mergePlaceholdersIntoHtml(purifiedBodyHtml, normalizedFieldValues);
+  const rawMergedBody = mergePlaceholdersIntoHtml(purifiedBodyHtml, initialNormalized);
   const mergedBodyHtml = injectNotarialPaginationIntoHtml(
     rawMergedBody,
     options.pageNumberingEnabled !== false
   );
-  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', normalizedFieldValues);
-  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', normalizedFieldValues);
+
+  let truePageCount = initialPageCount;
+  if (typeof DOMParser !== 'undefined') {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div>${mergedBodyHtml}</div>`, 'text/html');
+    const paginationMarkers = doc.querySelectorAll('[data-notary-pagination="true"]');
+    if (paginationMarkers.length > 0) {
+      truePageCount = paginationMarkers.length + 1;
+    }
+  }
+
+  const finalFieldValues = truePageCount !== initialPageCount
+    ? (options.fieldValues
+        ? normalizeAllNotaryFieldValues(options.fieldValues, {
+            contractBodyHtml: purifiedBodyHtml,
+            pageCount: truePageCount,
+          })
+        : normalizeAllNotaryFieldValues({}, {
+            contractBodyHtml: purifiedBodyHtml,
+            pageCount: truePageCount,
+          }))
+    : initialNormalized;
+
+  const finalRawBody = truePageCount !== initialPageCount
+    ? mergePlaceholdersIntoHtml(purifiedBodyHtml, finalFieldValues)
+    : rawMergedBody;
+  const finalMergedBodyHtml = truePageCount !== initialPageCount
+    ? injectNotarialPaginationIntoHtml(finalRawBody, options.pageNumberingEnabled !== false)
+    : mergedBodyHtml;
+
+  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', finalFieldValues);
+  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', finalFieldValues);
 
   const mediaList: MediaRelationship[] = [];
   let bodyElementsXml = '';
 
   if (typeof DOMParser !== 'undefined') {
     const parser = new DOMParser();
-    const bodyDoc = parser.parseFromString(`<div>${mergedBodyHtml}</div>`, 'text/html');
+    const bodyDoc = parser.parseFromString(`<div>${finalMergedBodyHtml}</div>`, 'text/html');
     const bodyRoot = bodyDoc.body.firstElementChild as HTMLElement;
     bodyElementsXml = serializeBlockContainerToXml(
       bodyRoot,
@@ -1060,7 +1090,7 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   } else {
     // Fallback XML serializer for Node.js / headless test environments without DOMParser
     const blockTokens =
-      mergedBodyHtml.match(
+      finalMergedBodyHtml.match(
         /<table\b[\s\S]*?<\/table>|<div\b[^>]*page-break[^>]*>[\s\S]*?<\/div>|<p\b[^>]*>[\s\S]*?<\/p>/gi
       ) || [];
     for (const token of blockTokens) {

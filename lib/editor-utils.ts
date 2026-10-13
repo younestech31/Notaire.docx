@@ -367,24 +367,6 @@ export function normalizeNotaryContainerDOM(
     if (el.hasAttribute('face')) el.removeAttribute('face');
     if (el.hasAttribute('size')) el.removeAttribute('size');
   }
-
-  const lastChild = rootEl.lastElementChild;
-  if (
-    lastChild &&
-    (lastChild.classList.contains('page-break') ||
-      lastChild.tagName === 'TABLE' ||
-      lastChild.classList.contains('clause-container'))
-  ) {
-    const trailingP = document.createElement('p');
-    trailingP.setAttribute('dir', 'rtl');
-    trailingP.style.margin = '0';
-    trailingP.style.lineHeight = '1';
-    trailingP.style.fontFamily = STRICT_FONT_FAMILY;
-    trailingP.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
-    trailingP.style.textAlign = 'justify';
-    trailingP.appendChild(document.createElement('br'));
-    rootEl.appendChild(trailingP);
-  }
 }
 
 /**
