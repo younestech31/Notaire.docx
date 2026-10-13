@@ -130,8 +130,22 @@ export async function exportWithStandardTemplate(params: {
   bodyHtml: string;
   fieldValues: Record<string, string>;
 }): Promise<{ fileName: string; templateName: string }> {
-  // Logic to be implemented or linked to notary-word-templates.ts
-  throw new Error('Not implemented');
+  // Use the same export logic as in exportEditorBodyToDocx
+  const purifiedBody = purifyNotarialBodyHtml(params.bodyHtml);
+  
+  await downloadNotaryDocx({
+    title: params.contractTitle,
+    bodyHtml: purifiedBody,
+    headerHtml: '',
+    footerHtml: '',
+    pageNumberingEnabled: true,
+    fieldValues: params.fieldValues,
+  });
+
+  return {
+    fileName: `${params.contractTitle}.docx`,
+    templateName: params.templateId,
+  };
 }
 
 export async function generateAndDownloadDerivedDoc(params: {

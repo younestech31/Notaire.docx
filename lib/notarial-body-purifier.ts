@@ -78,7 +78,7 @@ export function purifyNotarialBodyHtml(html: string, options?: PurifyOptions): s
         .replace(/font-size:[^;]+(;|$)/gi, '');
       child.setAttribute(
         'style',
-        `margin:0; line-height:1; font-family:Arial; font-size:13pt; ${cleanedStyle}`.trim()
+        `margin:0; line-height:1; ${cleanedStyle}`.trim()
       );
     }
   }

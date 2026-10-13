@@ -24,7 +24,7 @@ import {
   saveDocumentRevision,
 } from '@/lib/storage';
 import {
-  exportContractToWord,
+  exportEditorBodyToDocx,
   generateAndDownloadDerivedDoc,
 } from '@/lib/document-io-workflows';
 import { downloadNotaryDocx, mergePlaceholdersIntoHtml } from '@/lib/docx-engine';
@@ -371,7 +371,7 @@ export function useNotaryLifecycle(
   const handleExportContractWord = useCallback(
     async (snapshot: DocumentSessionSnapshot) => {
       try {
-        const { fileName, revisions: nextRevs } = await exportContractToWord({
+        const { fileName, revisions: nextRevs } = await exportEditorBodyToDocx({
           docId: snapshot.docId,
           docTitle: snapshot.docTitle,
           bodyHtml: snapshot.bodyHtml,
