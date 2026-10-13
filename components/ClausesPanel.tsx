@@ -196,7 +196,7 @@ export default function ClausesPanel({
           <div className="border border-dashed border-blue-200 rounded p-3 text-center bg-white/80 space-y-1.5">
             <div className="text-xs font-semibold text-slate-800 flex items-center justify-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-blue-900" />
-              <span>كاشف البنود الهجين التوثيقي جاهز</span>
+              <span>فهرس البنود جاهز</span>
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed text-right">
               يتعرف المحرر تلقائياً وفورياً أثناء الكتابة أو اللصق على:
@@ -753,7 +753,7 @@ export default function ClausesPanel({
         >
           <div>
             <div className="text-xs font-bold text-slate-900">
-              مكتبة البنود المقترحة للإدراج ({clauses.length})
+              بنود المكتب المحفوظة للإدراج ({clauses.length})
             </div>
             <div className="text-[10px] text-slate-500">
               مكتبة مساعدة فارغة افتراضياً — لا تدخل في العقد إلا عند ضغط «+ إدراج في العقد»
@@ -773,7 +773,7 @@ export default function ClausesPanel({
                 type="text"
                 value={clauseSearch}
                 onChange={(e) => setClauseSearch(e.target.value)}
-                placeholder="بحث في مكتبة البنود المقترحة..."
+                placeholder="بحث في بنود المكتب المحفوظة..."
                 className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded focus:bg-white focus:border-blue-900 focus:outline-none"
               />
               <button
@@ -881,7 +881,7 @@ export default function ClausesPanel({
             {clauses.length === 0 ? (
               <div className="border border-dashed border-slate-200 rounded p-4 text-center text-xs text-slate-500 space-y-2">
                 <p>
-                  مكتبة البنود المقترحة فارغة افتراضياً للحفاظ على خفة النظام. يمكنك حفظ أي بند من العقد بالضغط على أيقونة الحفظ بجانب البند، أو استيراد الحزمة القياسية أعلاه.
+                  بنود المكتب المحفوظة فارغة افتراضياً للحفاظ على خفة النظام. يمكنك حفظ أي بند من العقد بالضغط على أيقونة الحفظ بجانب البند، أو استيراد الحزمة القياسية أعلاه.
                 </p>
               </div>
             ) : (

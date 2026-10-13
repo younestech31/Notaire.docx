@@ -132,7 +132,7 @@ export default function ExportMenuDropdown({
           {/* Section 1: 6 Built-in / Customized Standard Templates */}
           <div className="p-1.5 space-y-0.5 max-h-[60vh] overflow-y-auto">
             <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400">
-              القوالب التوثيقية الستة (بحقن المتغيرات الآلي)
+              أوراق المكتب الستة
             </div>
 
             {items.map((item) => {

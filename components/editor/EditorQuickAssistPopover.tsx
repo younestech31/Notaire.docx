@@ -65,7 +65,7 @@ export default function EditorQuickAssistPopover({
 
   const headerTitle =
     triggerType === 'tag'
-      ? 'إكمال الوسم الذكي [...]'
+      ? 'إكمال البيان [...]'
       : triggerType === 'clause'
       ? 'إدراج عنوان بند توثيقي (#)'
       : 'أوامر الإدراج السريع (/)';

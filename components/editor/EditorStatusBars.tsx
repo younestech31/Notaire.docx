@@ -306,10 +306,10 @@ export function EditorBottomStatusBar({
           }`}
         >
           {unfilledCount > 0
-            ? `المتغيرات غير المعبأة: ${unfilledCount} (اضغط للتعبئة)`
+            ? `بيانات ناقصة: ${unfilledCount} (اضغط للتعبئة)`
             : totalVariablesCount === 0
-            ? 'لا توجد متغيرات مستخرجة بالعقد'
-            : `جميع متغيرات العقد مكتملة (${totalVariablesCount})`}
+            ? 'لا توجد بيانات مستخرجة من العقد'
+            : `بيانات العقد مكتملة (${totalVariablesCount})`}
         </button>
 
         {activeClauseTitle && (

@@ -1151,7 +1151,7 @@ export default function NotaryEditorApp() {
                   enableSlashCommands: false,
                 });
                 showToast(
-                  'تم إيقاف قائمة الأوامر السريعة (/) — يمكنك إعادة تفعيلها من زر «المساعد الذكي»'
+                  'تم إيقاف قائمة الأوامر السريعة (/) — يمكنك إعادة تفعيلها من زر «معين الكتابة»'
                 );
               } else {
                 handleUpdateSmartAssistPrefs({
@@ -1159,7 +1159,7 @@ export default function NotaryEditorApp() {
                   enableInlineAutocomplete: false,
                 });
                 showToast(
-                  'تم إيقاف الإكمال التلقائي للوسوم والبنود — يمكنك إعادة تفعيله من زر «المساعد الذكي»'
+                  'تم إيقاف الإكمال التلقائي للوسوم والبنود — يمكنك إعادة تفعيله من زر «معين الكتابة»'
                 );
               }
             }}

@@ -224,7 +224,7 @@ export default function SidebarWorkspace({
           <span className="w-2 h-2 rounded-full bg-blue-900" />
           <h3 className="text-xs font-bold text-slate-900">
             {activeTab === 'clauses' && 'بنود وصياغات العقود'}
-            {activeTab === 'parties' && 'استمارة الأطراف والتعيينات'}
+            {activeTab === 'parties' && 'الأطراف والتعيين'}
             {activeTab === 'templates' && 'قوالب عقود المكتب'}
             {activeTab === 'documents' && 'المستندات والأرشيف المحلي'}
             {activeTab === 'notary_hub' && 'الفهارس ومنظومة الموثق'}

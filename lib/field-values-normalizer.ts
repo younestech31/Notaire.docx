@@ -178,13 +178,13 @@ export function normalizeAllNotaryFieldValues(
     if (!result['client_name']) result['client_name'] = p2;
   }
 
-  // 10. Contract body text injection into clause tags
-  if (options?.contractBodyHtml) {
-    result['clause'] = options.contractBodyHtml;
-    result['contenu_acte'] = options.contractBodyHtml;
-    result['corps_acte'] = options.contractBodyHtml;
-    result['texte_acte'] = options.contractBodyHtml;
-  }
+  // 10. Contract body text injection into clause tags (REMOVED to prevent escaping as a single block)
+  // if (options?.contractBodyHtml) {
+  //   result['clause'] = options.contractBodyHtml;
+  //   result['contenu_acte'] = options.contractBodyHtml;
+  //   result['corps_acte'] = options.contractBodyHtml;
+  //   result['texte_acte'] = options.contractBodyHtml;
+  // }
 
   return result;
 }

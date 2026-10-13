@@ -262,7 +262,7 @@ export function mergePlaceholdersIntoHtml(
             span.getAttribute('data-var') || (span.textContent || '');
           const val = lookupPlaceholderValue(fieldValues, rawVar);
           if (val !== undefined && val.trim() !== '') {
-            span.replaceWith(doc.createTextNode(val.trim()));
+            span.innerHTML = val.trim();
           }
         }
 
@@ -289,7 +289,11 @@ export function mergePlaceholdersIntoHtml(
               }
             );
             if (replaced !== txt) {
-              tNode.nodeValue = replaced;
+                const frag = doc.createDocumentFragment();
+                const temp = doc.createElement('span');
+                temp.innerHTML = replaced;
+                while(temp.firstChild) frag.appendChild(temp.firstChild);
+                tNode.parentNode?.replaceChild(frag, tNode);
             }
           }
         }
@@ -343,7 +347,11 @@ export function mergePlaceholdersIntoHtml(
                 r.setStart(sEntry.node, mStart - sEntry.start);
                 r.setEnd(eEntry.node, mEnd - eEntry.start);
                 r.deleteContents();
-                r.insertNode(doc.createTextNode(val.trim()));
+                const temp = doc.createElement('span');
+                temp.innerHTML = val.trim();
+                while (temp.firstChild) {
+                    r.insertNode(temp.firstChild);
+                }
               }
             }
           }

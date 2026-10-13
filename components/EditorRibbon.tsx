@@ -835,7 +835,7 @@ export default function EditorRibbon({
             }
           >
             <span className="font-mono text-[10px] bg-pink-950/40 px-1 rounded">[ ]</span>
-            <span>تحويل لوسم</span>
+            <span>تعليم كبيان</span>
           </button>
 
           {/* 2. QUICK SMART TAG INSERTER DROPDOWN */}
@@ -871,7 +871,7 @@ export default function EditorRibbon({
               }
             >
               <span className="font-mono font-bold text-[11px]">[ ]</span>
-              <span>إدراج وسم</span>
+              <span>إدراج بيان</span>
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
 
@@ -886,7 +886,7 @@ export default function EditorRibbon({
                   }}
                   className="w-full py-1.5 px-2.5 bg-pink-800 hover:bg-pink-900 text-white text-xs font-bold rounded flex items-center justify-between"
                 >
-                  <span>تحويل الكلمة المحددة إلى وسم</span>
+                  <span>تعليم العبارة المحددة كبيان</span>
                   <span className="font-mono text-[10px] bg-pink-950/40 px-1.5 py-0.5 rounded">
                     [ ]
                   </span>
@@ -1016,10 +1016,10 @@ export default function EditorRibbon({
                     ? 'bg-amber-50/80 border-amber-300 text-amber-950 hover:bg-amber-100/80'
                     : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200/70'
                 }`}
-                title="إعدادات المساعدة الذكية أثناء الكتابة (الإكمال التلقائي للوسوم [ والبنود # وقائمة الأوامر /)"
+                title="إعدادات معين الكتابة أثناء الكتابة (الإكمال التلقائي للوسوم [ والبنود # وقائمة الأوامر /)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>المساعد الذكي</span>
+                <span>معين الكتابة</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
 
