@@ -1,32 +1,26 @@
-# Implementation Plan - Finalizing Documentation, Docx Pagination & Unit Tests
+# Implementation Plan - Dense Notarial Body Purification & Clean Pagination
 
 ## Objective
-Complete the remaining items from the audit report:
-1. Update `README.md` to reflect current architecture (`DB_VERSION = 9`, new core files, actual modal components, block loops, and normalization engine).
-2. Pass `pageCount` into `normalizeAllNotaryFieldValues` within `generateNotaryDocxBlob` in `lib/docx-engine.ts`.
-3. Add comprehensive unit tests in `tests/notarial-core.test.ts` for:
-   - Full 3-tier normalization (Arabic keys, standard symbols, Latin tags).
-   - `expandBlockLoop` behavior (excluding disabled clauses).
-   - `pages2lettre_acte` accuracy matching passed `pageCount`.
+Implement strict notarial body purification (zero empty lines, paragraph-after-paragraph density, fixed 7/2/1/6 margins, clean export/preview-only pagination) as requested.
 
 ## Proposed Changes
 
-### 1. Documentation (`README.md`)
-- Update IndexedDB version references from v7 to v9.
-- Document core files in `lib/`: `field-values-normalizer.ts`, `symbol-map.ts`, `notary-word-templates.ts`, `notary-word-variables.ts`.
-- Document modal structure (`EditorModalsHost`, `WordTemplatesManagerModal`, `DocumentWorkflowModals`).
-- Document support for `${block}...${/block}` and bidirectional symbol normalization.
-- Ensure strict neutrality with no competitor mentions.
+### 1. New Utility: `lib/notarial-body-purifier.ts`
+- Implement `purifyNotarialBodyHtml(html: string, options?: { keepSingleEmptyShell?: boolean }): string`.
+- Removes empty `<p>`/`<div>` without visible text, folds consecutive `<br>`, strips old pagination markers, preserves tables, images, `.smart-tag`, clause headers, and enforces strict base inline styles (`margin:0; line-height:1; font-family:Arial; font-size:13pt`).
 
-### 2. DOCX Engine (`lib/docx-engine.ts`)
-- Update `generateNotaryDocxBlob` to pass `pageCount` into `normalizeAllNotaryFieldValues`.
+### 2. Hook up Purification & Prevent Source Empty Paragraphs
+- **`lib/docx-importer.ts`**: Return `''` for empty paragraphs in `convertXmlParagraphToHtml`, and purify final imported HTML.
+- **`lib/editor-utils.ts`**: Update `sanitizePastedWordHTML` to ignore empty lines and run `purifyNotarialBodyHtml` on output.
+- **`lib/docx-engine.ts`**: Purify `bodyHtml` (and header/footer) before merging placeholders and injecting pagination in `generateNotaryDocxBlob`. Pass real `pageCount`.
+- **`lib/indexing-engine.ts`**: Purify contract body before sealing original.
 
-### 3. Unit Tests (`tests/notarial-core.test.ts`)
-- Add tests covering:
-  - 3-tier field value normalization.
-  - `expandBlockLoop` with filtered active clauses.
-  - Page count tafqeet (`pages2lettre_acte`).
+### 3. Clean Pagination Layer (`lib/notarial-pagination.ts`)
+- Ensure stored document drafts strip pagination markers before saving to IndexedDB/localStorage.
+- Apply `purifyNotarialBodyHtml` -> `injectNotarialPaginationIntoHtml` exclusively during preview and `.docx` export.
 
-## Verification Plan
-- Run `npm test` to verify all unit tests pass.
-- Run `compile_applet` to ensure zero compilation or type errors.
+### 4. Unit Tests (`tests/notarial-core.test.ts`)
+- Add tests for body purification, empty paragraph dropping, pagination on purified text, and `pages2lettre_acte` accuracy.
+
+## Verification
+- Run `npm test` and `compile_applet`.

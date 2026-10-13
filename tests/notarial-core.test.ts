@@ -31,6 +31,7 @@ import {
   mergePlaceholdersIntoHtml,
 } from '../lib/docx-engine.ts';
 import { normalizeAllNotaryFieldValues } from '../lib/field-values-normalizer.ts';
+import { purifyNotarialBodyHtml } from '../lib/notarial-body-purifier.ts';
 import {
   expandFieldValuesWithStandardLatinTags,
   STANDARD_NOTARY_TAG_DEFINITIONS,
@@ -720,6 +721,22 @@ test('Core Normalization, Block Loops, and Page Count Tafqeet', () => {
   assert.ok(expandedBlockHtml.includes('البند الأول'));
   assert.ok(expandedBlockHtml.includes('البند الثالث'));
   assert.ok(!expandedBlockHtml.includes('البند الثاني'));
+});
+
+test('Notarial Body Purifier: removes empty paragraphs and enforces dense formatting', () => {
+  const messyHtml = `
+    <p dir="rtl"><br></p>
+    <p dir="rtl">&nbsp;</p>
+    <p dir="rtl">نص البند الأول الرسمي</p>
+    <p dir="rtl"></p>
+    <table><tr><td>خلية جدول</td></tr></table>
+    <p dir="rtl"><br></p>
+  `;
+  const purified = purifyNotarialBodyHtml(messyHtml);
+  assert.ok(!purified.includes('&nbsp;'));
+  assert.ok(!purified.includes('<br>'));
+  assert.ok(purified.includes('نص البند الأول الرسمي'));
+  assert.ok(purified.includes('خلية جدول'));
 });
 
 

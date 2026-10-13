@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { buildVirtualTableGrid } from './table-grid';
 import { injectNotarialPaginationIntoHtml } from './notarial-pagination';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 import {
   A4_SIZE_TWIPS,
   NET_CONTENT_WIDTH_TWIPS,
@@ -1023,19 +1024,20 @@ function buildSettingsXml(): string {
  */
 export async function generateNotaryDocxBlob(options: DocxExportOptions): Promise<Blob> {
   const zip = new JSZip();
+  const purifiedBodyHtml = purifyNotarialBodyHtml(options.bodyHtml);
 
   const pageCount = options.pageCount || (options.fieldValues?.['pages_acte'] ? parseInt(options.fieldValues['pages_acte'], 10) : undefined) || 1;
   const normalizedFieldValues = options.fieldValues
     ? normalizeAllNotaryFieldValues(options.fieldValues, {
-        contractBodyHtml: options.bodyHtml,
+        contractBodyHtml: purifiedBodyHtml,
         pageCount,
       })
     : normalizeAllNotaryFieldValues({}, {
-        contractBodyHtml: options.bodyHtml,
+        contractBodyHtml: purifiedBodyHtml,
         pageCount: 1,
       });
 
-  const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, normalizedFieldValues);
+  const rawMergedBody = mergePlaceholdersIntoHtml(purifiedBodyHtml, normalizedFieldValues);
   const mergedBodyHtml = injectNotarialPaginationIntoHtml(
     rawMergedBody,
     options.pageNumberingEnabled !== false

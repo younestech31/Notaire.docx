@@ -40,6 +40,8 @@ import {
 } from './office-store';
 
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
+import { stripNotarialPaginationFromHtml } from './notarial-pagination';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 
 const DB_NAME = 'NotarySmartEditorDB';
 const DB_VERSION = 9;
@@ -671,10 +673,12 @@ export async function loadSavedDocuments(): Promise<SavedDocument[]> {
 }
 
 export async function saveDocumentRecord(doc: SavedDocument): Promise<void> {
+  const cleanBody = purifyNotarialBodyHtml(stripNotarialPaginationFromHtml(doc.bodyHtml || ''));
   const normalizedDoc: SavedDocument = {
     ...doc,
+    bodyHtml: cleanBody,
     fieldValues: normalizeAllNotaryFieldValues(doc.fieldValues || {}, {
-      contractBodyHtml: doc.bodyHtml,
+      contractBodyHtml: cleanBody,
       pageCount: (doc as any).metrics?.estimatedPages || 1,
     }),
   };
@@ -811,10 +815,12 @@ export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
 
 export async function saveActiveDraftSession(doc: SavedDocument): Promise<void> {
   if (typeof window === 'undefined') return;
+  const cleanBody = purifyNotarialBodyHtml(stripNotarialPaginationFromHtml(doc.bodyHtml || ''));
   const normalizedDoc: SavedDocument = {
     ...doc,
+    bodyHtml: cleanBody,
     fieldValues: normalizeAllNotaryFieldValues(doc.fieldValues || {}, {
-      contractBodyHtml: doc.bodyHtml,
+      contractBodyHtml: cleanBody,
       pageCount: (doc as any).metrics?.estimatedPages || 1,
     }),
   };

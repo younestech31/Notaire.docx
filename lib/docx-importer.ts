@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
 import { normalizePlaceholderKey } from './docx-engine';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 
 export interface DocxImportResult {
   title: string;
@@ -137,9 +138,7 @@ export async function importNotaryDocxFile(file: File): Promise<DocxImportResult
   return {
     title,
     fileName: file.name,
-    bodyHtml:
-      normalizedBodyHtml ||
-      `<p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;"><br></p>`,
+    bodyHtml: purifyNotarialBodyHtml(normalizedBodyHtml, { keepSingleEmptyShell: true }),
     headerHtml: normalizedHeaderHtml,
     footerHtml: normalizedFooterHtml,
     extractedPlaceholders: Array.from(placeholders),
@@ -239,13 +238,18 @@ function convertXmlParagraphToHtml(
     processParagraphChild(child);
   }
 
+  const trimmedInner = innerHtml.trim();
+  if (!trimmedInner && !hasInlinePageBreak && !hasPageBreakBefore && !pNode.querySelector('img, table')) {
+    return '';
+  }
+
   let prefixBreak = '';
   if (hasPageBreakBefore) {
     prefixBreak =
       '<div class="page-break" contenteditable="false" data-page-break="true">فاصل صفحات</div>';
   }
 
-  if (hasInlinePageBreak && innerHtml.trim() === '') {
+  if (hasInlinePageBreak && trimmedInner === '') {
     return `${prefixBreak}<div class="page-break" contenteditable="false" data-page-break="true">فاصل صفحات</div>`;
   }
 
@@ -253,7 +257,7 @@ function convertXmlParagraphToHtml(
     ? '<div class="page-break" contenteditable="false" data-page-break="true">فاصل صفحات</div>'
     : '';
 
-  const content = innerHtml.trim() ? innerHtml : '<br>';
+  const content = trimmedInner || '<br>';
   return `${prefixBreak}<p dir="${
     isRtl ? 'rtl' : 'ltr'
   }" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:${align};">${content}</p>${suffixBreak}`;

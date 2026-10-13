@@ -13,6 +13,7 @@ import {
   sealContractOriginal,
 } from './storage';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 
 /**
  * Normalizes legacy or mixed contract lifecycle status values into canonical states.
@@ -209,15 +210,16 @@ export async function officiallyIndexAndSealContract(params: {
     تاريخ_العقد: formattedDate,
   };
 
+  const purifiedBodyHtml = purifyNotarialBodyHtml(params.document.bodyHtml);
   const updatedFieldValues = normalizeAllNotaryFieldValues(rawFieldValues, {
-    contractBodyHtml: params.document.bodyHtml,
+    contractBodyHtml: purifiedBodyHtml,
     pageCount: (params.document as any).metrics?.estimatedPages || 1,
   });
 
   // Generate final .docx bytes and seal with SHA-256
   const docxBlob = await generateNotaryDocxBlob({
     title: params.document.title,
-    bodyHtml: params.document.bodyHtml,
+    bodyHtml: purifiedBodyHtml,
     headerHtml: params.document.showHeaderFooter ? params.document.headerHtml : '',
     footerHtml: params.document.showHeaderFooter ? params.document.footerHtml : '',
     pageNumberingEnabled: params.document.pageNumberingEnabled !== false,

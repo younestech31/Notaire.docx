@@ -8,6 +8,7 @@ import {
   STRICT_FONT_SIZE_PT,
 } from './types';
 import { lookupPlaceholderValue, normalizePlaceholderKey } from './docx-engine';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 
 /**
  * Computes the DOM index path of a node relative to rootEl.
@@ -644,7 +645,7 @@ export function sanitizePastedWordHTML(rawHtml: string, fallbackText: string): s
 
   decorateSmartTagsInDOM(doc.body);
   collapseExtraSpacesInDom(doc.body);
-  return doc.body.innerHTML;
+  return purifyNotarialBodyHtml(doc.body.innerHTML);
 }
 
 export function escapeHtml(str: string): string {
