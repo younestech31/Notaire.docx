@@ -20,6 +20,7 @@ import {
   importNotaryDocxFile,
 } from './docx-engine';
 import { escapeHtml, extractPlaceholdersFromHtml } from './editor-utils';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 
 export function buildSubdivisionLotClauseHtml(
   estate: SubdivisionEstate,
@@ -75,7 +76,7 @@ export function buildFullSubdivisionTableHtml(estate: SubdivisionEstate): string
  * in DocumentRevision without sealing the official original (sealing is strictly
  * reserved for officiallyIndexAndSealContract).
  */
-export async function exportContractToWord(params: {
+export async function exportEditorBodyToDocx(params: {
   docId: string;
   docTitle: string;
   bodyHtml: string;
@@ -90,9 +91,11 @@ export async function exportContractToWord(params: {
   revisions: DocumentRevision[];
 }> {
   const titleToUse = params.docTitle || 'عقد_توثيقي';
+  const purifiedBody = purifyNotarialBodyHtml(params.bodyHtml);
+  
   await downloadNotaryDocx({
     title: titleToUse,
-    bodyHtml: params.bodyHtml,
+    bodyHtml: purifiedBody,
     headerHtml: params.showHeaderFooter ? params.headerHtml : '',
     footerHtml: params.showHeaderFooter ? params.footerHtml : '',
     pageNumberingEnabled: params.pageNumberingEnabled,
@@ -110,7 +113,7 @@ export async function exportContractToWord(params: {
     eventType: 'export',
     fileName,
     docTypeCode: 'acte',
-    summary: `تصدير ملف وورد (${fileName})`,
+    summary: `تصدير متن العقد (تطهير): ${fileName}`,
   };
   await saveDocumentRevision(exportRevision);
   const revisions = await loadDocumentRevisions();
@@ -119,6 +122,16 @@ export async function exportContractToWord(params: {
     fileName,
     revisions,
   };
+}
+
+export async function exportWithStandardTemplate(params: {
+  templateId: string;
+  contractTitle: string;
+  bodyHtml: string;
+  fieldValues: Record<string, string>;
+}): Promise<{ fileName: string; templateName: string }> {
+  // Logic to be implemented or linked to notary-word-templates.ts
+  throw new Error('Not implemented');
 }
 
 export async function generateAndDownloadDerivedDoc(params: {

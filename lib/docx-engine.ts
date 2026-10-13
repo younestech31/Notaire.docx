@@ -59,6 +59,14 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
+function guardAgainstCssLeakage(text: string): void {
+  // Common CSS property/value patterns that shouldn't be in text nodes
+  const cssLeakPattern = /(font-family|line-height|color|background|display|position|margin|padding|width|height|border|text-align|font-size|font-weight|font-style):/i;
+  if (cssLeakPattern.test(text)) {
+    throw new Error(`Potential CSS leakage detected in run text: ${text.slice(0, 50)}...`);
+  }
+}
+
 /**
  * Converts CSS RGB or Hex color string into 6-digit uppercase hex (without #).
  */
@@ -578,6 +586,7 @@ function serializeInlineNodesToRunsXml(
       if (part.length > 0) {
         const bidiRuns = splitTextIntoBidiRuns(part, paragraphDir);
         for (const bRun of bidiRuns) {
+          guardAgainstCssLeakage(bRun.text);
           const rPr = buildRunPropertiesXml(inheritedStyle, bRun.isRtl);
           runsXml += `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(bRun.text)}</w:t></w:r>`;
         }
