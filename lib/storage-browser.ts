@@ -39,6 +39,8 @@ import {
   uint8ArrayToBase64,
 } from './office-store';
 
+import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
+
 const DB_NAME = 'NotarySmartEditorDB';
 const DB_VERSION = 9;
 const STORE_OFFICE_TEMPLATES = 'office_templates';
@@ -61,6 +63,7 @@ const STORE_PUBLICATION_TRACKS = 'publication_tracks';
 const LS_ACTIVE_DOC_KEY = 'notary_active_document_v2';
 const LS_MIGRATED_TEMPLATES_KEY = 'office_templates_migrated_v1';
 const LS_MIGRATED_DOWNLOADS_KEY = 'office_downloads_migrated_v1';
+const META_MIGRATION_TEMPLATE_KEY = '__meta_office_templates_migrated__';
 let memoryTemplatesMigrated = false;
 let memoryDownloadsMigrated = false;
 
@@ -85,6 +88,25 @@ function setOfficeTemplatesMigrated(val: boolean): void {
     } catch {
       // ignore storage error
     }
+  }
+}
+
+async function markOfficeTemplatesMigratedInIdb(): Promise<void> {
+  setOfficeTemplatesMigrated(true);
+  try {
+    await putInStore(STORE_OFFICE_TEMPLATES, 'notary_office_templates_v1', {
+      id: META_MIGRATION_TEMPLATE_KEY,
+      kind: 'contract',
+      name: '__meta_migration_flag__',
+      title: 'Migration Marker',
+      category: 'system',
+      contentHtml: '',
+      description: 'Dual-storage migration flag preventing accidental default re-seeding',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as unknown as OfficeTemplate);
+  } catch {
+    // ignore
   }
 }
 
@@ -435,18 +457,31 @@ export async function deleteNotaryClause(id: string): Promise<void> {
 
 // 2. Unified Office Templates CRUD (with one-time idempotent migration from legacy stores)
 export async function loadOfficeTemplates(): Promise<OfficeTemplate[]> {
-  const existingOffice = await getAllFromStore<OfficeTemplate>(
+  const allInStore = await getAllFromStore<OfficeTemplate>(
     STORE_OFFICE_TEMPLATES,
     'notary_office_templates_v1'
   );
 
-  if (isOfficeTemplatesMigrated() && existingOffice.length > 0) {
+  const idbHasMetaMigration = allInStore.some(
+    (t) => t.id === META_MIGRATION_TEMPLATE_KEY
+  );
+  if (idbHasMetaMigration) {
+    setOfficeTemplatesMigrated(true);
+  }
+
+  const existingOffice = allInStore.filter(
+    (t) => t.id !== META_MIGRATION_TEMPLATE_KEY
+  );
+
+  const migrated = isOfficeTemplatesMigrated() || idbHasMetaMigration;
+
+  if (migrated && existingOffice.length > 0) {
     return existingOffice.sort((a, b) =>
       (b.updatedAt || '').localeCompare(a.updatedAt || '')
     );
   }
 
-  if (isOfficeTemplatesMigrated() && existingOffice.length === 0) {
+  if (migrated && existingOffice.length === 0) {
     // Already migrated and user explicitly deleted all templates
     return [];
   }
@@ -479,7 +514,7 @@ export async function loadOfficeTemplates(): Promise<OfficeTemplate[]> {
       tpl
     );
   }
-  setOfficeTemplatesMigrated(true);
+  await markOfficeTemplatesMigratedInIdb();
   return merged;
 }
 
@@ -592,6 +627,7 @@ export async function saveDocumentRevision(
     ...rev,
     eventType: rev.eventType || 'snapshot',
     ...(isFullBodyEvent ? { bodyHtml: rev.bodyHtml || '' } : { bodyHtml: undefined }),
+    ...(rev.fieldValues ? { fieldValues: normalizeAllNotaryFieldValues(rev.fieldValues) } : {}),
   };
   await putInStore(STORE_REVISIONS, 'notary_revisions_v2', normalizedRev);
 
@@ -635,7 +671,14 @@ export async function loadSavedDocuments(): Promise<SavedDocument[]> {
 }
 
 export async function saveDocumentRecord(doc: SavedDocument): Promise<void> {
-  await putInStore(STORE_DOCUMENTS, 'notary_documents_v1', doc);
+  const normalizedDoc: SavedDocument = {
+    ...doc,
+    fieldValues: normalizeAllNotaryFieldValues(doc.fieldValues || {}, {
+      contractBodyHtml: doc.bodyHtml,
+      pageCount: (doc as any).metrics?.estimatedPages || 1,
+    }),
+  };
+  await putInStore(STORE_DOCUMENTS, 'notary_documents_v1', normalizedDoc);
 }
 
 export async function deleteDocumentRecord(id: string): Promise<void> {
@@ -768,7 +811,14 @@ export async function loadActiveDraftSession(): Promise<SavedDocument | null> {
 
 export async function saveActiveDraftSession(doc: SavedDocument): Promise<void> {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(LS_ACTIVE_DOC_KEY, JSON.stringify(doc));
+  const normalizedDoc: SavedDocument = {
+    ...doc,
+    fieldValues: normalizeAllNotaryFieldValues(doc.fieldValues || {}, {
+      contractBodyHtml: doc.bodyHtml,
+      pageCount: (doc as any).metrics?.estimatedPages || 1,
+    }),
+  };
+  localStorage.setItem(LS_ACTIVE_DOC_KEY, JSON.stringify(normalizedDoc));
 }
 
 // 10. Full Backup Export & Import (including optional Base64 sealedOriginals)

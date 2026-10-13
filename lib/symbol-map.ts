@@ -623,3 +623,5 @@ export function expandFieldValuesWithCanonicalSymbols(
 
   return result;
 }
+
+export const evaluateDynamicNotarySymbols = expandFieldValuesWithCanonicalSymbols;

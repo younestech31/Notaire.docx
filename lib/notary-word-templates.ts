@@ -19,6 +19,7 @@ import {
   downloadNotaryDocx,
   mergePlaceholdersIntoHtml,
 } from './docx-engine';
+import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 import { expandFieldValuesWithStandardLatinTags } from './notary-word-variables';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
 
@@ -675,11 +676,10 @@ export async function exportContractWithStandardTemplate(params: {
     throw new Error(`القالب "${templateId}" غير معروف في النظام`);
   }
 
-  // 1. Expand all field values with bidirectional Latin tags
-  const expandedValues = expandFieldValuesWithStandardLatinTags(
-    fieldValues,
-    bodyHtml
-  );
+  // 1. Fully normalize all field values across Arabic, symbols, and Latin tags
+  const expandedValues = normalizeAllNotaryFieldValues(fieldValues, {
+    contractBodyHtml: bodyHtml,
+  });
 
   // 2. Perform placeholder injection into template body & header
   const mergedBodyHtml = mergePlaceholdersIntoHtml(

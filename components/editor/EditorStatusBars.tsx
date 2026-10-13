@@ -298,11 +298,17 @@ export function EditorBottomStatusBar({
           type="button"
           onClick={onOpenSmartVariablesModal}
           className={`font-semibold hover:underline ${
-            unfilledCount > 0 ? 'text-[#8C1D2C]' : 'text-emerald-700'
+            unfilledCount > 0
+              ? 'text-[#8C1D2C]'
+              : totalVariablesCount === 0
+              ? 'text-slate-500'
+              : 'text-emerald-700'
           }`}
         >
           {unfilledCount > 0
             ? `المتغيرات غير المعبأة: ${unfilledCount} (اضغط للتعبئة)`
+            : totalVariablesCount === 0
+            ? 'لا توجد متغيرات مستخرجة بالعقد'
             : `جميع متغيرات العقد مكتملة (${totalVariablesCount})`}
         </button>
 

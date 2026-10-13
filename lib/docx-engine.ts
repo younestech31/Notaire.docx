@@ -19,6 +19,7 @@ import {
   ARABIC_KEY_TO_SYMBOL_KEYS_MAP,
   SYMBOL_KEY_TO_ARABIC_KEYS_MAP,
 } from './symbol-map';
+import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 
 export type { DocxImportResult };
 export { importNotaryDocxFile };
@@ -1022,13 +1023,19 @@ function buildSettingsXml(): string {
 export async function generateNotaryDocxBlob(options: DocxExportOptions): Promise<Blob> {
   const zip = new JSZip();
 
-  const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, options.fieldValues);
+  const normalizedFieldValues = options.fieldValues
+    ? normalizeAllNotaryFieldValues(options.fieldValues, {
+        contractBodyHtml: options.bodyHtml,
+      })
+    : {};
+
+  const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, normalizedFieldValues);
   const mergedBodyHtml = injectNotarialPaginationIntoHtml(
     rawMergedBody,
     options.pageNumberingEnabled !== false
   );
-  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', options.fieldValues);
-  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', options.fieldValues);
+  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', normalizedFieldValues);
+  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', normalizedFieldValues);
 
   const mediaList: MediaRelationship[] = [];
   let bodyElementsXml = '';

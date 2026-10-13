@@ -1,6 +1,6 @@
 {
-  "summary": "Revised implementation plan removing any mention of competitor systems, rebranding all features under the official proprietary notarial standards of 'الموثق الرقمي', and detailing the canonical symbol engine (${...}), clause loop (${block}...${/block}), Tafqeet engine, and Word templates.",
-  "updatedAt": "2026-10-13T09:45:07.077973991Z",
+  "summary": "خطة تنفيذ محدثة تتضمن ضبطات المستخدم الدقيقة:\n1. إنشاء ملف مستقل `lib/field-values-normalizer.ts` كنقطة دخول مركزية موحدة لتطبيع الرموز الثلاثية والتفقيط مع مراعاة عدد الصفحات الحقيقي.\n2. استدعاء التطبيع بشكل إلزامي في 3 محطات: الحفظ التلقائي/اليدوي، الفهرسة والختم، والتصدير لـ Word.\n3. حماية علم الترحيل في IndexedDB بمعرف ثابت `__meta_office_templates_migrated__` داخل مخزن القوالب الحالي بدون تعديل المخطط.\n4. ضبط شريط الحالة لعرض «لا توجد متغيرات مستخرجة بالعقد» عند صفر متغيرات.\n5. تحديث شامل ومحايد لملف README.md يعكس IndexedDB v9 والبنية الفعلية دون ذكر أي منافسين.\n6. إضافة حزمة اختبارات شاملة للتحويل الثلاثي وحجب البنود المعطلة والتفقيط.",
+  "updatedAt": "2026-10-13T10:12:33.927877424Z",
   "requestFeedback": true,
   "userFacing": true
 }

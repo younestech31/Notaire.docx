@@ -12,6 +12,7 @@ import {
   saveDocumentRevision,
   sealContractOriginal,
 } from './storage';
+import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 
 /**
  * Normalizes legacy or mixed contract lifecycle status values into canonical states.
@@ -201,12 +202,17 @@ export async function officiallyIndexAndSealContract(params: {
     params.document.depositNumber ||
     suggestNextDepositNumber(params.allDocuments, parsedIndex.year);
 
-  const updatedFieldValues: Record<string, string> = {
+  const rawFieldValues: Record<string, string> = {
     ...(params.document.fieldValues || {}),
     رقم_الفهرس: parsedIndex.formatted,
     رقم_الإيداع: depositNo,
     تاريخ_العقد: formattedDate,
   };
+
+  const updatedFieldValues = normalizeAllNotaryFieldValues(rawFieldValues, {
+    contractBodyHtml: params.document.bodyHtml,
+    pageCount: (params.document as any).metrics?.estimatedPages || 1,
+  });
 
   // Generate final .docx bytes and seal with SHA-256
   const docxBlob = await generateNotaryDocxBlob({
