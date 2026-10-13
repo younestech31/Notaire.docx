@@ -376,7 +376,7 @@ export function SnapshotsHistoryModal({
             </div>
           </div>
 
-          {/* Structured Revision History Table (LocalNotaire style: التاريخ | الكاتب | تفاصيل التعديل | إجراءات) */}
+          {/* Structured Revision History Table: التاريخ | الكاتب | تفاصيل التعديل | إجراءات */}
           <div className="space-y-2">
             <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
               <span>جدول سجل المراجعات ({revisions.length}):</span>

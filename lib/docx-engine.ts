@@ -11,6 +11,14 @@ import {
   STRICT_MARGINS_TWIPS,
 } from './types';
 import { type DocxImportResult, importNotaryDocxFile } from './docx-importer';
+import {
+  ARABIC_TO_LATIN_TAGS_MAP,
+  LATIN_TO_ARABIC_KEYS_MAP,
+} from './notary-word-variables';
+import {
+  ARABIC_KEY_TO_SYMBOL_KEYS_MAP,
+  SYMBOL_KEY_TO_ARABIC_KEYS_MAP,
+} from './symbol-map';
 
 export type { DocxImportResult };
 export { importNotaryDocxFile };
@@ -87,7 +95,7 @@ function parseColorToHex6(colorStr?: string | null): string | null {
 export function normalizePlaceholderKey(raw: string): string {
   return String(raw || '')
     .replace(/&nbsp;/gi, ' ')
-    .replace(/[{}\[\]\u200B-\u200F\u061C\uFEFF]/g, '')
+    .replace(/[\$\{\}\[\]\u200B-\u200F\u061C\uFEFF]/g, '')
     .replace(/[\u00A0\s]+/g, ' ')
     .trim();
 }
@@ -128,7 +136,89 @@ export function lookupPlaceholderValue(
       return v;
     }
   }
+
+  // Check Canonical Notary Symbol Keys -> Arabic aliases (${num_acte} -> رقم_الفهرس)
+  const mappedSymbolArabic = SYMBOL_KEY_TO_ARABIC_KEYS_MAP[canonicalTarget];
+  if (mappedSymbolArabic) {
+    for (const arKey of mappedSymbolArabic) {
+      if (fieldValues[arKey] !== undefined && fieldValues[arKey].trim() !== '') {
+        return fieldValues[arKey];
+      }
+      const arUnder = arKey.replace(/[\s.]+/g, '_');
+      if (fieldValues[arUnder] !== undefined && fieldValues[arUnder].trim() !== '') {
+        return fieldValues[arUnder];
+      }
+    }
+  }
+
+  // Check Arabic key -> Canonical Notary Symbol Keys
+  const mappedSymbolKeys = ARABIC_KEY_TO_SYMBOL_KEYS_MAP[canonicalTarget];
+  if (mappedSymbolKeys) {
+    for (const sKey of mappedSymbolKeys) {
+      if (fieldValues[sKey] !== undefined && fieldValues[sKey].trim() !== '') {
+        return fieldValues[sKey];
+      }
+      if (fieldValues[`\${${sKey}}`] !== undefined && fieldValues[`\${${sKey}}`].trim() !== '') {
+        return fieldValues[`\${${sKey}}`];
+      }
+    }
+  }
+
+  // Check Latin -> Arabic aliases
+  const mappedArabicKeys = LATIN_TO_ARABIC_KEYS_MAP[canonicalTarget];
+  if (mappedArabicKeys) {
+    for (const arKey of mappedArabicKeys) {
+      if (fieldValues[arKey] !== undefined && fieldValues[arKey].trim() !== '') {
+        return fieldValues[arKey];
+      }
+      const arUnder = arKey.replace(/[\s.]+/g, '_');
+      if (fieldValues[arUnder] !== undefined && fieldValues[arUnder].trim() !== '') {
+        return fieldValues[arUnder];
+      }
+    }
+  }
+
+  // Check Arabic -> Latin aliases
+  const mappedLatinTags = ARABIC_TO_LATIN_TAGS_MAP[canonicalTarget];
+  if (mappedLatinTags) {
+    for (const latTag of mappedLatinTags) {
+      if (fieldValues[latTag] !== undefined && fieldValues[latTag].trim() !== '') {
+        return fieldValues[latTag];
+      }
+    }
+  }
+
   return undefined;
+}
+
+/**
+ * Expands ${block}...${/block} loops in Word template HTML by repeating the inner
+ * block for every active, enabled clause with ${titre} and ${clause} replaced.
+ */
+export function expandBlockLoop(
+  templateHtml: string,
+  clauses: Array<{ title: string; contentHtml?: string; enabled?: boolean }> = []
+): string {
+  if (!templateHtml) return '';
+  const blockRegex = /\$\{block\}([\s\S]*?)\$\{\/block\}/gi;
+  if (!blockRegex.test(templateHtml)) {
+    return templateHtml;
+  }
+
+  const activeClauses = clauses.filter((c) => c.enabled !== false);
+
+  return templateHtml.replace(blockRegex, (_, innerTemplate: string) => {
+    if (activeClauses.length === 0) {
+      return '';
+    }
+    return activeClauses
+      .map((c) => {
+        return innerTemplate
+          .replace(/\$\{titre\}|\[titre\]/gi, escapeXml(c.title || ''))
+          .replace(/\$\{clause\}|\[clause\]/gi, c.contentHtml || '');
+      })
+      .join('');
+  });
 }
 
 /**
@@ -175,13 +265,14 @@ export function mergePlaceholdersIntoHtml(
         for (const tNode of textNodes) {
           const txt = tNode.nodeValue || '';
           if (
+            txt.includes('$') ||
             (txt.includes('[') && txt.includes(']')) ||
             (txt.includes('{{') && txt.includes('}}'))
           ) {
             const replaced = txt.replace(
-              /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g,
-              (full, bKey, cKey) => {
-                const rk = bKey || cKey || '';
+              /\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g,
+              (full, sKey, bKey, cKey) => {
+                const rk = sKey || bKey || cKey || '';
                 const val = lookupPlaceholderValue(fieldValues, rk);
                 return val !== undefined && val.trim() !== '' ? val.trim() : full;
               }
@@ -192,7 +283,7 @@ export function mergePlaceholdersIntoHtml(
           }
         }
 
-        // 1c. Replace cross-node split [...] or {{...}} inside block elements
+        // 1c. Replace cross-node split ${...}, [...], or {{...}} inside block elements
         const blocks = Array.from(
           container.querySelectorAll('p, li, td, th, div, h1, h2, h3, h4')
         ) as HTMLElement[];
@@ -201,9 +292,10 @@ export function mergePlaceholdersIntoHtml(
         );
         for (const block of leafBlocks) {
           const bText = block.textContent || '';
+          const hasDollar = bText.includes('$');
           const hasBrackets = bText.includes('[') && bText.includes(']');
           const hasBraces = bText.includes('{{') && bText.includes('}}');
-          if (!hasBrackets && !hasBraces) continue;
+          if (!hasDollar && !hasBrackets && !hasBraces) continue;
           const bWalker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
           const segs: { node: Text; start: number; end: number }[] = [];
           let full = '';
@@ -217,11 +309,11 @@ export function mergePlaceholdersIntoHtml(
             }
           }
           const matches = Array.from(
-            full.matchAll(/\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g)
+            full.matchAll(/\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g)
           ).reverse();
           for (const m of matches) {
             if (m.index === undefined) continue;
-            const rawK = m[1] || m[2] || '';
+            const rawK = m[1] || m[2] || m[3] || '';
             const val = lookupPlaceholderValue(fieldValues, rawK);
             if (val === undefined || val.trim() === '') continue;
             const mStart = m.index;
@@ -264,18 +356,18 @@ export function mergePlaceholdersIntoHtml(
 
   // 3. Regex replacement for <span class="...smart-tag...">...</span>
   workingHtml = workingHtml.replace(
-    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>(?:\[\s*([^\[\]<]+?)\s*\]|\{\{\s*([^}<]+?)\s*\}\})<\/span>/gi,
-    (fullMatch, bKey, cKey) => {
-      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
+    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>(?:\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<]+?)\s*\]|\{\{\s*([^}<]+?)\s*\}\})<\/span>/gi,
+    (fullMatch, sKey, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, sKey || bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
 
-  // 4. Replace any remaining raw [key] or {{key}} occurrences in text
+  // 4. Replace any remaining raw ${key}, [key], or {{key}} occurrences in text
   return workingHtml.replace(
-    /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
-    (fullMatch, bKey, cKey) => {
-      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
+    /\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
+    (fullMatch, sKey, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, sKey || bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );

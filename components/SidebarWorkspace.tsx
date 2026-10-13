@@ -101,6 +101,7 @@ interface SidebarWorkspaceProps {
   activeEditingDerivedId?: string | null;
   onGenerateDerivedDoc?: (tpl: OfficeTemplate) => void;
   onEditDerivedTemplateInEditor?: (tpl: OfficeTemplate) => void;
+  onOpenWordTemplatesManager?: () => void;
   // 4. Saved Documents & Folder Tree
   documents: SavedDocument[];
   activeDocumentId: string;
@@ -188,6 +189,7 @@ export default function SidebarWorkspace({
   activeEditingDerivedId,
   onGenerateDerivedDoc,
   onEditDerivedTemplateInEditor,
+  onOpenWordTemplatesManager,
   documents,
   activeDocumentId,
   currentEditorTitle,
@@ -419,6 +421,7 @@ export default function SidebarWorkspace({
             }
             activeEditingTemplateId={activeEditingDerivedId}
             onSaveSelectionBookmark={onSaveSelectionBookmark}
+            onOpenWordTemplatesManager={onOpenWordTemplatesManager}
           />
         )}
 

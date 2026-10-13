@@ -18,8 +18,18 @@ import {
 } from './editor/EditorStatusBars';
 import { InlineVariablePopoverState } from './InlineVariablePopover';
 import SidebarWorkspace, { SidebarTab } from './SidebarWorkspace';
+import WordTemplatesManagerModal from './modals/WordTemplatesManagerModal';
 import { DocumentRevision, OfficeTemplate } from '@/lib/types';
-import { getRuntimeInfo, importFullBackupBundle } from '@/lib/storage';
+import {
+  getRuntimeInfo,
+  importFullBackupBundle,
+  loadDocumentRevisions,
+  saveDocumentRevision,
+} from '@/lib/storage';
+import {
+  exportContractWithStandardTemplate,
+  StandardNotaryTemplateId,
+} from '@/lib/notary-word-templates';
 import {
   computeDocumentMetrics,
   injectNotarialPaginationIntoHtml,
@@ -257,6 +267,7 @@ export default function NotaryEditorApp() {
   );
   const [showOnboardingTour, setShowOnboardingTour] = useState<boolean>(false);
   const [showOfficeSettingsModal, setShowOfficeSettingsModal] = useState<boolean>(false);
+  const [showWordTemplatesManager, setShowWordTemplatesManager] = useState<boolean>(false);
   const previewBackupHtmlRef = useRef<string>('');
 
   // 4. Editor Sync & Auto-Save Hook
@@ -789,6 +800,46 @@ export default function NotaryEditorApp() {
     showToast,
   ]);
 
+  const handleExportWithStandardTemplate = useCallback(
+    async (templateId: StandardNotaryTemplateId) => {
+      try {
+        const snapshot = getSessionSnapshot();
+        const { fileName, templateName } =
+          await exportContractWithStandardTemplate({
+            templateId,
+            contractTitle: snapshot.docTitle,
+            bodyHtml: snapshot.bodyHtml,
+            fieldValues: snapshot.fieldValues,
+          });
+
+        const exportRevision: DocumentRevision = {
+          id: `rev_exp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          documentId: snapshot.docId,
+          documentTitle: snapshot.docTitle || 'عقد_توثيقي',
+          author: activeClerk.name || 'الموثق الرئيسي',
+          fieldValues: { ...snapshot.fieldValues },
+          createdAt: new Date().toISOString(),
+          eventType: 'export',
+          fileName,
+          docTypeCode: templateId,
+          summary: `تصدير بقالب (${templateName}): ${fileName}`,
+        };
+        await saveDocumentRevision(exportRevision);
+        const nextRevs = await loadDocumentRevisions();
+        setRevisions(nextRevs);
+
+        showToast(
+          `تم تصدير «${templateName}» بنجاح بصيغة Word (${fileName}) وحقن بيانات العقد`
+        );
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'حدث خطأ أثناء تصدير القالب'
+        );
+      }
+    },
+    [activeClerk.name, getSessionSnapshot, setRevisions, showToast]
+  );
+
   return (
     <div className="h-screen print:h-auto overflow-hidden print:overflow-visible flex flex-col bg-slate-100 text-slate-900">
       <EditorTopBar
@@ -819,6 +870,8 @@ export default function NotaryEditorApp() {
         onExportCurrentToWord={() =>
           handleExportContractWord(getSessionSnapshot())
         }
+        onExportWithTemplate={handleExportWithStandardTemplate}
+        onOpenTemplatesManager={() => setShowWordTemplatesManager(true)}
         onOpenOfficeSettings={() => setShowOfficeSettingsModal(true)}
       />
 
@@ -1001,6 +1054,9 @@ export default function NotaryEditorApp() {
                 runGenerateDerivedDoc(tpl, getSessionSnapshot())
               }
               onEditDerivedTemplateInEditor={handleEditDerivedTemplateInEditor}
+              onOpenWordTemplatesManager={() =>
+                setShowWordTemplatesManager(true)
+              }
               folders={folders}
               clerks={clerks}
               activeClerk={activeClerk}
@@ -1230,6 +1286,13 @@ export default function NotaryEditorApp() {
         smartAssistPrefs={smartAssistPrefs}
         onChangeSmartAssistPrefs={setSmartAssistPrefs}
         onOpenOnboardingTour={() => setShowOnboardingTour(true)}
+      />
+
+      <WordTemplatesManagerModal
+        isOpen={showWordTemplatesManager}
+        onClose={() => setShowWordTemplatesManager(false)}
+        onShowToast={showToast}
+        onSelectExportTemplate={handleExportWithStandardTemplate}
       />
     </div>
   );

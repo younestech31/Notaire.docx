@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for verifying and finalizing notary clause recognition rules and party card variable mapping in Notaire DZ Office.",
-  "updatedAt": "2026-10-12T15:22:18.336638636Z",
+  "summary": "Revised implementation plan removing any mention of competitor systems, rebranding all features under the official proprietary notarial standards of 'الموثق الرقمي', and detailing the canonical symbol engine (${...}), clause loop (${block}...${/block}), Tafqeet engine, and Word templates.",
+  "updatedAt": "2026-10-13T09:45:07.077973991Z",
   "requestFeedback": true,
   "userFacing": true
 }

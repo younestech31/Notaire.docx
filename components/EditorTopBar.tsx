@@ -12,6 +12,9 @@ import {
 } from 'lucide-react';
 import type { LocalOfficeDirectoryState } from '@/lib/desktop-bridge';
 
+import ExportMenuDropdown from './editor/ExportMenuDropdown';
+import { StandardNotaryTemplateId } from '@/lib/notary-word-templates';
+
 interface EditorTopBarProps {
   docTitle: string;
   onChangeDocTitle: (title: string) => void;
@@ -24,6 +27,8 @@ interface EditorTopBarProps {
   onOpenSnapshotsHistoryModal: () => void;
   onPrint: () => void;
   onExportCurrentToWord: () => void;
+  onExportWithTemplate?: (templateId: StandardNotaryTemplateId) => void;
+  onOpenTemplatesManager?: () => void;
   onOpenOfficeSettings: () => void;
 }
 
@@ -38,6 +43,8 @@ export default function EditorTopBar({
   onOpenSnapshotsHistoryModal,
   onPrint,
   onExportCurrentToWord,
+  onExportWithTemplate,
+  onOpenTemplatesManager,
   onOpenOfficeSettings,
 }: EditorTopBarProps) {
   const isDiskConnected =
@@ -153,16 +160,22 @@ export default function EditorTopBar({
           <span className="hidden md:inline">طباعة</span>
         </button>
 
-        {/* Export Word */}
-        <button
-          type="button"
-          onClick={onExportCurrentToWord}
-          className="px-3 py-1.5 text-xs font-semibold text-white bg-[#1E3A8A] rounded-lg hover:bg-[#0F2744] transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 shadow-2xs"
-          title="تصدير العقد بصيغة Word (.docx) وتسجيله في سجل العقد"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>تصدير Word</span>
-        </button>
+        {/* Export Word Dropdown Menu (Standard Templates) */}
+        <ExportMenuDropdown
+          onExportDirectDocx={onExportCurrentToWord}
+          onExportWithTemplate={(tplId) => {
+            if (onExportWithTemplate) {
+              onExportWithTemplate(tplId);
+            } else {
+              onExportCurrentToWord();
+            }
+          }}
+          onOpenTemplatesManager={() => {
+            if (onOpenTemplatesManager) {
+              onOpenTemplatesManager();
+            }
+          }}
+        />
 
         <div className="h-5 w-px bg-slate-200 mx-0.5 hidden sm:block" />
 

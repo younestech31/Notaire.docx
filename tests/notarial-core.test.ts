@@ -24,7 +24,16 @@ import {
   type FileSystemDirectoryHandleLike,
 } from '../lib/desktop-bridge.ts';
 import { desktopOfficeStore } from '../lib/storage-desktop.ts';
-import { generateNotaryDocxBlob } from '../lib/docx-engine.ts';
+import {
+  generateNotaryDocxBlob,
+  lookupPlaceholderValue,
+  mergePlaceholdersIntoHtml,
+} from '../lib/docx-engine.ts';
+import {
+  expandFieldValuesWithStandardLatinTags,
+  STANDARD_NOTARY_TAG_DEFINITIONS,
+} from '../lib/notary-word-variables.ts';
+import { BUILTIN_STANDARD_WORD_TEMPLATES } from '../lib/notary-word-templates.ts';
 import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
 import { sanitizePastedWordHTML } from '../lib/editor-utils.ts';
 import type {
@@ -619,5 +628,67 @@ test('Word Paste Sanitization: enforces Arial 13pt, text-align: justify, and pre
   assert.ok(!sanitized.includes('Calibri'));
   assert.ok(!sanitized.includes('MsoNormal'));
 });
+
+test('Standard Latin Variables & 6 Word Templates: bidirectional mapping and template validation', () => {
+  // 1. Verify all 6 standard templates exist
+  const expectedTemplates = [
+    'acte_original',
+    'contrat_reference',
+    'expedition',
+    'extrait',
+    'certificat_vente',
+    'bordereau_envoi',
+  ];
+  for (const id of expectedTemplates) {
+    const tpl = BUILTIN_STANDARD_WORD_TEMPLATES[id as keyof typeof BUILTIN_STANDARD_WORD_TEMPLATES];
+    assert.ok(tpl, `Template ${id} must exist in BUILTIN_STANDARD_WORD_TEMPLATES`);
+    assert.ok(tpl.name && tpl.name.length > 0);
+    assert.ok(tpl.bodyHtml && tpl.bodyHtml.length > 0);
+    assert.ok(tpl.supportedTags && tpl.supportedTags.length > 0);
+  }
+
+  // 2. Test Latin variable resolution from Arabic contract field values
+  const arabicFieldValues: Record<string, string> = {
+    الطرف_الأول_الاسم: 'بن عيسى أحمد',
+    الطرف_الأول_تاريخ_الميلاد: '1980/05/14',
+    الطرف_الأول_الرقم_الوطني: '119801601002345678',
+    الطرف_الثاني_الاسم: 'براهيمي كريم',
+    رقم_الفهرس: '2026/0142',
+    تاريخ_العقد: '2026/02/15',
+    الموثق: 'الأستاذ عبد الرحمن بوزيد',
+    الثمن_بالأرقام: '15,000,000.00',
+    الثمن_بالأحرف: 'خمسة عشر مليون دينار جزائري',
+    تعيين_الحصة_الكامل: 'شقة رقم 15 عمارة ب',
+  };
+
+  // Direct lookup with Latin tag should automatically find the Arabic value
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'partie1_nom'), 'بن عيسى أحمد');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'partie1_date_naissance'), '1980/05/14');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'partie1_nin'), '119801601002345678');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'partie2_nom'), 'براهيمي كريم');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'num_repertoire'), '2026/0142');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'date_acte'), '2026/02/15');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'notaire_nom'), 'الأستاذ عبد الرحمن بوزيد');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'prix_chiffres'), '15,000,000.00');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'prix_lettres'), 'خمسة عشر مليون دينار جزائري');
+  assert.equal(lookupPlaceholderValue(arabicFieldValues, 'designation_bien'), 'شقة رقم 15 عمارة ب');
+
+  // 3. Test expandFieldValuesWithStandardLatinTags
+  const expanded = expandFieldValuesWithStandardLatinTags(
+    arabicFieldValues,
+    '<p>متن العقد الكامل للحقن</p>'
+  );
+  assert.equal(expanded.partie1_nom, 'بن عيسى أحمد');
+  assert.equal(expanded.num_repertoire, '2026/0142');
+  assert.equal(expanded.contenu_acte, '<p>متن العقد الكامل للحقن</p>');
+
+  // 4. Test HTML merging with Latin tokens [partie1_nom] and [num_repertoire]
+  const sampleTemplateHtml = '<p dir="rtl">حضر [partie1_nom] تحت فهرس [num_repertoire] بمبلغ [prix_chiffres] دج.</p>';
+  const merged = mergePlaceholdersIntoHtml(sampleTemplateHtml, arabicFieldValues);
+  assert.ok(merged.includes('بن عيسى أحمد'));
+  assert.ok(merged.includes('2026/0142'));
+  assert.ok(merged.includes('15,000,000.00'));
+});
+
 
 

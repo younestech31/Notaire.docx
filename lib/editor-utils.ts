@@ -819,7 +819,7 @@ export function extractPlaceholdersGroupedByClause(
 }
 
 /**
- * 1-Click Selection-to-Smart-Tag Converter (like localnotaire's [ ] button):
+ * 1-Click Selection-to-Smart-Tag Converter ([ ] toolbar button):
  * Takes the currently highlighted word/phrase inside the A4 editor (or word at caret)
  * and immediately replaces it in-place with <span class="smart-tag" data-var="...">{{...}}</span>
  * without opening any dialog or modal.

@@ -38,6 +38,7 @@ interface TemplatesTabPanelProps {
   activeEditingTemplateId?: string | null;
   onDeleteTemplate: (id: string) => Promise<void>;
   onSaveSelectionBookmark: () => void;
+  onOpenWordTemplatesManager?: () => void;
 }
 
 const KIND_LABELS: Record<OfficeTemplateKind, string> = {
@@ -64,6 +65,7 @@ export default function TemplatesTabPanel({
   activeEditingTemplateId,
   onDeleteTemplate,
   onSaveSelectionBookmark,
+  onOpenWordTemplatesManager,
 }: TemplatesTabPanelProps) {
   const [newTplName, setNewTplName] = useState('');
   const [newTplKind, setNewTplKind] = useState<OfficeTemplateKind>('contract');
@@ -87,6 +89,32 @@ export default function TemplatesTabPanel({
 
   return (
     <div className="space-y-4">
+      {/* Standard Built-in 6 Templates Quick Access Banner */}
+      {onOpenWordTemplatesManager && (
+        <div className="border border-blue-300 bg-gradient-to-br from-blue-900 to-slate-900 text-white rounded-lg p-3 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold flex items-center gap-1.5">
+              <span>قوالب Word الرسمية (6)</span>
+              <span className="text-[9px] bg-blue-500/30 text-blue-200 border border-blue-400/30 px-1.5 py-0.2 rounded font-mono">
+                معتمدة
+              </span>
+            </span>
+            <span className="text-[10px] text-blue-200">صيغة .docx</span>
+          </div>
+          <p className="text-[11px] text-slate-300 leading-relaxed">
+            أصل العقد، ملف العقد المرجعي، نسخة العقد، المستخرج، شهادة البيع، وجدول الإرسال.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenWordTemplatesManager}
+            className="w-full py-1.5 px-3 bg-white text-slate-900 hover:bg-slate-100 rounded text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-2xs"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-900" />
+            <span>مكتبة وتخصيص قوالب Word الستة...</span>
+          </button>
+        </div>
+      )}
+
       {/* Import .docx as OfficeTemplate */}
       <div className="border border-blue-200 bg-blue-50/40 rounded-md p-3 space-y-2">
         <div className="text-xs font-bold text-slate-900">
