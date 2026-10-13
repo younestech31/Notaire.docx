@@ -1,6 +1,6 @@
 {
-  "summary": "خطة تنفيذ محدثة تتضمن ضبطات المستخدم الدقيقة:\n1. إنشاء ملف مستقل `lib/field-values-normalizer.ts` كنقطة دخول مركزية موحدة لتطبيع الرموز الثلاثية والتفقيط مع مراعاة عدد الصفحات الحقيقي.\n2. استدعاء التطبيع بشكل إلزامي في 3 محطات: الحفظ التلقائي/اليدوي، الفهرسة والختم، والتصدير لـ Word.\n3. حماية علم الترحيل في IndexedDB بمعرف ثابت `__meta_office_templates_migrated__` داخل مخزن القوالب الحالي بدون تعديل المخطط.\n4. ضبط شريط الحالة لعرض «لا توجد متغيرات مستخرجة بالعقد» عند صفر متغيرات.\n5. تحديث شامل ومحايد لملف README.md يعكس IndexedDB v9 والبنية الفعلية دون ذكر أي منافسين.\n6. إضافة حزمة اختبارات شاملة للتحويل الثلاثي وحجب البنود المعطلة والتفقيط.",
-  "updatedAt": "2026-10-13T10:12:33.927877424Z",
+  "summary": "Implementation plan to complete README update, pass pageCount in docx export, and add comprehensive unit tests for normalization, block loops, and pagination.",
+  "updatedAt": "2026-10-13T10:29:12.533825234Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -31,6 +31,7 @@ export interface DocxExportOptions {
   footerHtml?: string;
   pageNumberingEnabled?: boolean;
   fieldValues?: Record<string, string>;
+  pageCount?: number;
 }
 
 interface MediaRelationship {
@@ -1023,11 +1024,16 @@ function buildSettingsXml(): string {
 export async function generateNotaryDocxBlob(options: DocxExportOptions): Promise<Blob> {
   const zip = new JSZip();
 
+  const pageCount = options.pageCount || (options.fieldValues?.['pages_acte'] ? parseInt(options.fieldValues['pages_acte'], 10) : undefined) || 1;
   const normalizedFieldValues = options.fieldValues
     ? normalizeAllNotaryFieldValues(options.fieldValues, {
         contractBodyHtml: options.bodyHtml,
+        pageCount,
       })
-    : {};
+    : normalizeAllNotaryFieldValues({}, {
+        contractBodyHtml: options.bodyHtml,
+        pageCount: 1,
+      });
 
   const rawMergedBody = mergePlaceholdersIntoHtml(options.bodyHtml, normalizedFieldValues);
   const mergedBodyHtml = injectNotarialPaginationIntoHtml(

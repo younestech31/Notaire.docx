@@ -25,10 +25,12 @@ import {
 } from '../lib/desktop-bridge.ts';
 import { desktopOfficeStore } from '../lib/storage-desktop.ts';
 import {
+  expandBlockLoop,
   generateNotaryDocxBlob,
   lookupPlaceholderValue,
   mergePlaceholdersIntoHtml,
 } from '../lib/docx-engine.ts';
+import { normalizeAllNotaryFieldValues } from '../lib/field-values-normalizer.ts';
 import {
   expandFieldValuesWithStandardLatinTags,
   STANDARD_NOTARY_TAG_DEFINITIONS,
@@ -688,6 +690,36 @@ test('Standard Latin Variables & 6 Word Templates: bidirectional mapping and tem
   assert.ok(merged.includes('بن عيسى أحمد'));
   assert.ok(merged.includes('2026/0142'));
   assert.ok(merged.includes('15,000,000.00'));
+});
+
+test('Core Normalization, Block Loops, and Page Count Tafqeet', () => {
+  // 1. Test 3-tier normalization (Arabic keys, standard symbols, Latin tags)
+  const rawFields = {
+    'الطرف_الأول': 'محمد بوضياف',
+    'num_acte': '2026/099',
+    'partie2_nom': 'فاطمة الزهراء',
+    'act_value': '8,500,000.00',
+  };
+  const normalized = normalizeAllNotaryFieldValues(rawFields, { pageCount: 4 });
+  assert.equal(normalized['c_1'], 'محمد بوضياف');
+  assert.equal(normalized['${c_1}'], 'محمد بوضياف');
+  assert.equal(normalized['رقم_الفهرس'], '2026/099');
+  assert.equal(normalized['${num_acte}'], '2026/099');
+  assert.equal(normalized['pages_acte'], '4');
+  assert.equal(normalized['pages2lettre_acte'], 'أربعة صفحات (04)');
+  assert.ok(normalized['totalLettre'].includes('ثمانية'));
+
+  // 2. Test expandBlockLoop filtering out disabled clauses
+  const templateWithBlock = '<div>${block}<p>${titre}: ${clause}</p>${/block}</div>';
+  const clauses = [
+    { id: 'c1', title: 'البند الأول', contentHtml: 'محتوى البند الأول', enabled: true },
+    { id: 'c2', title: 'البند الثاني (معطل)', contentHtml: 'محتوى معطل', enabled: false },
+    { id: 'c3', title: 'البند الثالث', contentHtml: 'محتوى البند الثالث', enabled: true },
+  ];
+  const expandedBlockHtml = expandBlockLoop(templateWithBlock, clauses);
+  assert.ok(expandedBlockHtml.includes('البند الأول'));
+  assert.ok(expandedBlockHtml.includes('البند الثالث'));
+  assert.ok(!expandedBlockHtml.includes('البند الثاني'));
 });
 
 
