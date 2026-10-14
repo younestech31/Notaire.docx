@@ -20,6 +20,7 @@ import {
   mergePlaceholdersIntoHtml,
 } from './docx-engine';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
+import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 import { expandFieldValuesWithStandardLatinTags } from './notary-word-variables';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
 
@@ -658,6 +659,71 @@ export async function downloadDefaultNotaryDocxTemplate(
 }
 
 /**
+ * Splices contract body paragraphs natively into a Word template HTML,
+ * replacing the <p>[contenu_acte]</p> placeholder block with genuine document-level body paragraphs
+ * without wrapping them in spans or creating illegal nested paragraphs.
+ */
+export function spliceContractBodyIntoTemplate(
+  templateHtml: string,
+  bodyHtml: string
+): string {
+  if (!templateHtml) return '';
+  const cleanBody = (bodyHtml || '').trim();
+  if (!cleanBody) {
+    return templateHtml.replace(
+      /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\](?:(?!<\/p>)[\s\S])*?<\/p>/gi,
+      ''
+    );
+  }
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${templateHtml}</div>`, 'text/html');
+      const container = doc.body.firstElementChild as HTMLElement | null;
+      if (container) {
+        const walker = doc.createTreeWalker(container, NodeFilter.SHOW_ELEMENT);
+        let targetEl: HTMLElement | null = null;
+        let curr: Node | null;
+        while ((curr = walker.nextNode())) {
+          const el = curr as HTMLElement;
+          if (
+            ['P', 'DIV', 'SPAN'].includes(el.tagName) &&
+            /\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\]/i.test(el.textContent || '')
+          ) {
+            targetEl = el.closest('p') || el;
+            break;
+          }
+        }
+
+        if (targetEl && targetEl.parentNode) {
+          const bodyDoc = parser.parseFromString(`<div>${cleanBody}</div>`, 'text/html');
+          const bodyContainer = bodyDoc.body.firstElementChild as HTMLElement | null;
+          if (bodyContainer) {
+            const frag = doc.createDocumentFragment();
+            while (bodyContainer.firstChild) {
+              frag.appendChild(bodyContainer.firstChild);
+            }
+            targetEl.parentNode.replaceChild(frag, targetEl);
+            return container.innerHTML;
+          }
+        }
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Regex fallback: replace enclosing <p>...</p> of [contenu_acte] with native bodyHtml paragraphs
+  let res = templateHtml.replace(
+    /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\](?:(?!<\/p>)[\s\S])*?<\/p>/gi,
+    cleanBody
+  );
+  res = res.replace(/\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\]/gi, cleanBody);
+  return res;
+}
+
+/**
  * Compiles a contract session into a chosen standard template,
  * replacing all Latin tags with contract data, and downloads the resulting .docx.
  */
@@ -681,9 +747,17 @@ export async function exportContractWithStandardTemplate(params: {
     contractBodyHtml: bodyHtml,
   });
 
-  // 2. Perform placeholder injection into template body & header
-  const mergedBodyHtml = mergePlaceholdersIntoHtml(
+  // 2. Splice contract body paragraphs cleanly into the template body
+  // replacing <p...>[contenu_acte]</p> with native purified body paragraphs
+  const purifiedBody = purifyNotarialBodyHtml(bodyHtml);
+  const templateBodyWithBlocks = spliceContractBodyIntoTemplate(
     config.bodyHtml,
+    purifiedBody
+  );
+
+  // 3. Perform placeholder injection into template body & header
+  const mergedBodyHtml = mergePlaceholdersIntoHtml(
+    templateBodyWithBlocks,
     expandedValues
   );
   const mergedHeaderHtml = mergePlaceholdersIntoHtml(
@@ -695,14 +769,14 @@ export async function exportContractWithStandardTemplate(params: {
     expandedValues
   );
 
-  // 3. Construct a clear notarial file name
+  // 4. Construct a clear notarial file name
   const cleanTitle = (contractTitle || 'عقد_توثيقي')
     .trim()
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, '_');
   const fileName = `${cleanTitle}_${config.name.replace(/\s+/g, '_')}.docx`;
 
-  // 4. Generate and trigger download
+  // 5. Generate and trigger download
   await downloadNotaryDocx({
     title: fileName.replace(/\.docx$/, ''),
     bodyHtml: mergedBodyHtml,

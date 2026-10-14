@@ -36,7 +36,10 @@ import {
   expandFieldValuesWithStandardLatinTags,
   STANDARD_NOTARY_TAG_DEFINITIONS,
 } from '../lib/notary-word-variables.ts';
-import { BUILTIN_STANDARD_WORD_TEMPLATES } from '../lib/notary-word-templates.ts';
+import {
+  BUILTIN_STANDARD_WORD_TEMPLATES,
+  spliceContractBodyIntoTemplate,
+} from '../lib/notary-word-templates.ts';
 import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
 import { sanitizePastedWordHTML } from '../lib/editor-utils.ts';
 import type {
@@ -751,6 +754,58 @@ test('DOCX Export & Importer: true pageCount and empty paragraph drop', async ()
   const emptyPResult = purifyNotarialBodyHtml('<p><br></p><p>   </p><p>محتوى حقيقي</p>');
   assert.ok(emptyPResult.includes('محتوى حقيقي'));
   assert.ok(!emptyPResult.includes('<br>'));
+});
+
+test('Word Export & Pagination Invariants: native body paragraphs, w:jc left, w:line 260, no page break text', async () => {
+  const tpl = BUILTIN_STANDARD_WORD_TEMPLATES['acte_original'];
+  const testBody = `
+    <p dir="rtl" style="margin:0;line-height:1;">البند الأول: هذا نص المتن الأصلي الأول للعقد.</p>
+    <p dir="rtl" style="margin:0;line-height:1;">البند الثاني: هذا نص المتن الأصلي الثاني للعقد.</p>
+  `;
+
+  // 1. Check native block splicing
+  const spliced = spliceContractBodyIntoTemplate(tpl.bodyHtml, testBody);
+  assert.ok(!spliced.includes('[contenu_acte]'));
+  assert.ok(spliced.includes('البند الأول: هذا نص المتن الأصلي'));
+  // Ensure no nested <p><p>
+  assert.ok(!/<p[^>]*>(?:(?!<\/p>)[\s\S])*?<p/i.test(spliced));
+
+  // 2. Multi-page document export
+  const longBody = Array.from({ length: 70 }, (_, idx) =>
+    `<p dir="rtl" style="margin:0;line-height:1;">بند رسمي رقم ${idx + 1}: التزام توثيقي كامل وفقاً للتشريع التوثيقي الجزائري الصادر بمرسوم تنفيذي رسمي.</p>`
+  ).join('\n');
+
+  const fullTplBody = spliceContractBodyIntoTemplate(tpl.bodyHtml, longBody);
+  const blob = await generateNotaryDocxBlob({
+    title: 'عقد_توثيقي_نموذجي',
+    bodyHtml: fullTplBody,
+    fieldValues: {
+      notaire_nom: 'الأستاذ أحمد الشريف',
+      num_repertoire: '987',
+      annee_acte: '2026',
+    },
+    pageNumberingEnabled: true,
+  });
+
+  const arrayBuf = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuf);
+  const docXml = await zip.file('word/document.xml')?.async('text');
+  assert.ok(docXml);
+
+  // Invariant 1: w:line="260"
+  assert.ok(docXml.includes('w:line="260"'));
+
+  // Invariant 2: w:jc w:val="left"
+  assert.ok(docXml.includes('w:jc w:val="left"'));
+
+  // Invariant 3: No "نهاية الصفحة" text anywhere in document.xml
+  assert.ok(!docXml.includes('نهاية الصفحة'));
+
+  // Invariant 4: Continuation mark on non-final pages
+  assert.ok(docXml.includes('../..'));
+
+  // Invariant 5: Closing mark on final page only
+  assert.ok(docXml.includes('والأخيرة'));
 });
 
 

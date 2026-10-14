@@ -487,11 +487,14 @@ function injectNotarialPaginationFallback(
     return `${cleanHtml}<p dir="rtl" align="left" data-notary-pagination="true" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:left;direction:rtl;font-weight:bold;">${closing}</p>`;
   }
 
-  const makeMarkerP = (markerText: string) =>
-    `<p dir="rtl" align="left" data-notary-pagination="true" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:left;direction:rtl;font-weight:bold;">${markerText}</p>`;
+  const makeMarkerP = (markerText: string, remainingLines: number = 0) => {
+    const spTwips = Math.max(0, remainingLines * 260);
+    const spPx = Math.max(0, Math.round(remainingLines * 17.5));
+    return `<p dir="rtl" align="left" data-notary-pagination="true" data-spacing-before-twips="${spTwips}" data-spacing-before-px="${spPx}" style="margin:0;${spPx > 0 ? `margin-top:${spPx}px;` : ''}line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:left;direction:rtl;font-weight:bold;">${markerText}</p>`;
+  };
 
-  const makePageBreakDiv = (pageNumber: number) =>
-    `<div class="page-break" contenteditable="false" data-page-break="true" data-notary-pagination="true">نهاية الصفحة ${pageNumber} — بداية الصفحة ${pageNumber + 1}</div>`;
+  const makePageBreakDiv = () =>
+    `<div class="page-break" contenteditable="false" data-page-break="true" data-notary-pagination="true"></div>`;
 
   const outputBlocks: string[] = [];
   let linesOnCurrentPage = 0;
@@ -507,8 +510,9 @@ function injectNotarialPaginationFallback(
     }
 
     if (b.isPageBreak) {
-      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
-      outputBlocks.push(b.fullMatch);
+      const remainingLines = Math.max(0, MAX_LINES_PER_PAGE - linesOnCurrentPage - 1);
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages), remainingLines));
+      outputBlocks.push(makePageBreakDiv());
       totalPages++;
       linesOnCurrentPage = 0;
       i++;
@@ -541,8 +545,8 @@ function injectNotarialPaginationFallback(
         const splitRes = splitHtmlParagraphPreservingTags(b.inner, targetWords);
         if (splitRes) {
           outputBlocks.push(`<${b.tag}${b.attrs}>${splitRes.firstHtml}</${b.tag}>`);
-          outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
-          outputBlocks.push(makePageBreakDiv(totalPages));
+          outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages), 0));
+          outputBlocks.push(makePageBreakDiv());
           totalPages++;
           linesOnCurrentPage = 0;
           blocks.splice(i + 1, 0, {
@@ -559,18 +563,22 @@ function injectNotarialPaginationFallback(
       }
     }
 
+    // Overflow: Close current page with marker positioned at column bottom
+    const spaceRemaining = Math.max(0, MAX_LINES_PER_PAGE - linesOnCurrentPage - 1);
     if (linesOnCurrentPage > 0) {
-      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
-      outputBlocks.push(makePageBreakDiv(totalPages));
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages), spaceRemaining));
+      outputBlocks.push(makePageBreakDiv());
       totalPages++;
-      linesOnCurrentPage = 0;
+      linesOnCurrentPage = estLines;
+      outputBlocks.push(b.fullMatch);
+      i++;
       continue;
     }
 
     outputBlocks.push(b.fullMatch);
     if (i < blocks.length - 1) {
-      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages)));
-      outputBlocks.push(makePageBreakDiv(totalPages));
+      outputBlocks.push(makeMarkerP(buildNotarialPaginationContinueText(totalPages), 0));
+      outputBlocks.push(makePageBreakDiv());
       totalPages++;
       linesOnCurrentPage = 0;
     } else {
@@ -580,7 +588,7 @@ function injectNotarialPaginationFallback(
   }
 
   const closingText = buildNotarialPaginationClosingText(totalPages);
-  outputBlocks.push(makeMarkerP(closingText));
+  outputBlocks.push(makeMarkerP(closingText, 0));
   return outputBlocks.join('\n');
 }
 
@@ -599,7 +607,7 @@ function injectNotarialPaginationFallback(
 export function injectNotarialPaginationIntoHtml(
   html: string,
   pageNumberingEnabled: boolean = true,
-  highPrecisionDomSplit: boolean = true
+  highPrecisionDomSplit: boolean = false
 ): string {
   const cleanHtml = stripNotarialPaginationFromHtml(html);
   if (!pageNumberingEnabled || !cleanHtml.trim()) return cleanHtml;
@@ -633,6 +641,7 @@ export function injectNotarialPaginationIntoHtml(
         element: HTMLElement;
         insertPageBreakAfter: boolean;
         pageNumber: number;
+        remainingHeightPx: number;
       }[] = [];
       let lastContentElement: HTMLElement | null = null;
 
@@ -648,10 +657,12 @@ export function injectNotarialPaginationIntoHtml(
             lastContentElement &&
             !pageEndElements.some((item) => item.element === lastContentElement)
           ) {
+            const spaceLeft = Math.max(0, maxPageHeightPx - heightOnCurrentPagePx - lineHeightPx);
             pageEndElements.push({
               element: lastContentElement,
               insertPageBreakAfter: false,
               pageNumber: totalPagesCount,
+              remainingHeightPx: spaceLeft,
             });
           }
           totalPagesCount++;
@@ -677,8 +688,6 @@ export function injectNotarialPaginationIntoHtml(
           }
         }
 
-        const remainingHeightPx = maxPageHeightPx - heightOnCurrentPagePx;
-
         // Case A: Element fits on the current page
         if (heightOnCurrentPagePx + blockHeightPx <= maxPageHeightPx) {
           heightOnCurrentPagePx += blockHeightPx;
@@ -687,18 +696,18 @@ export function injectNotarialPaginationIntoHtml(
           continue;
         }
 
-        // Case B: Element overflows the current page!
-        // Check if `el` is a long paragraph (`<p>` or `<li>`) that can be split while preserving inner HTML tags
+        // Case B: Element overflows the current page
+        // If highPrecisionDomSplit is requested and element is a long paragraph
         if (
           highPrecisionDomSplit &&
           probeCtx &&
-          remainingHeightPx >= lineHeightPx * 2.5 &&
+          maxPageHeightPx - heightOnCurrentPagePx >= lineHeightPx * 2.5 &&
           (el.tagName.toUpperCase() === 'P' || el.tagName.toUpperCase() === 'LI') &&
           !el.querySelector('table, img')
         ) {
           const formattedSplit = probeCtx.findFittingFormattedSplit(
             el,
-            remainingHeightPx
+            maxPageHeightPx - heightOnCurrentPagePx
           );
           if (formattedSplit) {
             const continuationEl = el.cloneNode(false) as HTMLElement;
@@ -710,6 +719,7 @@ export function injectNotarialPaginationIntoHtml(
               element: el,
               insertPageBreakAfter: true,
               pageNumber: totalPagesCount,
+              remainingHeightPx: 0,
             });
             totalPagesCount++;
             heightOnCurrentPagePx = 0;
@@ -726,10 +736,12 @@ export function injectNotarialPaginationIntoHtml(
           lastContentElement &&
           !pageEndElements.some((item) => item.element === lastContentElement)
         ) {
+          const spaceLeft = Math.max(0, maxPageHeightPx - heightOnCurrentPagePx - lineHeightPx);
           pageEndElements.push({
             element: lastContentElement,
             insertPageBreakAfter: true,
             pageNumber: totalPagesCount,
+            remainingHeightPx: spaceLeft,
           });
           totalPagesCount++;
           heightOnCurrentPagePx = blockHeightPx;
@@ -752,6 +764,7 @@ export function injectNotarialPaginationIntoHtml(
               element: el,
               insertPageBreakAfter: true,
               pageNumber: totalPagesCount,
+              remainingHeightPx: 0,
             });
             totalPagesCount++;
             heightOnCurrentPagePx = 0;
@@ -780,6 +793,7 @@ export function injectNotarialPaginationIntoHtml(
             element: el,
             insertPageBreakAfter: true,
             pageNumber: totalPagesCount,
+            remainingHeightPx: 0,
           });
           totalPagesCount++;
           heightOnCurrentPagePx = 0;
@@ -799,12 +813,21 @@ export function injectNotarialPaginationIntoHtml(
         totalPagesCount = Math.max(1, totalPagesCount - 1);
       }
 
-      const createStandalonePaginationParagraph = (markerText: string): HTMLElement => {
+      const createStandalonePaginationParagraph = (
+        markerText: string,
+        spacingBeforePx: number = 0
+      ): HTMLElement => {
         const p = doc.createElement('p');
         p.setAttribute('dir', 'rtl');
         p.setAttribute('align', 'left');
         p.setAttribute('data-notary-pagination', 'true');
+        const spTwips = Math.max(0, Math.round(spacingBeforePx * 15));
+        p.setAttribute('data-spacing-before-twips', `${spTwips}`);
+        p.setAttribute('data-spacing-before-px', `${Math.max(0, Math.round(spacingBeforePx))}`);
         p.style.margin = '0';
+        if (spacingBeforePx > 0) {
+          p.style.marginTop = `${Math.round(spacingBeforePx)}px`;
+        }
         p.style.lineHeight = '1';
         p.style.fontFamily = STRICT_FONT_FAMILY;
         p.style.fontSize = `${STRICT_FONT_SIZE_PT}pt`;
@@ -816,9 +839,10 @@ export function injectNotarialPaginationIntoHtml(
       };
 
       // 1. Insert standalone marker paragraph directly BELOW the last content element of each non-final page
-      for (const { element, insertPageBreakAfter, pageNumber } of pageEndElements) {
+      for (const { element, insertPageBreakAfter, pageNumber, remainingHeightPx } of pageEndElements) {
         const markerP = createStandalonePaginationParagraph(
-          buildNotarialPaginationContinueText(pageNumber)
+          buildNotarialPaginationContinueText(pageNumber),
+          remainingHeightPx
         );
         element.insertAdjacentElement('afterend', markerP);
         if (insertPageBreakAfter) {
@@ -827,7 +851,7 @@ export function injectNotarialPaginationIntoHtml(
           pbDiv.setAttribute('contenteditable', 'false');
           pbDiv.setAttribute('data-page-break', 'true');
           pbDiv.setAttribute('data-notary-pagination', 'true');
-          pbDiv.textContent = `نهاية الصفحة ${pageNumber} — بداية الصفحة ${pageNumber + 1}`;
+          // No textContent so no "نهاية الصفحة" ever leaks
           markerP.insertAdjacentElement('afterend', pbDiv);
         }
       }
@@ -835,7 +859,7 @@ export function injectNotarialPaginationIntoHtml(
       // 2. Insert standalone `الصفحة {العدد بالحروف} والأخيرة` paragraph directly BELOW the final content element
       if (lastContentElement) {
         const closingText = buildNotarialPaginationClosingText(totalPagesCount);
-        const closingP = createStandalonePaginationParagraph(closingText);
+        const closingP = createStandalonePaginationParagraph(closingText, 0);
         lastContentElement.insertAdjacentElement('afterend', closingP);
       }
 

@@ -262,7 +262,7 @@ export function mergePlaceholdersIntoHtml(
             span.getAttribute('data-var') || (span.textContent || '');
           const val = lookupPlaceholderValue(fieldValues, rawVar);
           if (val !== undefined && val.trim() !== '') {
-            span.innerHTML = val.trim();
+            span.replaceWith(doc.createTextNode(val.trim()));
           }
         }
 
@@ -289,11 +289,7 @@ export function mergePlaceholdersIntoHtml(
               }
             );
             if (replaced !== txt) {
-                const frag = doc.createDocumentFragment();
-                const temp = doc.createElement('span');
-                temp.innerHTML = replaced;
-                while(temp.firstChild) frag.appendChild(temp.firstChild);
-                tNode.parentNode?.replaceChild(frag, tNode);
+              tNode.nodeValue = replaced;
             }
           }
         }
@@ -347,11 +343,7 @@ export function mergePlaceholdersIntoHtml(
                 r.setStart(sEntry.node, mStart - sEntry.start);
                 r.setEnd(eEntry.node, mEnd - eEntry.start);
                 r.deleteContents();
-                const temp = doc.createElement('span');
-                temp.innerHTML = val.trim();
-                while (temp.firstChild) {
-                    r.insertNode(temp.firstChild);
-                }
+                r.insertNode(doc.createTextNode(val.trim()));
               }
             }
           }
@@ -479,6 +471,7 @@ function buildParagraphPropertiesXml(options: {
   ilvl?: number;
   indentStartTwips?: number;
   indentEndTwips?: number;
+  spacingBeforeTwips?: number;
 }): string {
   const parts: string[] = [];
 
@@ -496,9 +489,13 @@ function buildParagraphPropertiesXml(options: {
     parts.push('<w:bidi/>');
   }
 
-  // Strict single line spacing (1.0 = 240) and zero before/after spacing
+  // Strict line spacing (260 twips) and spacing before
+  const spBefore =
+    options.spacingBeforeTwips !== undefined && options.spacingBeforeTwips > 0
+      ? options.spacingBeforeTwips
+      : 0;
   parts.push(
-    `<w:spacing w:before="0" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="auto"/>`
+    `<w:spacing w:before="${spBefore}" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="auto"/>`
   );
 
   if (options.indentStartTwips || options.indentEndTwips) {
@@ -507,13 +504,13 @@ function buildParagraphPropertiesXml(options: {
     parts.push(`<w:ind w:right="${rightVal}" w:left="${leftVal}"/>`);
   }
 
-  // Alignment mapping: in OpenXML with w:bidi, "both" = justify, "center" = center
-  let jcVal = 'both'; // Default notarial contract alignment is justified (ضبط كلي) or right
+  // Alignment mapping: in OpenXML with w:bidi, "both" = justify, "center" = center, "left" = left
+  let jcVal = 'both'; // Default notarial contract alignment is justified (ضبط كلي)
   const rawAlign = (options.align || '').toLowerCase();
   if (rawAlign === 'center') jcVal = 'center';
   else if (rawAlign === 'justify' || rawAlign === 'both') jcVal = 'both';
-  else if (rawAlign === 'left') jcVal = options.isRtl ? 'right' : 'left';
-  else if (rawAlign === 'right') jcVal = options.isRtl ? 'left' : 'right';
+  else if (rawAlign === 'left') jcVal = 'left';
+  else if (rawAlign === 'right') jcVal = 'right';
   else jcVal = 'both';
 
   parts.push(`<w:jc w:val="${jcVal}"/>`);
@@ -828,10 +825,24 @@ function serializeBlockContainerToXml(
       continue;
     }
 
-    // Unwrap visual-only clause-container during Word export so clauses merge 100% natively
-    if (tag === 'DIV' && (el.classList.contains('clause-container') || el.hasAttribute('data-clause-id'))) {
-      xml += serializeBlockContainerToXml(el, mediaList, availableWidthTwips, listState);
-      continue;
+    // Unwrap block containers / clause containers so child blocks are serialized natively
+    if (tag === 'DIV') {
+      const hasBlockChildInDiv = Array.from(el.childNodes).some(
+        (n) =>
+          n.nodeType === Node.ELEMENT_NODE &&
+          ['P', 'DIV', 'UL', 'OL', 'TABLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE'].includes(
+            (n as HTMLElement).tagName.toUpperCase()
+          )
+      );
+      if (
+        hasBlockChildInDiv ||
+        el.classList.contains('clause-container') ||
+        el.hasAttribute('data-clause-id') ||
+        el.hasAttribute('data-clause-container')
+      ) {
+        xml += serializeBlockContainerToXml(el, mediaList, availableWidthTwips, listState);
+        continue;
+      }
     }
 
     if (['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE'].includes(tag)) {
@@ -840,6 +851,19 @@ function serializeBlockContainerToXml(
       const align = isPaginationMarker ? 'left' : el.style?.textAlign || el.getAttribute('align') || 'justify';
       const padRightPx = parseInt(el.style?.paddingRight || el.style?.marginRight || '0', 10) || 0;
       const padLeftPx = parseInt(el.style?.paddingLeft || el.style?.marginLeft || '0', 10) || 0;
+
+      let spacingBeforeTwips = 0;
+      if (isPaginationMarker) {
+        const rawTwips = el.getAttribute('data-spacing-before-twips');
+        if (rawTwips) {
+          spacingBeforeTwips = parseInt(rawTwips, 10) || 0;
+        } else {
+          const rawPx = el.getAttribute('data-spacing-before-px') || el.style?.marginTop;
+          if (rawPx) {
+            spacingBeforeTwips = Math.round((parseFloat(rawPx) || 0) * 15);
+          }
+        }
+      }
 
       const baseStyle: InlineRunStyle = {};
       if (['H1', 'H2', 'H3', 'H4'].includes(tag) || el.style?.fontWeight === 'bold') {
@@ -857,6 +881,7 @@ function serializeBlockContainerToXml(
       const pPr = buildParagraphPropertiesXml({
         isRtl: dir === 'rtl',
         align,
+        spacingBeforeTwips,
         pageBreakBefore: listState.nextPageBreak,
         indentStartTwips: dir === 'rtl' ? padRightPx * 15 : padLeftPx * 15,
         indentEndTwips: dir === 'rtl' ? padLeftPx * 15 : padRightPx * 15,
@@ -1135,9 +1160,12 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
       } else {
         const isLeft = /align=["']left["']|text-align\s*:\s*left/i.test(token);
         const text = token.replace(/<[^>]+>/g, '').trim();
+        const spMatch = token.match(/data-spacing-before-twips=["'](\d+)["']/i);
+        const spBefore = spMatch ? parseInt(spMatch[1], 10) : 0;
         bodyElementsXml += `<w:p>${buildParagraphPropertiesXml({
           isRtl: true,
           align: isLeft ? 'left' : 'both',
+          spacingBeforeTwips: spBefore,
         })}<w:r>${buildRunPropertiesXml(
           {
             bold: /<strong|<b\b|font-weight\s*:\s*bold/i.test(token),

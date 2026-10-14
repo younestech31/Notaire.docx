@@ -1,7 +1,8 @@
 export const STRICT_FONT_FAMILY = 'Arial';
 export const STRICT_FONT_SIZE_PT = 13;
 export const STRICT_FONT_SIZE_HALF_PT = 26; // 13pt * 2 in OpenXML half-points
-export const STRICT_LINE_SPACING_TWIPS = 240; // 1.0 single line spacing in 240ths of a line
+export const STRICT_LINE_SPACING_TWIPS = 260; // 13pt exact line spacing in 260 twips
+export const NOTARIAL_PAGE_CONTENT_LINES = Math.floor((218 * 72) / (25.4 * 13)) - 1; // 46 lines per page (218mm printable height)
 
 // 1 cm = 566.929133858 twips
 export const STRICT_MARGINS_CM = {
@@ -225,6 +226,7 @@ export type NotaryPartyRole = 'بائع' | 'مشتري' | 'موكل' | 'وكيل
 export interface ContractPartyCard {
   id: string;
   role: NotaryPartyRole;
+  side?: 'first' | 'second';
   customRoleLabel?: string; // عند اختيار 'أخرى' (مثل: شريك، مقاسم، مؤجر)
   index: number; // 1, 2, 3... للسماح بـ بائع 1، بائع 2
   fullName: string;

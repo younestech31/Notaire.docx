@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for P0 contract export fix: dual export paths (direct body export vs standard template export), HTML leakage guard, mandatory body purification, safe pagination, and unit tests.",
-  "updatedAt": "2026-10-13T11:02:54.032007284Z",
+  "summary": "Implementation plan for resolving contract export breakage and notarial pagination placement in Word (.docx) documents. Covers replacing [contenu_acte] with native paragraphs, preventing paragraph-in-paragraph HTML injection, ensuring exact bottom-left alignment with w:line=\"260\" and w:jc=\"left\", eliminating unwanted page break text markers, and maintaining notarial formatting invariants.",
+  "updatedAt": "2026-10-14T07:38:10.064543576Z",
   "requestFeedback": true,
   "userFacing": true
 }
