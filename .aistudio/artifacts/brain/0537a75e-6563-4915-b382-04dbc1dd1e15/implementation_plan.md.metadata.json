@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to remove repeating Word headers across notarial contracts, place the customized preamble and registration box ('إطار خاص بالتسجيل') exclusively on Page 1 body, enforce clean justified Arabic typography with 12cm printable width, and restrict subsequent pages to pure clauses and bottom-left continuation numbering ('../..').",
-  "updatedAt": "2026-10-14T08:03:04.091741312Z",
+  "summary": "Implementation plan for footer-based dynamic notarial page numbering and natural body text flow in Microsoft Word (.docx). Eliminates artificial DOM chopping and paragraph splitting, migrating pagination marks to the native Word OpenXML footer with dynamic page fields (PAGE/NUMPAGES) aligned to the bottom-left of the notarial margin.",
+  "updatedAt": "2026-10-14T08:23:46.102547528Z",
   "requestFeedback": true,
   "userFacing": true
 }

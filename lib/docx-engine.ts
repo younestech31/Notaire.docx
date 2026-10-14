@@ -1080,43 +1080,15 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
         pageCount: 1,
       });
 
+  const isFooterPaginationActive = options.pageNumberingEnabled !== false;
   const rawMergedBody = mergePlaceholdersIntoHtml(purifiedBodyHtml, initialNormalized);
-  const mergedBodyHtml = injectNotarialPaginationIntoHtml(
-    rawMergedBody,
-    options.pageNumberingEnabled !== false
-  );
+  // When footer pagination is active, the contract body flows 100% naturally without in-body slicing
+  const finalMergedBodyHtml = isFooterPaginationActive
+    ? rawMergedBody
+    : injectNotarialPaginationIntoHtml(rawMergedBody, false);
 
-  let truePageCount = initialPageCount;
-  if (typeof DOMParser !== 'undefined') {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div>${mergedBodyHtml}</div>`, 'text/html');
-    const paginationMarkers = doc.querySelectorAll('[data-notary-pagination="true"]');
-    if (paginationMarkers.length > 0) {
-      truePageCount = paginationMarkers.length + 1;
-    }
-  }
-
-  const finalFieldValues = truePageCount !== initialPageCount
-    ? (options.fieldValues
-        ? normalizeAllNotaryFieldValues(options.fieldValues, {
-            contractBodyHtml: purifiedBodyHtml,
-            pageCount: truePageCount,
-          })
-        : normalizeAllNotaryFieldValues({}, {
-            contractBodyHtml: purifiedBodyHtml,
-            pageCount: truePageCount,
-          }))
-    : initialNormalized;
-
-  const finalRawBody = truePageCount !== initialPageCount
-    ? mergePlaceholdersIntoHtml(purifiedBodyHtml, finalFieldValues)
-    : rawMergedBody;
-  const finalMergedBodyHtml = truePageCount !== initialPageCount
-    ? injectNotarialPaginationIntoHtml(finalRawBody, options.pageNumberingEnabled !== false)
-    : mergedBodyHtml;
-
-  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', finalFieldValues);
-  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', finalFieldValues);
+  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', initialNormalized);
+  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', initialNormalized);
 
   const mediaList: MediaRelationship[] = [];
   let bodyElementsXml = '';
@@ -1185,8 +1157,9 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const hasHeader =
     options.omitRepeatingHeader !== true &&
     mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter =
+  const hasCustomFooter =
     mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
+  const hasFooter = isFooterPaginationActive || hasCustomFooter;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -1244,15 +1217,25 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
 
   if (hasFooter) {
     let fInnerXml = '';
-    if (typeof DOMParser !== 'undefined') {
-      const parser = new DOMParser();
-      const fDoc = parser.parseFromString(`<div>${mergedFooterHtml}</div>`, 'text/html');
-      const fRoot = fDoc.body.firstElementChild as HTMLElement;
-      fInnerXml = serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS);
-    } else {
-      const text = mergedFooterHtml.replace(/<[^>]+>/g, '').trim();
-      fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+    if (hasCustomFooter) {
+      if (typeof DOMParser !== 'undefined') {
+        const parser = new DOMParser();
+        const fDoc = parser.parseFromString(`<div>${mergedFooterHtml}</div>`, 'text/html');
+        const fRoot = fDoc.body.firstElementChild as HTMLElement;
+        fInnerXml = serializeBlockContainerToXml(fRoot, [], NET_CONTENT_WIDTH_TWIPS);
+      } else {
+        const text = mergedFooterHtml.replace(/<[^>]+>/g, '').trim();
+        fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+      }
     }
+
+    if (isFooterPaginationActive) {
+      // Dynamic Algerian notarial continuation marker anchored in Word footer
+      // Left-aligned, bold Arial 13pt, exact line spacing 260 twips, with dynamic Word PAGE field and ../..
+      const paginationP = `<w:p><w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:before="0" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="exact"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t xml:space="preserve">الصفحة </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t xml:space="preserve"> ../..</w:t></w:r></w:p>`;
+      fInnerXml = fInnerXml ? `${fInnerXml}${paginationP}` : paginationP;
+    }
+
     if (!fInnerXml) {
       fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;
     }

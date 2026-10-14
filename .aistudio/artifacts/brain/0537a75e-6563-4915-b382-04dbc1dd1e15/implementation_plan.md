@@ -1,119 +1,132 @@
-# Algerian Notarial Deed Structure & Single-Page Preamble Fix
+# Footer-Based Notarial Pagination & Natural Body Flow Architecture
 
-Implementation plan to align document generation with genuine Algerian notarial deed practice: eliminate repeating Word page headers, place the registration box (*إطار خاص بالتسجيل*) and office preamble exclusively on the first page body, and ensure all subsequent pages contain only legal clauses and bottom-left continuation pagination (`../..`).
+Implementation plan to transition Algerian notarial document generation from brittle mid-paragraph body DOM splitting to native Word OpenXML Footer (`w:footerReference` / `word/footer1.xml`) with dynamic field codes (`w:fldSimple w:instr="PAGE"`), leaving the entire contract body to flow naturally as unbroken paragraphs.
 
-### User Review & Critical Decisions
+### User Decisions Confirmed
 
 > [!IMPORTANT]
 > The clarifying choices confirmed by the user govern this implementation:
-> - **Confirmed Decision 1**: The document header will be placed directly within the Page 1 body content. Word repeating headers (`w:headerReference w:type="default"`) will be completely eliminated so subsequent pages remain clean without repeating headers.
-> - **Confirmed Decision 2**: Page 1 will feature the standard registration box (*إطار خاص بالتسجيل*) as a bordered rectangular frame at the very top of the text column, followed by the deed title, notary credentials, the centered transition marker (*حـــــــــــــضـــــــــــــر*), and party recitals.
-> - **Confirmed Invariant**: Arial 13pt, 1.0 exact line spacing (`w:line="260"`), 12cm text column (7cm right, 2cm left, 1cm top, 6cm bottom margins), full justification, and continuation markers (`../..`) fixed at the bottom-left of non-final pages.
+> - **Decision 1**: Page numbering will be generated natively in the Word footer using dynamic OpenXML page fields (`PAGE` / `NUMPAGES`) formatted with the Algerian notarial continuation structure (`الصفحة {PAGE} ../..`).
+> - **Decision 2**: Contract body paragraphs and clauses will flow completely naturally without DOM element splitting or artificial mid-sentence/mid-paragraph breaks.
 
 ---
 
-### 1. Overview & Core Concept
+### 1. The Core Problem & Architectural Shift
 
-- **What It Does**: Refactors the document generation pipeline so that authentic Algerian notary deeds match the exact visual and structural reality shown in official ministerial practice:
-  - **Page 1**: Customized introductory page containing the registration box (*إطار خاص بالتسجيل*), deed title (*عقد بيع ترقوي* / *أصل عقد توثيقي*), notary office preamble, dashed separator, *حـــــــــــضـــــــــــر*, and party identity statements.
-  - **Pages 2+**: Pure contractual body text, terms, clauses, and tables with zero header repetition, culminating in bottom-left continuation pagination (`الصفحة الثانية ../..`) and the closing ordinal on the final page (`الصفحة ... والأخيرة`).
-- **Target Audience**: Algerian notary offices requiring 100% compliance with Chamber of Notaries and land registry standards.
-- **Key Value**: Eradicates the illegal repeating header bug in exported `.docx` deeds while matching the exact layout of the reference deed scan.
-
----
-
-### 2. User Experience & Document Structure
-
-#### Page 1 Architecture (First Page Only)
-```
-┌────────────────────────────────────────────────────────┐
-│  إطار خاص بالتسجيل                                     │
-│  (Registration Frame: 120mm wide x ~30-35mm height)   │
-└────────────────────────────────────────────────────────┘
-
-              عقد بيع ترقوي / أصل عقد توثيقي
-            (Title: Centered, Bold, Underlined)
-
-لدى الأستاذ: [notaire_nom] الموثق، الواقع مكتبه العمومي...
-----------------------------------------------------------
-                     حـــــــــــــضـــــــــــــر
-                      (Centered Notarial Marker)
-
-المؤسسة الوطنية للترقية العقارية / الأطراف المتعاقدة...
-(Party Identification & Legal Capacities)
-...
-----------------------------------------------------------
-الصفحة الاولى ../..
-```
-
-#### Subsequent Pages Architecture (Pages 2, 3... N)
-```
-[Continuation of contract body, clauses, terms, and tables]
-[Full justification, strict Arial 13pt, line spacing 260]
-
-...
-----------------------------------------------------------
-الصفحة الثانية ../.. (or final closing formula on last page)
-```
+| Dimension | Previous In-Body Slicing Model | New Dynamic Footer Model |
+|---|---|---|
+| **Mechanism** | Measured DOM heights in pixels and inserted marker `<p>` and `<div class="page-break">` between (or splitting) paragraphs. | Emits unbroken `<p>` blocks into `<w:body>`. The Word pagination engine natively lays out pages. |
+| **Integrity** | Paragraphs and legal clauses could be fractured, tags cut in half, or spans split across pages. | **100% clause integrity**: Text, spans, numbers, and dates remain intact. Word splits lines naturally across pages based on strict Arial 13pt metrics. |
+| **Pagination Position** | Required dynamic line spacing (`data-spacing-before-twips`) to push marker to bottom; sensitive to subtle font rendering differences. | **Fixed in footer area**: Anchored precisely inside the 6cm bottom margin (`w:pgMar w:bottom="3402" w:footer="1134"`), left-aligned (`w:jc w:val="left"`). |
+| **Word Re-layout Safety** | If the notary opened the file in Word and edited or added words, the hard-coded body markers shifted into the middle of the page. | **Self-healing**: Any text addition or deletion in Word automatically updates page counts and keeps continuation markers at the true page bottom. |
 
 ---
 
-### 3. Key Technical Decisions & Trade-Offs
+### 2. OpenXML Footer Specifications (`word/footer1.xml`)
 
-- **Decision 1: Removal of Word OpenXML `<w:headerReference>`**:
-  - *Chosen Approach*: Disable the generation of default Word headers (`word/header1.xml` with `w:type="default"`) for notarial deeds. Integrate the registration box and notary preamble directly into the Page 1 document body flow.
-  - *Why*: In OpenXML, `w:type="default"` forces Word to display the header on every single page of the section. Notarial deeds strictly forbid headers on subsequent pages.
-  - *Alternative Considered*: `w:type="first"` with `w:titlePg`. While possible, Word headers have rigid margin constraints that interfere with the registration stamp box dimensions. Embedding the frame directly in the document body guarantees exact millimeter control and seamless pagination.
+#### A. Document Relationship and Section Reference
+In `word/_rels/document.xml.rels`:
+```xml
+<Relationship Id="rIdFooter1"
+  Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+  Target="footer1.xml"/>
+```
 
-- **Decision 2: Registration Box (*إطار خاص بالتسجيل*) Implementation**:
-  - *Chosen Approach*: Implement as a single-cell bordered table (`border: 1px solid #000000; width: 100%; height: ~35mm;`) containing the text "إطار خاص بالتسجيل" right-aligned at the top, leaving the remaining box space clear for official tax and registration stamps.
-  - *Why*: Generates clean `<w:tbl>` with exact borders in Word OpenXML, identically matching the uploaded deed sample `1.png`.
+In `word/document.xml` section properties (`<w:sectPr>`):
+```xml
+<w:sectPr>
+  <w:footerReference xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+                     w:type="default"
+                     r:id="rIdFooter1"/>
+  <w:pgSz w:w="11906" w:h="16838"/>
+  <w:pgMar w:top="567" w:right="3969" w:bottom="3402" w:left="1134" w:header="567" w:footer="1134" w:gutter="0"/>
+  <w:bidi/>
+</w:sectPr>
+```
 
-- **Decision 3: Separation of Separator Dashes and Continuation Marks**:
-  - *Chosen Approach*: Add the clean notarial dashed separator (`----------------------------------------`) above the continuation marker on page breaks and above *حضر*, matching the reference deed.
+#### B. `word/footer1.xml` Structure
+The footer contains a left-aligned, right-to-left paragraph with the strict Algerian continuation notation:
+```xml
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:p>
+    <w:pPr>
+      <w:bidi/>
+      <w:jc w:val="left"/>
+      <w:spacing w:before="0" w:after="0" w:line="260" w:lineRule="exact"/>
+    </w:pPr>
+    <!-- Separator rule above footer marker -->
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
+        <w:sz w:val="26"/>
+        <w:szCs w:val="26"/>
+        <w:b/>
+        <w:rtl/>
+      </w:rPr>
+      <w:t xml:space="preserve">الصفحة </w:t>
+    </w:r>
+    <!-- Dynamic Word PAGE field -->
+    <w:fldSimple w:instr="PAGE">
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
+          <w:sz w:val="26"/>
+          <w:szCs w:val="26"/>
+          <w:b/>
+          <w:rtl/>
+        </w:rPr>
+        <w:t>1</w:t>
+      </w:r>
+    </w:fldSimple>
+    <!-- Continuation notation ../.. or closing note -->
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
+        <w:sz w:val="26"/>
+        <w:szCs w:val="26"/>
+        <w:b/>
+        <w:rtl/>
+      </w:rPr>
+      <w:t xml:space="preserve"> ../..</w:t>
+    </w:r>
+  </w:p>
+</w:ftr>
+```
+
+Optional Advanced Word Conditional:
+If supported by the Word environment, we can also generate the native Word `IF` field:
+`IF { PAGE } = { NUMPAGES } "الأخيرة" "../.."` so the final page seamlessly displays `الأخيرة` while earlier pages display `../..`.
 
 ---
 
-### 4. Technical Architecture & System Flow
+### 3. Affected Modules & Implementation Steps
 
-```
-┌────────────────────────────────────────────────────────┐
-│           Built-in Notary Template Definitions         │
-│  - Page 1 Body: Registration Box + Preamble + Title   │
-│  - Body Section: Native contract clauses and terms    │
-│  - No repeating headerHtml configuration               │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│             Notarial Body Purifier & Splicer           │
-│  - Purifies paragraphs to Arial 13pt, justified        │
-│  - Slices [contenu_acte] into native sibling blocks    │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│             Notarial Pagination Engine                 │
-│  - Page 1 accounts for registration box & preamble     │
-│  - Non-final pages: "الصفحة {الترتيب} ../.." at bottom │
-│  - Final page: "الصفحة {الترتيب} والأخيرة"             │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│            docx-engine Serialization (OpenXML)         │
-│  - Omit <w:headerReference w:type="default"/>          │
-│  - Emit registration table & title in Page 1 body      │
-│  - Emit <w:line="260"/>, <w:jc w:val="left"/>          │
-└────────────────────────────────────────────────────────┘
-```
+#### Step 1: `lib/docx-engine.ts`
+- **Add Native Dynamic Notarial Footer Generator**:
+  - Implement `buildNotaryDynamicFooterXml(options)`: generates `word/footer1.xml` containing left-aligned `الصفحة {PAGE} ../..` with exact 260 twip line spacing and Arial 13pt bold font.
+  - In `generateNotaryDocxBlob`:
+    - Register `word/footer1.xml` in `[Content_Types].xml` and `word/_rels/document.xml.rels`.
+    - Set `<w:footerReference w:type="default" r:id="rIdFooter1"/>` in `<w:sectPr>` whenever `pageNumberingEnabled !== false`.
+- **Bypass Body Slicing When Footer Pagination Is Active**:
+  - When dynamic footer numbering is active, avoid passing the document body through height-measuring or element-splitting logic (`injectNotarialPaginationIntoHtml`), allowing paragraphs to remain pure continuous flow.
+  - Only explicit manual user breaks (`<div class="page-break">`) will emit `<w:br w:type="page"/>`.
 
-#### Affected Modules:
-1. `lib/notary-word-templates.ts`:
-   - Incorporate the "إطار خاص بالتسجيل" registration box and proper deed preamble into the Page 1 body of standard templates (`acte_original`, `contrat_reference`, `expedition`).
-   - Clear `headerHtml` from standard templates to eliminate repeating page headers.
-2. `lib/docx-engine.ts`:
-   - Ensure `generateNotaryDocxBlob` does not inject repeating headers into OpenXML section properties for notarial templates.
-   - Preserve clean table borders and paragraph properties.
-3. `lib/document-io-workflows.ts`:
-   - Ensure `exportEditorBodyToDocx` and template exports omit repeating headers by default unless explicitly customized.
+#### Step 2: `lib/notarial-pagination.ts`
+- Provide a clean pass-through mode in `injectNotarialPaginationIntoHtml` that preserves raw clauses when footer mode is selected, while maintaining compatibility for visual preview in the web UI.
+
+#### Step 3: `lib/notary-word-templates.ts` & `lib/document-io-workflows.ts`
+- Update standard template exports and direct contract downloads to enable dynamic footer pagination by default (`pageNumberingEnabled: true`), keeping `headerHtml: ''` and embedding Page 1 preamble directly in Page 1 body.
+
+---
+
+### 4. Verification Plan
+
+1. **Compilation**: Run `compile_applet` to ensure zero TypeScript errors.
+2. **Linting**: Run `lint_applet` to verify clean code standards.
+3. **OpenXML Output Check**:
+   - Inspect the generated `.docx` XML structure:
+     - Verify `word/footer1.xml` contains `<w:fldSimple w:instr="PAGE"/>` aligned to `left`.
+     - Verify `word/document.xml` body has zero broken paragraphs or embedded continuation markers.
+     - Verify no `<w:headerReference>` is created.
+4. **End-to-End Verification**: Test exporting a multi-page deed and verifying clean layout.
