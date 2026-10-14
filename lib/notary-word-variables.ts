@@ -494,12 +494,8 @@ export function expandFieldValuesWithStandardLatinTags(
     }
   }
 
-  // 2. Also inject full body into text tags if available
-  if (contractBodyHtml && contractBodyHtml.trim()) {
-    expanded['contenu_acte'] = contractBodyHtml;
-    expanded['corps_acte'] = contractBodyHtml;
-    expanded['texte_acte'] = contractBodyHtml;
-  }
+  // 2. Contract body paragraphs are spliced natively into templates at block-level,
+  // never injected as escaped raw string values into text fields.
 
   return expanded;
 }

@@ -614,12 +614,8 @@ export function expandFieldValuesWithCanonicalSymbols(
     }
   }
 
-  // 7. Inject full contract text if available
-  if (options?.contractBodyHtml) {
-    result['clause'] = options.contractBodyHtml;
-    result['contenu_acte'] = options.contractBodyHtml;
-    result['corps_acte'] = options.contractBodyHtml;
-  }
+  // 7. Contract body paragraphs are spliced natively into templates at block-level,
+  // never injected as escaped raw string values into text fields.
 
   return result;
 }

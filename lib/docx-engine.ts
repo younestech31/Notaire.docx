@@ -33,6 +33,7 @@ export interface DocxExportOptions {
   pageNumberingEnabled?: boolean;
   fieldValues?: Record<string, string>;
   pageCount?: number;
+  omitRepeatingHeader?: boolean;
 }
 
 interface MediaRelationship {
@@ -1182,10 +1183,9 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   }
 
   const hasHeader =
-    typeof DOMParser !== 'undefined' &&
+    options.omitRepeatingHeader !== true &&
     mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
   const hasFooter =
-    typeof DOMParser !== 'undefined' &&
     mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)

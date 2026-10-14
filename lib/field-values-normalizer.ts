@@ -178,13 +178,18 @@ export function normalizeAllNotaryFieldValues(
     if (!result['client_name']) result['client_name'] = p2;
   }
 
-  // 10. Contract body text injection into clause tags (REMOVED to prevent escaping as a single block)
-  // if (options?.contractBodyHtml) {
-  //   result['clause'] = options.contractBodyHtml;
-  //   result['contenu_acte'] = options.contractBodyHtml;
-  //   result['corps_acte'] = options.contractBodyHtml;
-  //   result['texte_acte'] = options.contractBodyHtml;
-  // }
+  // 10. Purge contract body keys and HTML markup from string field values
+  // These tags are spliced natively at document block-level into templates, never as string values.
+  const bodyKeys = ['clause', 'contenu_acte', 'corps_acte', 'texte_acte', 'contract_body', 'body_content'];
+  for (const k of bodyKeys) {
+    delete result[k];
+    delete result[`\${${k}}`];
+  }
+  for (const [k, v] of Object.entries(result)) {
+    if (typeof v === 'string' && (v.includes('<') || v.includes('&lt;'))) {
+      delete result[k];
+    }
+  }
 
   return result;
 }

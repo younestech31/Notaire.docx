@@ -53,6 +53,17 @@ const tableStyle = `width:100%;border-collapse:collapse;margin:4px 0;`;
 const thStyle = `border:1px solid #000000;background-color:#F1F5F9;padding:3px 6px;font-weight:bold;font-size:12pt;text-align:center;`;
 const tdStyle = `border:1px solid #000000;padding:3px 6px;font-size:12pt;`;
 
+const registrationBoxHtml = `
+<table dir="rtl" style="width:100%;border-collapse:collapse;margin:0 0 10px 0;">
+  <tr>
+    <td style="border:1px solid #000000;padding:6px 10px;height:85px;vertical-align:top;text-align:right;">
+      <p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:11pt;font-weight:bold;text-align:right;">إطار خاص بالتسجيل</p>
+      <p dir="rtl" style="margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:10pt;color:#555555;text-align:right;"><br><br></p>
+    </td>
+  </tr>
+</table>
+`.trim();
+
 export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
   StandardNotaryTemplateId,
   StandardNotaryTemplateConfig
@@ -64,27 +75,26 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     frenchTitle: 'Acte Original / Minute',
     category: 'أصل العقد',
     description:
-      'العقد التوثيقي الأصلي الكامل المحفوظ بأرشيف مكتب التوثيق مع هوامش التوثيق الرسمية وعلامات الترقيم التوثيقية الجزائرية.',
+      'العقد التوثيقي الأصلي الكامل المحفوظ بأرشيف مكتب التوثيق مع إطار التسجيل بالصفحة الأولى وهوامش التوثيق الرسمية وعلامات الترقيم التوثيقية الجزائرية.',
     defaultFileName: 'قالب_أصل_العقد_النموذجي',
-    headerHtml: `
-      <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
+    headerHtml: '',
+    bodyHtml: `
+      ${registrationBoxHtml}
+      <p dir="rtl" style="${pCenterBold}">أصل عقد توثيقي رسمي</p>
+      <p dir="rtl" style="${pCenter}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">وزارة العدل — الغرفة الوطنية للموثقين</p>
       <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">مكتب الأستاذ:</span> [notaire_nom] — الموثق لدى محكمة [etude_commune] — ولاية [etude_wilaya]</p>
       <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">فهرس رقم:</span> [num_repertoire] / [annee_acte] — <span style="font-weight:bold;">بتاريخ:</span> [date_acte]</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
-    bodyHtml: `
-      <p dir="rtl" style="${pCenterBold}">أصل عقد توثيقي رسمي</p>
-      <p dir="rtl" style="${pBase}"><br></p>
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pBase}">في سنة [date_acte_lettres]، الموافق لـ [date_acte].</p>
       <p dir="rtl" style="${pBase}">أمامنا نحن الأستاذ [notaire_nom]، الموثق بمكتب التوثيق الكائن مقره بـ [etude_commune]، ولاية [etude_wilaya].</p>
-      <p dir="rtl" style="${pBase}">حضر الأطراف الآتي بيانهم:</p>
+      <p dir="rtl" style="${pBase}"><br></p>
+      <p dir="rtl" style="${pCenterBold}">حـــــــــــــضـــــــــــــر</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الأول (المتصرف):</span> السيد [partie1_nom_complet]، المولود بتاريخ [partie1_date_naissance] بـ [partie1_lieu_naissance]، [partie1_filiation]، الحامل للرقم الوطني [partie1_nin]، المقيم بـ [partie1_adresse]، الحامل لوثيقة الهوية: [partie1_cni]، المهنة: [partie1_profession].</p>
       <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الثاني (المتصرف إليه):</span> السيد [partie2_nom_complet]، المولود بتاريخ [partie2_date_naissance] بـ [partie2_lieu_naissance]، [partie2_filiation]، الحامل للرقم الوطني [partie2_nin]، المقيم بـ [partie2_adresse]، الحامل لوثيقة الهوية: [partie2_cni]، المهنة: [partie2_profession].</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;"># متن وشروط العقد</span></p>
         <p dir="rtl" style="${pBase}">[contenu_acte]</p>
       </div>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -134,15 +144,15 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     frenchTitle: 'Contrat de Référence',
     category: 'ملف العقد المرجعي',
     description:
-      'ملف العقد المرجعي النموذجي الشامل الذي يُنسخ تنسيقه وهوية المكتب تلقائياً لباقي العقود، مع جداول الأطراف والتعيين المرجعي.',
+      'ملف العقد المرجعي النموذجي الشامل الذي يُنسخ تنسيقه وهوية المكتب تلقائياً لباقي العقود، مع إطار التسجيل وجداول الأطراف والتعيين المرجعي.',
     defaultFileName: 'قالب_ملف_العقد_المرجعي_النموذجي',
-    headerHtml: `
-      <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية — مكتب التوثيق</p>
-      <p dir="rtl" style="${pCenter}">الملف المرجعي التوثيقي الموحد للعقد | Référence Notariale</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
+    headerHtml: '',
     bodyHtml: `
+      ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">بطاقة ملف العقد المرجعي الشامل</p>
+      <p dir="rtl" style="${pCenter}">الجمهورية الجزائرية الديمقراطية الشعبية — مكتب التوثيق</p>
+      <p dir="rtl" style="${pCenter}">الملف المرجعي التوثيقي الموحد للعقد | Référence Notariale</p>
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
@@ -204,7 +214,6 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;"># متن العقد والبنود المنسوخة تلقائياً</span></p>
         <p dir="rtl" style="${pBase}">[contenu_acte]</p>
       </div>
     `.trim(),
@@ -250,22 +259,21 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     frenchTitle: 'Expédition / Copie Authentique',
     category: 'نسخة العقد',
     description:
-      'النسخة الرسمية المسلمة للأطراف مع ديباجة النسخة والمطابقة للأصل، والصيغة التنفيذية أو التأشيرة الرسمية.',
+      'النسخة الرسمية المسلمة للأطراف مع إطار التسجيل وديباجة النسخة والمطابقة للأصل، والصيغة التنفيذية أو التأشيرة الرسمية.',
     defaultFileName: 'قالب_نسخة_العقد_النموذجي',
-    headerHtml: `
+    headerHtml: '',
+    bodyHtml: `
+      ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">باسم الشعب الجزائري — نسخة رسمية مطابقة للأصل</p>
       <p dir="rtl" style="${pCenter}">مكتب الأستاذ: [notaire_nom] — فهرس رقم: [num_repertoire]</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
-    bodyHtml: `
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">نسخة رسمية من عقد توثيقي</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <p dir="rtl" style="${pBase}">نحن الأستاذ [notaire_nom]، الموثق بمكتب التوثيق بـ [etude_commune]، ولاية [etude_wilaya].</p>
       <p dir="rtl" style="${pBase}">نشهد ونسلم هذه النسخة الرسمية المطابقة تماماً لأصل العقد المحفوظ بأرشيف مكتبنا، المحرر بتاريخ [date_acte]، والمقيد بالفهرس الرسمي تحت رقم [num_repertoire] لسنة [annee_acte]، والذي نصّه الآتي حرفياً:</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;"># متن العقد المسلّم نسخته</span></p>
         <p dir="rtl" style="${pBase}">[contenu_acte]</p>
       </div>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -308,15 +316,15 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     frenchTitle: "Extrait d'Acte",
     category: 'المستخرج',
     description:
-      'مستخرج العقد الموجه لمفتشية التسجيل والضرائب أو المحافظة العقارية، متضمناً الأطراف والعقار والثمن والتأشيرات.',
+      'مستخرج العقد الموجه لمفتشية التسجيل والضرائب أو المحافظة العقارية، متضمناً إطار التسجيل والأطراف والعقار والثمن والتأشيرات.',
     defaultFileName: 'قالب_المستخرج_النموذجي',
-    headerHtml: `
+    headerHtml: '',
+    bodyHtml: `
+      ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">وزارة المالية — المديرية العامة للضرائب</p>
       <p dir="rtl" style="${pCenter}">مستخرج عقد توثيقي لأجل إجراءات التسجيل والطابع</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
-    bodyHtml: `
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">مستخرج عقد توثيقي</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <table dir="rtl" style="${tableStyle}">
@@ -392,15 +400,15 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     frenchTitle: 'Certificat / Attestation de Vente',
     category: 'شهادة البيع',
     description:
-      'شهادة إدارية رسمية تثبت واقعة البيع أو نقل الملكية للأطراف المعنية للإدلاء بها لدى الهيئات الإدارية والشركات.',
+      'شهادة إدارية رسمية تثبت واقعة البيع أو نقل الملكية للأطراف المعنية للإدلاء بها لدى الهيئات الإدارية والشركات مع إطار التسجيل.',
     defaultFileName: 'قالب_شهادة_البيع_النموذجي',
-    headerHtml: `
+    headerHtml: '',
+    bodyHtml: `
+      ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">وزارة العدل — مكتب التوثيق</p>
       <p dir="rtl" style="${pCenter}">مكتب الأستاذ: [notaire_nom] — الموثق بـ [etude_commune]</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
-    bodyHtml: `
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">شهادة توثيقية بالبيع والتصرف</p>
       <p dir="rtl" style="${pCenterBold}">Attestation Notariée de Vente</p>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -469,13 +477,12 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     description:
       'جدول إرسال وإيداع المعاملات والعقود الرسمية لدى مفتشية التسجيل أو المحافظة العقارية مع بيان الوثائق المرفقة.',
     defaultFileName: 'قالب_جدول_الإرسال_النموذجي',
-    headerHtml: `
+    headerHtml: '',
+    bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">مكتب التوثيق — الأستاذ: [notaire_nom]</p>
       <p dir="rtl" style="${pCenter}">العنوان: [etude_commune]، ولاية [etude_wilaya]</p>
-      <hr style="border-top:1px solid #000000;margin:4px 0;"/>
-    `.trim(),
-    bodyHtml: `
+      <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">جدول إرسال وإيداع الوثائق التوثيقية</p>
       <p dir="rtl" style="${pCenterBold}">Bordereau d'Envoi Notarié</p>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -651,10 +658,11 @@ export async function downloadDefaultNotaryDocxTemplate(
   await downloadNotaryDocx({
     title: config.defaultFileName,
     bodyHtml: config.bodyHtml,
-    headerHtml: config.headerHtml,
+    headerHtml: '',
     footerHtml: config.footerHtml,
     pageNumberingEnabled: config.pageNumberingEnabled,
     fieldValues: {}, // keep [tags] unmerged as tags in the template
+    omitRepeatingHeader: true,
   });
 }
 
@@ -780,10 +788,11 @@ export async function exportContractWithStandardTemplate(params: {
   await downloadNotaryDocx({
     title: fileName.replace(/\.docx$/, ''),
     bodyHtml: mergedBodyHtml,
-    headerHtml: mergedHeaderHtml,
+    headerHtml: '',
     footerHtml: mergedFooterHtml,
     pageNumberingEnabled: config.pageNumberingEnabled,
     fieldValues: expandedValues,
+    omitRepeatingHeader: true,
   });
 
   return {

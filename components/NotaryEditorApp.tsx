@@ -1041,10 +1041,11 @@ export default function NotaryEditorApp() {
                 await downloadNotaryDocx({
                   title: tpl.name,
                   bodyHtml: tpl.bodyHtml,
-                  headerHtml: tpl.headerHtml,
-                  footerHtml: tpl.footerHtml,
+                  headerHtml: tpl.showHeaderFooter ? tpl.headerHtml : '',
+                  footerHtml: tpl.showHeaderFooter ? tpl.footerHtml : '',
                   pageNumberingEnabled: tpl.pageNumberingEnabled,
                   fieldValues,
+                  omitRepeatingHeader: !tpl.showHeaderFooter,
                 });
                 showToast(`تم تصدير القالب "${tpl.name}" بصيغة Word (.docx)`);
               }}
@@ -1091,6 +1092,7 @@ export default function NotaryEditorApp() {
                   footerHtml: doc.showHeaderFooter ? doc.footerHtml : '',
                   pageNumberingEnabled: doc.pageNumberingEnabled,
                   fieldValues: doc.fieldValues,
+                  omitRepeatingHeader: !doc.showHeaderFooter,
                 });
               }}
               onSaveSelectionBookmark={saveSelectionBookmark}

@@ -100,6 +100,7 @@ export async function exportEditorBodyToDocx(params: {
     footerHtml: params.showHeaderFooter ? params.footerHtml : '',
     pageNumberingEnabled: params.pageNumberingEnabled,
     fieldValues: params.fieldValues,
+    omitRepeatingHeader: !params.showHeaderFooter,
   });
 
   const fileName = `${titleToUse}.docx`;
@@ -140,6 +141,7 @@ export async function exportWithStandardTemplate(params: {
     footerHtml: '',
     pageNumberingEnabled: true,
     fieldValues: params.fieldValues,
+    omitRepeatingHeader: true,
   });
 
   return {

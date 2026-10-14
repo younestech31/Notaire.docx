@@ -1,50 +1,76 @@
-# Notarial Word Export & Column-Bottom Pagination Fix
+# Algerian Notarial Deed Structure & Single-Page Preamble Fix
 
-Implementation plan to repair the Algerian notarial Word (.docx) export pipeline, prevent body text tag escaping and broken nested DOM structures, and lock notarial pagination marks (`../..`) to the bottom-left of the writing column on non-final pages while placing closing ordinals exclusively on the final page.
+Implementation plan to align document generation with genuine Algerian notarial deed practice: eliminate repeating Word page headers, place the registration box (*إطار خاص بالتسجيل*) and office preamble exclusively on the first page body, and ensure all subsequent pages contain only legal clauses and bottom-left continuation pagination (`../..`).
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The clarifying choices confirmed by the user in Phase 1 govern the technical approach:
-> - **Confirmed Decision 1**: Standard Word templates will have `[contenu_acte]` replaced by native Word body paragraphs instead of injecting HTML strings inside a single `<p>` or `<span>`.
-> - **Confirmed Decision 2**: Notarial pagination continuation markers (`الصفحة ... ../..`) are strictly fixed to the bottom-left of the writing column on every non-final page, preventing vertical jumping or sentence splitting.
-> - **Confirmed Invariant**: Strictly preserve Arial 13pt, exact margins, line spacing (260 twips), color palette, and layout without adding non-notarial markup or UI alterations.
+> The clarifying choices confirmed by the user govern this implementation:
+> - **Confirmed Decision 1**: The document header will be placed directly within the Page 1 body content. Word repeating headers (`w:headerReference w:type="default"`) will be completely eliminated so subsequent pages remain clean without repeating headers.
+> - **Confirmed Decision 2**: Page 1 will feature the standard registration box (*إطار خاص بالتسجيل*) as a bordered rectangular frame at the very top of the text column, followed by the deed title, notary credentials, the centered transition marker (*حـــــــــــــضـــــــــــــر*), and party recitals.
+> - **Confirmed Invariant**: Arial 13pt, 1.0 exact line spacing (`w:line="260"`), 12cm text column (7cm right, 2cm left, 1cm top, 6cm bottom margins), full justification, and continuation markers (`../..`) fixed at the bottom-left of non-final pages.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **What It Does**: Ensures standard Algerian notary contract exports (specifically *أصل العقد*, *ملف العقد المرجعي*, and *نسخة العقد*) produce clean, fully compliant `.docx` documents where the body text consists of genuine document-level paragraphs rather than escaped HTML embedded within an enclosing paragraph. In addition, notarial pagination markers (`الصفحة {رقم بالحروف} ../..`) will appear consistently at the bottom-left of the writing column for non-final pages, and the closing formula (`الصفحة {الأخيرة} والأخيرة`) appears only at the document termination.
-- **Target Audience**: Algerian notary offices producing legally binding authentic deeds (*أصل العقد*, *النسخة التنفيذية*, *العقد المرجعي*) that demand strict adherence to ministerial formatting standards.
-- **Key Value**: Eliminates document corruption, raw HTML string leaks (such as `<span style="...` splitting), and jumping pagination markers across exported deeds.
+- **What It Does**: Refactors the document generation pipeline so that authentic Algerian notary deeds match the exact visual and structural reality shown in official ministerial practice:
+  - **Page 1**: Customized introductory page containing the registration box (*إطار خاص بالتسجيل*), deed title (*عقد بيع ترقوي* / *أصل عقد توثيقي*), notary office preamble, dashed separator, *حـــــــــــضـــــــــــر*, and party identity statements.
+  - **Pages 2+**: Pure contractual body text, terms, clauses, and tables with zero header repetition, culminating in bottom-left continuation pagination (`الصفحة الثانية ../..`) and the closing ordinal on the final page (`الصفحة ... والأخيرة`).
+- **Target Audience**: Algerian notary offices requiring 100% compliance with Chamber of Notaries and land registry standards.
+- **Key Value**: Eradicates the illegal repeating header bug in exported `.docx` deeds while matching the exact layout of the reference deed scan.
 
 ---
 
 ### 2. User Experience & Document Structure
 
-- **Standard Template Paragraph Integration**:
-  - In `lib/notary-word-templates.ts`, the placeholder `<p dir="rtl" style="${pBase}">[contenu_acte]</p>` in *أصل العقد*, *ملف العقد المرجعي*, and *نسخة العقد* will be replaced with native document paragraphs when generating the document body, preventing invalid DOM nesting like `<p><span><p>...</p></span></p>`.
-  - The export workflow will splice the sanitized contract body blocks directly into the template's clause section as peer block-level elements.
-- **Notarial Pagination & Column-Bottom Positioning**:
-  - Non-final pages: Mark `الصفحة {العدد الترتيبي مؤنث} ../..` aligned left (`w:jc w:val="left"` with `w:line="260"`) positioned at the bottom of the writing column.
-  - Final page: Closing marker (`الصفحة {العدد الترتيبي مؤنث} والأخيرة`) placed only once at the conclusion of the contract text.
-  - Suppression of placeholder text: Remove UI debug labels like `نهاية الصفحة X — بداية الصفحة Y` from appearing anywhere in the resulting `document.xml`.
+#### Page 1 Architecture (First Page Only)
+```
+┌────────────────────────────────────────────────────────┐
+│  إطار خاص بالتسجيل                                     │
+│  (Registration Frame: 120mm wide x ~30-35mm height)   │
+└────────────────────────────────────────────────────────┘
+
+              عقد بيع ترقوي / أصل عقد توثيقي
+            (Title: Centered, Bold, Underlined)
+
+لدى الأستاذ: [notaire_nom] الموثق، الواقع مكتبه العمومي...
+----------------------------------------------------------
+                     حـــــــــــــضـــــــــــــر
+                      (Centered Notarial Marker)
+
+المؤسسة الوطنية للترقية العقارية / الأطراف المتعاقدة...
+(Party Identification & Legal Capacities)
+...
+----------------------------------------------------------
+الصفحة الاولى ../..
+```
+
+#### Subsequent Pages Architecture (Pages 2, 3... N)
+```
+[Continuation of contract body, clauses, terms, and tables]
+[Full justification, strict Arial 13pt, line spacing 260]
+
+...
+----------------------------------------------------------
+الصفحة الثانية ../.. (or final closing formula on last page)
+```
 
 ---
 
 ### 3. Key Technical Decisions & Trade-Offs
 
-- **Decision 1: Native Block Insertion vs String-Level Placeholder Replacement**:
-  - *Chosen Approach*: Replace the `[contenu_acte]` slot at the block level by parsing template blocks and inserting the sanitized contract body paragraphs directly as siblings into the document XML tree.
-  - *Why*: Injecting rich contract body HTML into text placeholder nodes escapes tags or produces invalid nested paragraphs (`<p>` inside `<span>` inside `<p>`), breaking Word's XML hierarchy.
-  - *Alternative Considered*: String regex replacement of `[contenu_acte]`. Rejected because standard template wrappers create enclosing `<p>` tags that cannot validly contain child `<p>` tags.
+- **Decision 1: Removal of Word OpenXML `<w:headerReference>`**:
+  - *Chosen Approach*: Disable the generation of default Word headers (`word/header1.xml` with `w:type="default"`) for notarial deeds. Integrate the registration box and notary preamble directly into the Page 1 document body flow.
+  - *Why*: In OpenXML, `w:type="default"` forces Word to display the header on every single page of the section. Notarial deeds strictly forbid headers on subsequent pages.
+  - *Alternative Considered*: `w:type="first"` with `w:titlePg`. While possible, Word headers have rigid margin constraints that interfere with the registration stamp box dimensions. Embedding the frame directly in the document body guarantees exact millimeter control and seamless pagination.
 
-- **Decision 2: Paragraph Alignment Mapping in OpenXML**:
-  - *Chosen Approach*: In `buildParagraphPropertiesXml`, ensure that pagination markers and left-aligned elements explicitly emit `<w:jc w:val="left"/>` even in RTL documents, without erroneous bidirectional inversion.
-  - *Why*: Algerian notarial standards mandate that continuation marks appear at the left side of the writing column (`w:jc w:val="left"`).
+- **Decision 2: Registration Box (*إطار خاص بالتسجيل*) Implementation**:
+  - *Chosen Approach*: Implement as a single-cell bordered table (`border: 1px solid #000000; width: 100%; height: ~35mm;`) containing the text "إطار خاص بالتسجيل" right-aligned at the top, leaving the remaining box space clear for official tax and registration stamps.
+  - *Why*: Generates clean `<w:tbl>` with exact borders in Word OpenXML, identically matching the uploaded deed sample `1.png`.
 
-- **Decision 3: Elimination of Visual Break Elements in OpenXML**:
-  - *Chosen Approach*: When serializing `.page-break` elements in `docx-engine.ts`, emit only `<w:p><w:r><w:br w:type="page"/></w:r></w:p>` and completely discard inner text nodes containing "نهاية الصفحة".
+- **Decision 3: Separation of Separator Dashes and Continuation Marks**:
+  - *Chosen Approach*: Add the clean notarial dashed separator (`----------------------------------------`) above the continuation marker on page breaks and above *حضر*, matching the reference deed.
 
 ---
 
@@ -52,39 +78,42 @@ Implementation plan to repair the Algerian notarial Word (.docx) export pipeline
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│             Contract Body (Editor Content)             │
-│            Purified & Normalized Block Nodes            │
+│           Built-in Notary Template Definitions         │
+│  - Page 1 Body: Registration Box + Preamble + Title   │
+│  - Body Section: Native contract clauses and terms    │
+│  - No repeating headerHtml configuration               │
 └──────────────────────────┬─────────────────────────────┘
                            │
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│            Template Block Splice & Expansion           │
-│  - Replaces [contenu_acte] block with native <p> nodes │
-│  - No string escaping inside <p> or <span> wrappers    │
+│             Notarial Body Purifier & Splicer           │
+│  - Purifies paragraphs to Arial 13pt, justified        │
+│  - Slices [contenu_acte] into native sibling blocks    │
 └──────────────────────────┬─────────────────────────────┘
                            │
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│             Notarial Pagination Alignment              │
-│  - Continuation mark: "الصفحة ... ../.." on non-final │
-│  - Fixed to bottom-left of writing column              │
-│  - Closing mark: "الصفحة ... والأخيرة" on last page   │
+│             Notarial Pagination Engine                 │
+│  - Page 1 accounts for registration box & preamble     │
+│  - Non-final pages: "الصفحة {الترتيب} ../.." at bottom │
+│  - Final page: "الصفحة {الترتيب} والأخيرة"             │
 └──────────────────────────┬─────────────────────────────┘
                            │
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│            OpenXML Serialization (docx-engine)         │
-│  - Emits <w:jc w:val="left"/> & <w:line="260"/>        │
-│  - Emits clean <w:br w:type="page"/> (no debug text)   │
-│  - Outputs valid, pristine Word .docx archive          │
-└──────────────────────────┘
+│            docx-engine Serialization (OpenXML)         │
+│  - Omit <w:headerReference w:type="default"/>          │
+│  - Emit registration table & title in Page 1 body      │
+│  - Emit <w:line="260"/>, <w:jc w:val="left"/>          │
+└────────────────────────────────────────────────────────┘
 ```
 
 #### Affected Modules:
-1. `lib/notary-word-templates.ts`: Update built-in templates so the contract body section accommodates native block insertion.
+1. `lib/notary-word-templates.ts`:
+   - Incorporate the "إطار خاص بالتسجيل" registration box and proper deed preamble into the Page 1 body of standard templates (`acte_original`, `contrat_reference`, `expedition`).
+   - Clear `headerHtml` from standard templates to eliminate repeating page headers.
 2. `lib/docx-engine.ts`:
-   - Block-level substitution for `[contenu_acte]` / contract body elements.
-   - Enforce exact `<w:jc w:val="left"/>` for pagination markers.
-   - Ensure page breaks emit only `<w:br w:type="page"/>` without text nodes.
-3. `lib/notarial-pagination.ts`: Ensure markers are placed cleanly at the column bottom without slicing sentences or creating fragmented HTML spans.
-4. `lib/field-values-normalizer.ts`: Verify `contenu_acte` remains excluded from raw string escaping.
+   - Ensure `generateNotaryDocxBlob` does not inject repeating headers into OpenXML section properties for notarial templates.
+   - Preserve clean table borders and paragraph properties.
+3. `lib/document-io-workflows.ts`:
+   - Ensure `exportEditorBodyToDocx` and template exports omit repeating headers by default unless explicitly customized.

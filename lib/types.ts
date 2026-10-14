@@ -133,6 +133,7 @@ export interface OfficeTemplate {
   headerHtml: string;
   footerHtml: string;
   pageNumberingEnabled: boolean;
+  showHeaderFooter?: boolean;
   extractedPlaceholders: string[];
   defaultFieldValues?: Record<string, string>;
   sourceFileName?: string;
