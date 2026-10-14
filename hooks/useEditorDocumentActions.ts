@@ -18,7 +18,7 @@ import {
   loadSavedDocuments,
   saveDocumentRecord,
 } from '@/lib/storage';
-import { extractLiveContractClausesFromDOM } from '@/lib/clause-outline-engine';
+import { extractLiveContractClausesFromDOM, removeClauseSegmentsFromHtml } from '@/lib/clause-outline-engine';
 import {
   insertHtmlAtSelection,
   normalizeNotaryContainerDOM,
@@ -514,15 +514,7 @@ export function useEditorDocumentActions({
       setDocTitle(tpl.name);
       let nextHtml = tpl.bodyHtml;
       if (clearPreviousClauses) {
-        const temp = document.createElement('div');
-        temp.innerHTML = nextHtml;
-        const clauseContainers = Array.from(
-          temp.querySelectorAll('.clause-container, [data-clause-id]')
-        );
-        for (const c of clauseContainers) {
-          c.remove();
-        }
-        nextHtml = temp.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+        nextHtml = removeClauseSegmentsFromHtml(nextHtml) || INITIAL_EMPTY_PARAGRAPH;
         setActiveClauseIdsInDoc([]);
       }
       bodyEditorRef.current.innerHTML = nextHtml;
@@ -654,15 +646,7 @@ export function useEditorDocumentActions({
       activeDocumentRef.current = null;
       let nextHtml = tpl.bodyHtml;
       if (clearPreviousClauses) {
-        const temp = document.createElement('div');
-        temp.innerHTML = nextHtml;
-        const clauseContainers = Array.from(
-          temp.querySelectorAll('.clause-container, [data-clause-id]')
-        );
-        for (const c of clauseContainers) {
-          c.remove();
-        }
-        nextHtml = temp.innerHTML || INITIAL_EMPTY_PARAGRAPH;
+        nextHtml = removeClauseSegmentsFromHtml(nextHtml) || INITIAL_EMPTY_PARAGRAPH;
         setActiveClauseIdsInDoc([]);
       }
       bodyEditorRef.current.innerHTML = nextHtml;

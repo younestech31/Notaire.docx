@@ -9,6 +9,7 @@ import {
 } from './types';
 import { lookupPlaceholderValue, normalizePlaceholderKey } from './docx-engine';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
+import { detectNotaryClauseHeading } from './clause-outline-engine';
 
 /**
  * Computes the DOM index path of a node relative to rootEl.
@@ -273,7 +274,10 @@ export function decorateSmartTagsInDOM(rootEl: HTMLElement): void {
           span.textContent = `[${varName}]`;
           r.insertNode(span);
         } catch {
-          // Ignore range boundary errors
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('app-toast', { detail: 'تعذر تطبيق الوسم الذكي على الحدود' }));
+          }
+          return;
         }
       }
     }
@@ -738,10 +742,8 @@ export function extractPlaceholdersGroupedByClause(
   };
 
   for (const child of children) {
-    if (
-      child.classList.contains('clause-container') ||
-      child.hasAttribute('data-clause-id')
-    ) {
+    const headingCheck = detectNotaryClauseHeading(child);
+    if (headingCheck.isHeading || child.classList.contains('clause-container')) {
       flushGeneralGroup();
       const cId = child.getAttribute('data-clause-id') || `clause_${groups.length + 1}`;
       const cTitle =
@@ -907,15 +909,25 @@ export function insertHtmlAtSelection(
   const range = sel.getRangeAt(0);
 
   const isBlock = /<(p|div|h[1-6]|li|table)/i.test(htmlToInsert);
-  let container = range.commonAncestorContainer;
+  let container: Node = range.commonAncestorContainer;
   if (container.nodeType === Node.TEXT_NODE) container = container.parentNode!;
 
-  if (isBlock && container instanceof HTMLElement && ['P', 'DIV'].includes(container.tagName)) {
-    // Force split if we are inside a P tag to ensure clean block insertion
-    // Move the range to after the container block to prevent merging
-    range.setStartAfter(container);
-    range.setEndAfter(container);
-    range.collapse(true);
+  let blockContainer: HTMLElement | null = null;
+  if (container instanceof HTMLElement) {
+    blockContainer = container.closest('p, div.clause-container') as HTMLElement | null;
+  }
+  if (blockContainer && !editorEl.contains(blockContainer)) {
+    blockContainer = null;
+  }
+
+  if (isBlock) {
+    if (blockContainer && blockContainer !== editorEl) {
+      range.setStartAfter(blockContainer);
+      range.setEndAfter(blockContainer);
+      range.collapse(true);
+    } else {
+      range.deleteContents();
+    }
   } else {
     range.deleteContents();
   }

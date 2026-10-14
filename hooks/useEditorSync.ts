@@ -84,6 +84,7 @@ interface UseEditorSyncParams {
     footerHtml: string;
   };
   showToast: (msg: string) => void;
+  previewBackupHtmlRef: React.MutableRefObject<string>;
 }
 
 export function useEditorSync({
@@ -122,12 +123,12 @@ export function useEditorSync({
   setActiveDocument,
   getEditorZonesHtml,
   showToast,
+  previewBackupHtmlRef,
 }: UseEditorSyncParams) {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debouncedSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const previewBackupHtmlRef = useRef<string>('');
 
   const clearAutoSaveTimer = useCallback(() => {
     if (autoSaveTimerRef.current) {
@@ -139,19 +140,14 @@ export function useEditorSync({
   const refreshActiveClausesInDOM = useCallback(
     (existingOutline?: ContractOutlineClause[]) => {
       if (!bodyEditorRef.current) return;
-      const containers = Array.from(
-        bodyEditorRef.current.querySelectorAll('[data-clause-id]')
-      ) as HTMLElement[];
-      const ids = containers
-        .map((el) => el.getAttribute('data-clause-id') || '')
-        .filter(Boolean);
-      setActiveClauseIdsInDoc(ids);
       const liveOutline = extractLiveContractClausesFromDOM(
         bodyEditorRef.current,
         existingOutline ?? outlineClausesRef.current
       );
       outlineClausesRef.current = liveOutline;
       setOutlineClauses(liveOutline);
+      const ids = liveOutline.map((c) => c.id).filter(Boolean);
+      setActiveClauseIdsInDoc(ids);
     },
     [bodyEditorRef, outlineClausesRef, setActiveClauseIdsInDoc, setOutlineClauses]
   );
@@ -209,10 +205,6 @@ export function useEditorSync({
       syncSmartTagsFilledStateInDOM(bodyEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(headerEditorRef.current, activeValues);
       syncSmartTagsFilledStateInDOM(footerEditorRef.current, activeValues);
-
-      if (!previewBackupHtmlRef.current && bodyHtml.trim().length > 100) {
-        previewBackupHtmlRef.current = bodyHtml;
-      }
 
       const rawMergedForPagination = mergePlaceholdersIntoHtml(
         bodyHtml,
@@ -283,6 +275,17 @@ export function useEditorSync({
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
         try {
+          if (
+            previewBackupHtmlRef.current &&
+            previewBackupHtmlRef.current.trim() &&
+            (bodyHtml.replace(/<[^>]+>/g, '') || '').trim().length <
+              (previewBackupHtmlRef.current.replace(/<[^>]+>/g, '') || '').trim().length / 2
+          ) {
+            setAutoSaveState('error');
+            showToast('تعذر حفظ العقد: المحتوى الحالي أقل بكثير من النسخة الاحتياطية');
+            return;
+          }
+
           setDocMetrics(computeDocumentMetrics(bodyHtml, true));
           setPrintPaginatedHtml(
             injectNotarialPaginationIntoHtml(
@@ -295,8 +298,22 @@ export function useEditorSync({
           await saveDocumentRecord(draft);
           if (bodyEditorRef.current) {
             const cleanBody = purifyNotarialBodyHtml(stripNotarialPaginationFromHtml(bodyEditorRef.current.innerHTML));
-            if (bodyEditorRef.current.innerHTML !== cleanBody) {
+            const currentStripped = stripNotarialPaginationFromHtml(bodyEditorRef.current.innerHTML);
+            if (cleanBody !== currentStripped) {
+              const savedSel = serializeCurrentSelection({
+                body: bodyEditorRef.current,
+                header: headerEditorRef.current,
+                footer: footerEditorRef.current,
+              });
               bodyEditorRef.current.innerHTML = cleanBody;
+              restoreSerializedSelection(
+                {
+                  body: bodyEditorRef.current,
+                  header: headerEditorRef.current,
+                  footer: footerEditorRef.current,
+                },
+                savedSel
+              );
             }
           }
           const updatedDocs = await loadSavedDocuments();
@@ -353,6 +370,7 @@ export function useEditorSync({
       setPrintPaginatedHtml,
       showHeaderFooter,
       showToast,
+      previewBackupHtmlRef,
     ]
   );
 

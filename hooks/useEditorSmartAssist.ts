@@ -350,20 +350,32 @@ export function useEditorSmartAssist({
           return;
         }
 
-        if (quickAssistTrigger) {
-          try {
-            const tRange = document.createRange();
-            tRange.setStart(
-              quickAssistTrigger.textNode,
-              quickAssistTrigger.triggerOffset
-            );
-            tRange.setEnd(
-              quickAssistTrigger.textNode,
-              quickAssistTrigger.caretOffset
-            );
-            tRange.deleteContents();
-          } catch {
-            // ignore if textNode detached
+        if (range.startContainer.nodeType === Node.TEXT_NODE) {
+          const textNode = range.startContainer as Text;
+          const textBeforeCaret = (textNode.nodeValue || '').slice(0, range.startOffset);
+          const bracketMatch = /\[([^\[\]\s]{0,35})$/.exec(textBeforeCaret);
+          const hashMatch = /#([^\r\n#]{0,30})$/.exec(textBeforeCaret);
+          const slashMatch = /\/([^\r\n/\s]{0,20})$/.exec(textBeforeCaret);
+
+          let triggerIdx = -1;
+          if (bracketMatch) {
+            triggerIdx = range.startOffset - bracketMatch[0].length;
+          } else if (hashMatch) {
+            triggerIdx = textBeforeCaret.lastIndexOf('#');
+          } else if (slashMatch) {
+            triggerIdx = textBeforeCaret.lastIndexOf('/');
+          }
+
+          if (triggerIdx !== -1) {
+            try {
+              const tRange = document.createRange();
+              tRange.setStart(textNode, triggerIdx);
+              tRange.setEnd(textNode, range.startOffset);
+              tRange.deleteContents();
+            } catch (err) {
+              showToast?.('تعذر تحديد نطاق التداخل السريع');
+              return;
+            }
           }
         }
 
@@ -438,7 +450,6 @@ export function useEditorSmartAssist({
       flushSyncPlaceholdersAndDraft,
       handleInsertPageBreak,
       handleInsertTable,
-      quickAssistTrigger,
       recordHistorySnapshot,
       refreshInlineQuickAssistTrigger,
       savedRangeRef,

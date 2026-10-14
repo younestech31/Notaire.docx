@@ -197,6 +197,25 @@ interface DomClauseSegment {
   elements: HTMLElement[];
 }
 
+/**
+ * Read-only helper: parses HTML into a detached div, collects DOM clause segments via collectDomClauseSegments,
+ * and removes each segment's elements. Do not write data-clause-id.
+ */
+export function removeClauseSegmentsFromHtml(html: string): string {
+  if (!html) return '';
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return html;
+  const segments = collectDomClauseSegments(root);
+  for (const seg of segments) {
+    for (const el of seg.elements) {
+      el.remove();
+    }
+  }
+  return root.innerHTML;
+}
+
 function collectDomClauseSegments(rootEl: HTMLElement): DomClauseSegment[] {
   const children = Array.from(rootEl.children) as HTMLElement[];
   const segments: DomClauseSegment[] = [];

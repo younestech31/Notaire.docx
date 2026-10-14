@@ -74,6 +74,17 @@ export default function NotaryEditorApp() {
     }, 3400);
   }, []);
 
+  useEffect(() => {
+    const handleAppToast = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        showToast(customEvent.detail);
+      }
+    };
+    window.addEventListener('app-toast', handleAppToast);
+    return () => window.removeEventListener('app-toast', handleAppToast);
+  }, [showToast]);
+
   // 1. Document Editing Session Hook
   const {
     bodyEditorRef,
@@ -315,6 +326,7 @@ export default function NotaryEditorApp() {
     setActiveDocument,
     getEditorZonesHtml,
     showToast,
+    previewBackupHtmlRef,
   });
 
   // 5. Editor DOM Formatting & Undo/Redo Hook
@@ -782,6 +794,7 @@ export default function NotaryEditorApp() {
         bodyEditorRef.current.innerHTML = previewBackupHtmlRef.current;
         normalizeNotaryContainerDOM(bodyEditorRef.current, false);
       }
+      previewBackupHtmlRef.current = '';
       setTimeout(() => {
         flushSyncPlaceholdersAndDraft();
       }, 50);
