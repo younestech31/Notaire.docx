@@ -855,15 +855,7 @@ function serializeBlockContainerToXml(
 
       let spacingBeforeTwips = 0;
       if (isPaginationMarker) {
-        const rawTwips = el.getAttribute('data-spacing-before-twips');
-        if (rawTwips) {
-          spacingBeforeTwips = parseInt(rawTwips, 10) || 0;
-        } else {
-          const rawPx = el.getAttribute('data-spacing-before-px') || el.style?.marginTop;
-          if (rawPx) {
-            spacingBeforeTwips = Math.round((parseFloat(rawPx) || 0) * 15);
-          }
-        }
+        spacingBeforeTwips = 160; // Sits directly below the page text and clauses
       }
 
       const baseStyle: InlineRunStyle = {};

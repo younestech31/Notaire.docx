@@ -1,73 +1,74 @@
-# Footer-Based Notarial Pagination & Natural Body Flow Architecture
+# Arabic Textual Notarial Pagination Directly Below Page Paragraphs
 
-Implementation plan to transition Algerian notarial document generation from brittle mid-paragraph body DOM splitting to native Word OpenXML Footer (`w:footerReference` / `word/footer1.xml`) with dynamic field codes (`w:fldSimple w:instr="PAGE"`), leaving the entire contract body to flow naturally as unbroken paragraphs.
+Implementation plan to position Algerian notarial page numbering in Arabic words (`الصفحة الأولى ../..` to `الصفحة ... والأخيرة`) directly below the text and clauses of each page, while enforcing **paragraph-level atomic paging** so that paragraphs and clauses are never split across pages.
 
 ### User Decisions Confirmed
 
 > [!IMPORTANT]
 > The clarifying choices confirmed by the user govern this implementation:
-> - **Decision 1**: Page numbering will be generated natively in the Word footer using dynamic OpenXML page fields (`PAGE` / `NUMPAGES`) formatted with the Algerian notarial continuation structure (`الصفحة {PAGE} ../..`).
-> - **Decision 2**: Contract body paragraphs and clauses will flow completely naturally without DOM element splitting or artificial mid-sentence/mid-paragraph breaks.
+> - **Decision 1: Textual Numbering in Arabic Words**: The page number must remain written in Arabic words:
+>   - Non-final pages: `الصفحة الأولى ../..`, `الصفحة الثانية ../..`, `الصفحة الثالثة ../..`, etc.
+>   - Final page: `الصفحة ... والأخيرة` (e.g. `الصفحة الرابعة والأخيرة`).
+> - **Decision 2: Direct Placement Below Page Writing**: The marker must sit directly below the writing of the clauses and body on that page (above the bottom footer margin).
+> - **Decision 3: Atomic Paragraph Paging (No Mid-Paragraph Splitting)**: Paragraphs and clauses will never be sliced in the middle. If a paragraph exceeds the available lines/height of the current page, the entire paragraph moves atomically to the top of the next page.
 
 ---
 
-### 1. The Core Problem & Architectural Shift
+### 1. Document Architecture & Pagination Rules
 
-| Dimension | Previous In-Body Slicing Model | New Dynamic Footer Model |
-|---|---|---|
-| **Mechanism** | Measured DOM heights in pixels and inserted marker `<p>` and `<div class="page-break">` between (or splitting) paragraphs. | Emits unbroken `<p>` blocks into `<w:body>`. The Word pagination engine natively lays out pages. |
-| **Integrity** | Paragraphs and legal clauses could be fractured, tags cut in half, or spans split across pages. | **100% clause integrity**: Text, spans, numbers, and dates remain intact. Word splits lines naturally across pages based on strict Arial 13pt metrics. |
-| **Pagination Position** | Required dynamic line spacing (`data-spacing-before-twips`) to push marker to bottom; sensitive to subtle font rendering differences. | **Fixed in footer area**: Anchored precisely inside the 6cm bottom margin (`w:pgMar w:bottom="3402" w:footer="1134"`), left-aligned (`w:jc w:val="left"`). |
-| **Word Re-layout Safety** | If the notary opened the file in Word and edited or added words, the hard-coded body markers shifted into the middle of the page. | **Self-healing**: Any text addition or deletion in Word automatically updates page counts and keeps continuation markers at the true page bottom. |
+#### Page Budget & Calculation
+- Page height: 297mm (A4). Margins: Top 10mm, Bottom 60mm (notary stamp margin), Right 70mm, Left 20mm.
+- Net writable height: 227mm (~40-42 lines at 260 twips / 18px line-height).
+- Page 1 accounts for the top registration box (*إطار خاص بالتسجيل*) and deed preamble (~10-12 lines), leaving ~30 lines for clauses.
+- Subsequent pages have full ~40 lines available for clauses and tables.
+
+#### Layout Flow per Page:
+```
+┌────────────────────────────────────────────────────────┐
+│ [Clauses, Terms, or Tables on this Page]              │
+│ (Fully preserved intact paragraphs - no cut words)     │
+│                                                        │
+│ [Last complete paragraph fitting on this page]         │
+│                                                        │
+│ الصفحة الأولى ../..                                   │
+│ (Left-aligned, Arial 13pt bold, line spacing 1.0)     │
+└────────────────────────────────────────────────────────┘
+==================== [PAGE BREAK] ========================
+┌────────────────────────────────────────────────────────┐
+│ [Next paragraph starts cleanly at the top of Page 2]   │
+│ ...                                                    │
+│ [Last complete paragraph fitting on Page 2]            │
+│                                                        │
+│ الصفحة الثانية ../..                                  │
+└────────────────────────────────────────────────────────┘
+```
 
 ---
 
-### 2. OpenXML Footer Specifications (`word/footer1.xml`)
+### 2. Implementation Steps
 
-#### A. Document Relationship and Section Reference
-In `word/_rels/document.xml.rels`:
-```xml
-<Relationship Id="rIdFooter1"
-  Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
-  Target="footer1.xml"/>
-```
+#### Step 1: `lib/notarial-pagination.ts`
+- **Enforce Paragraph-Atomic Paging**:
+  - In `paginateHtmlContentByNotarialStandards` and `injectNotarialPaginationIntoHtml`:
+    - Completely disable splitting within paragraphs (`splitParagraphBetweenSentences` / word slicing).
+    - Measure each block element (paragraphs `<p>`, tables `<table>`, list items `<li>`).
+    - When adding the next block would exceed the maximum allowable page height:
+      1. Insert the continuation marker paragraph `الصفحة {الترتيب بالحروف} ../..` directly below the previous block.
+      2. Insert a clean page break (`<div class="page-break" data-page-break="true"></div>`).
+      3. Start the new page with the overflowing block at the top.
+      4. Reset the page accumulator and increment page count.
+    - Below the final document block (signatures/reading confirmation), append `الصفحة {الترتيب بالحروف} والأخيرة`.
 
-In `word/document.xml` section properties (`<w:sectPr>`):
-```xml
-<w:sectPr>
-  <w:footerReference xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-                     w:type="default"
-                     r:id="rIdFooter1"/>
-  <w:pgSz w:w="11906" w:h="16838"/>
-  <w:pgMar w:top="567" w:right="3969" w:bottom="3402" w:left="1134" w:header="567" w:footer="1134" w:gutter="0"/>
-  <w:bidi/>
-</w:sectPr>
-```
-
-#### B. `word/footer1.xml` Structure
-The footer contains a left-aligned, right-to-left paragraph with the strict Algerian continuation notation:
-```xml
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:p>
-    <w:pPr>
-      <w:bidi/>
-      <w:jc w:val="left"/>
-      <w:spacing w:before="0" w:after="0" w:line="260" w:lineRule="exact"/>
-    </w:pPr>
-    <!-- Separator rule above footer marker -->
-    <w:r>
-      <w:rPr>
-        <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
-        <w:sz w:val="26"/>
-        <w:szCs w:val="26"/>
-        <w:b/>
-        <w:rtl/>
-      </w:rPr>
-      <w:t xml:space="preserve">الصفحة </w:t>
-    </w:r>
-    <!-- Dynamic Word PAGE field -->
-    <w:fldSimple w:instr="PAGE">
+#### Step 2: `lib/docx-engine.ts`
+- **Serialize In-Body Textual Markers with Clean OpenXML**:
+  - The continuation marker `<p data-notary-pagination="true">` is serialized as:
+    ```xml
+    <w:p>
+      <w:pPr>
+        <w:bidi/>
+        <w:jc w:val="left"/>
+        <w:spacing w:before="120" w:after="0" w:line="260" w:lineRule="exact"/>
+      </w:pPr>
       <w:r>
         <w:rPr>
           <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
@@ -75,58 +76,25 @@ The footer contains a left-aligned, right-to-left paragraph with the strict Alge
           <w:szCs w:val="26"/>
           <w:b/>
           <w:rtl/>
+          <w:lang w:val="ar-DZ" w:bidi="ar-DZ"/>
         </w:rPr>
-        <w:t>1</w:t>
+        <w:t xml:space="preserve">الصفحة الأولى ../..</w:t>
       </w:r>
-    </w:fldSimple>
-    <!-- Continuation notation ../.. or closing note -->
-    <w:r>
-      <w:rPr>
-        <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
-        <w:sz w:val="26"/>
-        <w:szCs w:val="26"/>
-        <w:b/>
-        <w:rtl/>
-      </w:rPr>
-      <w:t xml:space="preserve"> ../..</w:t>
-    </w:r>
-  </w:p>
-</w:ftr>
-```
-
-Optional Advanced Word Conditional:
-If supported by the Word environment, we can also generate the native Word `IF` field:
-`IF { PAGE } = { NUMPAGES } "الأخيرة" "../.."` so the final page seamlessly displays `الأخيرة` while earlier pages display `../..`.
-
----
-
-### 3. Affected Modules & Implementation Steps
-
-#### Step 1: `lib/docx-engine.ts`
-- **Add Native Dynamic Notarial Footer Generator**:
-  - Implement `buildNotaryDynamicFooterXml(options)`: generates `word/footer1.xml` containing left-aligned `الصفحة {PAGE} ../..` with exact 260 twip line spacing and Arial 13pt bold font.
-  - In `generateNotaryDocxBlob`:
-    - Register `word/footer1.xml` in `[Content_Types].xml` and `word/_rels/document.xml.rels`.
-    - Set `<w:footerReference w:type="default" r:id="rIdFooter1"/>` in `<w:sectPr>` whenever `pageNumberingEnabled !== false`.
-- **Bypass Body Slicing When Footer Pagination Is Active**:
-  - When dynamic footer numbering is active, avoid passing the document body through height-measuring or element-splitting logic (`injectNotarialPaginationIntoHtml`), allowing paragraphs to remain pure continuous flow.
-  - Only explicit manual user breaks (`<div class="page-break">`) will emit `<w:br w:type="page"/>`.
-
-#### Step 2: `lib/notarial-pagination.ts`
-- Provide a clean pass-through mode in `injectNotarialPaginationIntoHtml` that preserves raw clauses when footer mode is selected, while maintaining compatibility for visual preview in the web UI.
+    </w:p>
+    ```
+  - The `<div class="page-break">` emits `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`.
+  - Disable `footerReference` so the page number is not duplicated in the Word footer.
 
 #### Step 3: `lib/notary-word-templates.ts` & `lib/document-io-workflows.ts`
-- Update standard template exports and direct contract downloads to enable dynamic footer pagination by default (`pageNumberingEnabled: true`), keeping `headerHtml: ''` and embedding Page 1 preamble directly in Page 1 body.
+- Verify standard templates and exports cleanly invoke this atomic pagination pipeline.
 
 ---
 
-### 4. Verification Plan
+### 3. Verification Plan
 
-1. **Compilation**: Run `compile_applet` to ensure zero TypeScript errors.
-2. **Linting**: Run `lint_applet` to verify clean code standards.
-3. **OpenXML Output Check**:
-   - Inspect the generated `.docx` XML structure:
-     - Verify `word/footer1.xml` contains `<w:fldSimple w:instr="PAGE"/>` aligned to `left`.
-     - Verify `word/document.xml` body has zero broken paragraphs or embedded continuation markers.
-     - Verify no `<w:headerReference>` is created.
-4. **End-to-End Verification**: Test exporting a multi-page deed and verifying clean layout.
+1. **Compilation**: Run `compile_applet`.
+2. **Linting**: Run `lint_applet`.
+3. **Execution Verification**: Run automated tests generating a sample 3-page deed:
+   - Check that the page marker is in Arabic letters (`الصفحة الأولى ../..`, `الصفحة الثانية ../..`, `الصفحة الثالثة والأخيرة`).
+   - Check that it sits directly under the last paragraph of each page.
+   - Verify that no paragraphs are split across page boundaries.
