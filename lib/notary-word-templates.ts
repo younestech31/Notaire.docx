@@ -18,6 +18,7 @@ import {
   mergeEditorVariables,
   mergePlaceholdersIntoHtml,
   mergeTemplateSymbols,
+  parseContractIntoClauses,
 } from './docx-engine';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
@@ -609,15 +610,34 @@ export async function exportContractWithStandardTemplate(params: {
   const normalizedVals = normalizeAllNotaryFieldValues(fieldValues);
   const activeVals = expandFieldValuesWithStandardLatinTags(normalizedVals);
 
+  const cleanedBody = purifyNotarialBodyHtml(bodyHtml);
+  const clauses = parseContractIntoClauses(cleanedBody);
+  const processedClauses = clauses.map((c) => ({
+    title: c.title,
+    contentHtml: mergeEditorVariables(
+      purifyNotarialBodyHtml(c.contentHtml || ''),
+      activeVals
+    ),
+    enabled: true,
+  }));
+
+  let templateBody = config.bodyHtml;
+  if (cleanedBody.includes('حضر') || cleanedBody.includes('الطرف')) {
+    templateBody = templateBody.replace(
+      /<div\b[^>]*data-template-part=["']parties["'][^>]*>([\s\S]*?)<\/div>/gi,
+      ''
+    );
+  }
+
   const mergedBody = expandBlockLoop(
-    config.bodyHtml,
-    [],
-    purifyNotarialBodyHtml(bodyHtml)
+    templateBody,
+    processedClauses,
+    cleanedBody
   );
 
-  const finalBody = mergeEditorVariables(mergedBody, activeVals);
-  const finalHeader = mergeEditorVariables(config.headerHtml, activeVals);
-  const finalFooter = mergeEditorVariables(config.footerHtml, activeVals);
+  const finalBody = mergeTemplateSymbols(mergedBody, activeVals);
+  const finalHeader = mergeTemplateSymbols(config.headerHtml, activeVals);
+  const finalFooter = mergeTemplateSymbols(config.footerHtml, activeVals);
 
   const fileName = `${contractTitle || config.defaultFileName}.docx`;
   await downloadNotaryDocx({
