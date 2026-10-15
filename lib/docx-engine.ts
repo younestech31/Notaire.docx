@@ -496,7 +496,7 @@ function buildParagraphPropertiesXml(options: {
       ? options.spacingBeforeTwips
       : 0;
   parts.push(
-    `<w:spacing w:before="${spBefore}" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="auto"/>`
+    `<w:spacing w:before="${spBefore}" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="exact"/>`
   );
 
   if (options.indentStartTwips || options.indentEndTwips) {
@@ -871,14 +871,16 @@ function serializeBlockContainerToXml(
         availableWidthTwips
       );
 
-      const pPr = buildParagraphPropertiesXml({
-        isRtl: dir === 'rtl',
-        align,
-        spacingBeforeTwips,
-        pageBreakBefore: listState.nextPageBreak,
-        indentStartTwips: dir === 'rtl' ? padRightPx * 15 : padLeftPx * 15,
-        indentEndTwips: dir === 'rtl' ? padLeftPx * 15 : padRightPx * 15,
-      });
+      const pPr = isPaginationMarker
+        ? `<w:pPr><w:spacing w:before="0" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="exact"/><w:jc w:val="left"/>${buildRunPropertiesXml({}, false)}</w:pPr>`
+        : buildParagraphPropertiesXml({
+            isRtl: dir === 'rtl',
+            align,
+            spacingBeforeTwips,
+            pageBreakBefore: listState.nextPageBreak,
+            indentStartTwips: dir === 'rtl' ? padRightPx * 15 : padLeftPx * 15,
+            indentEndTwips: dir === 'rtl' ? padLeftPx * 15 : padRightPx * 15,
+          });
       listState.nextPageBreak = hasPageBreak;
 
       xml += `<w:p>${pPr}${runsXml}</w:p>`;
@@ -1061,23 +1063,21 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const zip = new JSZip();
   const purifiedBodyHtml = purifyNotarialBodyHtml(options.bodyHtml);
 
-  const initialPageCount = options.pageCount || (options.fieldValues?.['pages_acte'] ? parseInt(options.fieldValues['pages_acte'], 10) : undefined) || 1;
+  const pageNumberingEnabled = options.pageNumberingEnabled !== false;
+  const paginatedBodyHtml = injectNotarialPaginationIntoHtml(purifiedBodyHtml, pageNumberingEnabled);
+  const pageCount = (paginatedBodyHtml.match(/data-notary-pagination=["']true["']/gi) || []).length || 1;
+
   const initialNormalized = options.fieldValues
     ? normalizeAllNotaryFieldValues(options.fieldValues, {
         contractBodyHtml: purifiedBodyHtml,
-        pageCount: initialPageCount,
+        pageCount,
       })
     : normalizeAllNotaryFieldValues({}, {
         contractBodyHtml: purifiedBodyHtml,
-        pageCount: 1,
+        pageCount,
       });
 
-  const isFooterPaginationActive = options.pageNumberingEnabled !== false;
-  const rawMergedBody = mergePlaceholdersIntoHtml(purifiedBodyHtml, initialNormalized);
-  // When footer pagination is active, the contract body flows 100% naturally without in-body slicing
-  const finalMergedBodyHtml = isFooterPaginationActive
-    ? rawMergedBody
-    : injectNotarialPaginationIntoHtml(rawMergedBody, false);
+  const finalMergedBodyHtml = mergePlaceholdersIntoHtml(paginatedBodyHtml, initialNormalized);
 
   const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', initialNormalized);
   const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', initialNormalized);
@@ -1151,7 +1151,7 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
     mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
   const hasCustomFooter =
     mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter = isFooterPaginationActive || hasCustomFooter;
+  const hasFooter = hasCustomFooter;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -1221,12 +1221,7 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
       }
     }
 
-    if (isFooterPaginationActive) {
-      // Dynamic Algerian notarial continuation marker anchored in Word footer
-      // Left-aligned, bold Arial 13pt, exact line spacing 260 twips, with dynamic Word PAGE field and ../..
-      const paginationP = `<w:p><w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:before="0" w:after="0" w:line="${STRICT_LINE_SPACING_TWIPS}" w:lineRule="exact"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t xml:space="preserve">الصفحة </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple><w:r><w:rPr><w:rFonts w:ascii="${STRICT_FONT_FAMILY}" w:hAnsi="${STRICT_FONT_FAMILY}" w:cs="${STRICT_FONT_FAMILY}"/><w:sz w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:szCs w:val="${STRICT_FONT_SIZE_HALF_PT}"/><w:b/><w:rtl/><w:lang w:val="ar-DZ" w:bidi="ar-DZ"/></w:rPr><w:t xml:space="preserve"> ../..</w:t></w:r></w:p>`;
-      fInnerXml = fInnerXml ? `${fInnerXml}${paginationP}` : paginationP;
-    }
+    
 
     if (!fInnerXml) {
       fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}</w:p>`;

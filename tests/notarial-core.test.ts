@@ -168,7 +168,7 @@ test('Notarial Pagination: injectNotarialPaginationIntoHtml splits multi-page co
   ).join(' ');
 
   const inputHtml = `<p dir="rtl">${repeatedFormattedClause}</p>`;
-  const paginated = injectNotarialPaginationIntoHtml(inputHtml, true, true);
+  const paginated = injectNotarialPaginationIntoHtml(inputHtml, true);
 
   assert.ok(paginated.includes('../..'));
   assert.ok(paginated.includes('الصفحة الثانية والأخيرة'));

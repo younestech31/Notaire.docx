@@ -214,8 +214,7 @@ export function useEditorSync({
         setMergedPreviewHtml(
           injectNotarialPaginationIntoHtml(
             rawMergedForPagination,
-            pageNumberingEnabled,
-            true
+            pageNumberingEnabled
           )
         );
         return;
@@ -290,8 +289,7 @@ export function useEditorSync({
           setPrintPaginatedHtml(
             injectNotarialPaginationIntoHtml(
               rawMergedForPagination,
-              pageNumberingEnabled,
-              true
+              pageNumberingEnabled
             )
           );
           await saveActiveDraftSession(draft);

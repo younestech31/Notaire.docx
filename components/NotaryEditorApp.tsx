@@ -773,8 +773,7 @@ export default function NotaryEditorApp() {
       setMergedPreviewHtml(
         injectNotarialPaginationIntoHtml(
           rawMerged,
-          pageNumberingEnabled,
-          true
+          pageNumberingEnabled
         )
       );
       setPreviewMergedMode(true);
