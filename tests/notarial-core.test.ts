@@ -5,7 +5,6 @@ import {
   buildNotarialPaginationClosingText,
   countLogicalWordsInHtml,
   getArabicOrdinalPageWord,
-  injectNotarialPaginationIntoHtml,
   splitHtmlParagraphPreservingTags,
   stripNotarialPaginationFromHtml,
 } from '../lib/notarial-pagination.ts';
@@ -164,26 +163,6 @@ test('Notarial Pagination: splitHtmlParagraphPreservingTags preserves bold, unde
   assert.ok(split.secondHtml.includes('</strong>'));
 });
 
-test('Notarial Pagination: injectNotarialPaginationIntoHtml splits multi-page contract while preserving inner formatting', () => {
-  const repeatedFormattedClause = Array.from({ length: 55 }, (_, idx) =>
-    idx === 20
-      ? '<strong>بند جوهري مسطر <u>تحتوي فقرته على التزام صريح</u> من البائع <span class="smart-tag" data-var="البائع">[البائع]</span></strong>'
-      : 'كلمة توثيقية رسمية في متن العقد العقاري المبرم بين الطرفين'
-  ).join(' ');
-
-  const inputHtml = `<p dir="rtl">${repeatedFormattedClause}</p>`;
-  const paginated = injectNotarialPaginationIntoHtml(inputHtml, true);
-
-  assert.ok(paginated.includes('../..'));
-  assert.ok(paginated.includes('الصفحة الثانية والأخيرة'));
-  assert.ok(
-    paginated.includes('<span class="smart-tag" data-var="البائع">[البائع]</span>')
-  );
-  assert.ok(paginated.includes('<u>تحتوي فقرته على التزام صريح</u>'));
-
-  const stripped = stripNotarialPaginationFromHtml(paginated);
-  assert.ok(!stripped.includes('data-notary-pagination="true"'));
-});
 
 test('Indexing Engine: annual sequence suggestion and duplicate conflict detection', () => {
   const docs: SavedDocument[] = [

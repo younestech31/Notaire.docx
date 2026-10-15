@@ -1,6 +1,6 @@
 {
-  "summary": "خطة التنفيذ المعتمدة والنهائية بعد تثبيت التفصيلين التنفيذيين: دمج متغيرات التحرير داخل كل بند قبل التوسيع (mergeEditorVariables)، واعتماد أوامر التحقق المباشرة (npm test و npm run build).",
-  "updatedAt": "2026-10-15T08:45:20.520158787Z",
+  "summary": "Revised implementation plan incorporating user feedback: correct file path (lib/notary-word-templates.ts), canonical symbols (${num_acte}), strict parties-wrapper and `${block}` loops for all 6 templates, purging in-text legacy pagination while preserving footer1.xml PAGE, and real-time editor warning banner for `${...}` syntax.",
+  "updatedAt": "2026-10-15T09:44:56.239305525Z",
   "requestFeedback": true,
   "userFacing": true
 }

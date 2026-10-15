@@ -59,8 +59,32 @@ export default function EditorA4Canvas({
     }
   };
 
+  const [hasTemplateSyntax, setHasTemplateSyntax] = React.useState(false);
+
+  React.useEffect(() => {
+    const checkSyntax = () => {
+      if (bodyEditorRef.current) {
+        const text = bodyEditorRef.current.textContent || '';
+        setHasTemplateSyntax(/\$\{[^}]+\}/.test(text));
+      }
+    };
+    checkSyntax();
+    const interval = setInterval(checkSyntax, 1000);
+    return () => clearInterval(interval);
+  }, [bodyEditorRef]);
+
   return (
     <main className="flex-1 min-w-0 min-h-0 overflow-auto print:overflow-visible p-4 sm:p-8 flex flex-col items-center bg-[#F7F5F0]">
+      {hasTemplateSyntax && (
+        <div
+          className="mb-3 bg-amber-50 border border-amber-300 text-amber-800 px-4 py-2 rounded-lg text-xs flex items-center gap-2 shadow-xs no-print animate-fade-in"
+          style={{ width: '210mm', transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}
+          dir="rtl"
+        >
+          <span className="font-bold">تنبيه توثيقي:</span>
+          <span>تم اكتشاف رموز قوالب مثل {'${...}'} داخل متن العقد. رموز القالب مخصصة لملفات القوالب الرسمية ولا ينبغي كتابتها مباشرة داخل متن بنود العقد. يفضل استخدام المتغيرات الذكية والبطاقات بدلاً من ذلك.</span>
+        </div>
+      )}
       {/* Top Horizontal A4 Margin Ruler Indicator (21cm total: 7cm Right | 12cm Content | 2cm Left) */}
       <div
         className="mb-2 bg-white border border-[#C4A46A]/45 rounded-t shadow-2xs text-[10px] font-mono text-[#5C6B7A] flex items-center select-none overflow-hidden no-print"

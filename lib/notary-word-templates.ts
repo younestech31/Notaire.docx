@@ -9,10 +9,7 @@
  * 5. شهادة البيع (Certificat de Vente)
  * 6. جدول الإرسال (Bordereau d'Envoi)
  *
- * All templates strictly utilize standard Latin placeholder tags
- * ([partie1_nom], [date_acte], [num_repertoire], [contenu_acte], etc.)
- * in Word documents and support instant download, customization via .docx upload,
- * and direct export with dynamic data injection.
+ * All templates strictly utilize modern canonical `${}` and `${block}` loop architecture.
  */
 
 import {
@@ -155,21 +152,21 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       <table dir="rtl" style="${tableStyle}">
         <tr>
           <td style="${thStyle};width:25%;">رقم الفهرس المرجعي</td>
-          <td style="${tdStyle};width:25%;">[num_repertoire]</td>
+          <td style="${tdStyle};width:25%;">\${num_acte}</td>
           <td style="${thStyle};width:25%;">تاريخ التحرير</td>
-          <td style="${tdStyle};width:25%;">[date_acte]</td>
+          <td style="${tdStyle};width:25%;">\${date_acte}</td>
         </tr>
         <tr>
           <td style="${thStyle};width:25%;">الموثق المحرر</td>
-          <td style="${tdStyle};width:25%;">[notaire_nom]</td>
+          <td style="${tdStyle};width:25%;">\${notaire_nom}</td>
           <td style="${thStyle};width:25%;">مقر المكتب والولاية</td>
-          <td style="${tdStyle};width:25%;">[etude_commune] / [etude_wilaya]</td>
+          <td style="${tdStyle};width:25%;">\${etude_commune} / \${etude_wilaya}</td>
         </tr>
         <tr>
           <td style="${thStyle};width:25%;">مفتشية التسجيل</td>
-          <td style="${tdStyle};width:25%;">[inspection_enregistrement]</td>
+          <td style="${tdStyle};width:25%;">\${inspection_enregistrement}</td>
           <td style="${thStyle};width:25%;">المحافظة العقارية</td>
-          <td style="${tdStyle};width:25%;">[conservation_fonciere]</td>
+          <td style="${tdStyle};width:25%;">\${conservation_fonciere}</td>
         </tr>
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -184,15 +181,15 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
           </tr>
           <tr>
             <td style="${tdStyle};font-weight:bold;">الطرف الأول</td>
-            <td style="${tdStyle};">[partie1_nom_complet]<br>[partie1_filiation]</td>
-            <td style="${tdStyle};">[partie1_date_naissance] بـ [partie1_lieu_naissance]<br>NIN: [partie1_nin]</td>
-            <td style="${tdStyle};">[partie1_adresse]<br>[partie1_cni]</td>
+            <td style="${tdStyle};">\${partie1_nom_complet}<br>\${partie1_filiation}</td>
+            <td style="${tdStyle};">\${partie1_date_naissance} بـ \${partie1_lieu_naissance}<br>NIN: \${partie1_nin}</td>
+            <td style="${tdStyle};">\${partie1_adresse}<br>\${partie1_cni}</td>
           </tr>
           <tr>
             <td style="${tdStyle};font-weight:bold;">الطرف الثاني</td>
-            <td style="${tdStyle};">[partie2_nom_complet]<br>[partie2_filiation]</td>
-            <td style="${tdStyle};">[partie2_date_naissance] بـ [partie2_lieu_naissance]<br>NIN: [partie2_nin]</td>
-            <td style="${tdStyle};">[partie2_adresse]<br>[partie2_cni]</td>
+            <td style="${tdStyle};">\${partie2_nom_complet}<br>\${partie2_filiation}</td>
+            <td style="${tdStyle};">\${partie2_date_naissance} بـ \${partie2_lieu_naissance}<br>NIN: \${partie2_nin}</td>
+            <td style="${tdStyle};">\${partie2_adresse}<br>\${partie2_cni}</td>
           </tr>
         </table>
         <p dir="rtl" style="${pBase}"><br></p>
@@ -201,15 +198,15 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       <table dir="rtl" style="${tableStyle}">
         <tr>
           <td style="${thStyle};width:30%;">التعيين العقاري الكامل</td>
-          <td style="${tdStyle};width:70%;">[designation_bien] (الحصة رقم [lot_numero]، بمساحة [lot_superficie] م²، الأجزاء المشتركة: [lot_quote_part])</td>
+          <td style="${tdStyle};width:70%;">\${designation_bien} (الحصة رقم \${lot_numero}، بمساحة \${lot_superficie} م²، الأجزاء المشتركة: \${lot_quote_part})</td>
         </tr>
         <tr>
           <td style="${thStyle};width:30%;">الثمن المالي المتفق عليه</td>
-          <td style="${tdStyle};width:70%;"><span style="font-weight:bold;">[prix_chiffres] دج</span> ([prix_lettres])</td>
+          <td style="${tdStyle};width:70%;"><span style="font-weight:bold;">\${prix_chiffres} دج</span> (\${prix_lettres})</td>
         </tr>
         <tr>
           <td style="${thStyle};width:30%;">مراجع الوصف التقسيمي</td>
-          <td style="${tdStyle};width:70%;">[ref_division]</td>
+          <td style="${tdStyle};width:70%;">\${ref_division}</td>
         </tr>
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -223,7 +220,7 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     footerHtml: ``,
     pageNumberingEnabled: true,
     supportedTags: [
-      'num_repertoire',
+      'num_acte',
       'date_acte',
       'notaire_nom',
       'etude_commune',
@@ -271,12 +268,14 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">باسم الشعب الجزائري — نسخة رسمية مطابقة للأصل</p>
-      <p dir="rtl" style="${pCenter}">مكتب الأستاذ: [notaire_nom] — فهرس رقم: [num_repertoire]</p>
+      <p dir="rtl" style="${pCenter}">مكتب الأستاذ: \${notaire_nom} — فهرس رقم: \${num_acte}</p>
       <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">نسخة رسمية من عقد توثيقي</p>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}">نحن الأستاذ [notaire_nom]، الموثق بمكتب التوثيق بـ [etude_commune]، ولاية [etude_wilaya].</p>
-      <p dir="rtl" style="${pBase}">نشهد ونسلم هذه النسخة الرسمية المطابقة تماماً لأصل العقد المحفوظ بأرشيف مكتبنا، المحرر بتاريخ [date_acte]، والمقيد بالفهرس الرسمي تحت رقم [num_repertoire] لسنة [annee_acte]، والذي نصّه الآتي حرفياً:</p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <p dir="rtl" style="${pBase}">نحن الأستاذ \${notaire_nom}، الموثق بمكتب التوثيق بـ \${etude_commune}، ولاية \${etude_wilaya}.</p>
+        <p dir="rtl" style="${pBase}">نشهد ونسلم هذه النسخة الرسمية المطابقة تماماً لأصل العقد المحفوظ بأرشيف مكتبنا، المحرر بتاريخ \${date_acte}، والمقيد بالفهرس الرسمي تحت رقم \${num_acte} لسنة \${annee_acte}، والذي نصّه الآتي حرفياً:</p>
+      </div>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
         \${block}
@@ -292,10 +291,10 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
         <tr>
           <td style="${tdStyle};width:50%;text-align:center;">
             <p dir="rtl" style="${pBase}">مراجع التسجيل والشهر:</p>
-            <p dir="rtl" style="${pBase}">[ref_enregistrement] — [ref_publicite]</p>
+            <p dir="rtl" style="${pBase}">\${ref_enregistrement} — \${ref_publicite}</p>
           </td>
           <td style="${tdStyle};width:50%;text-align:center;">
-            <p dir="rtl" style="${pBase}">حرر بـ [etude_commune] في [date_acte]</p>
+            <p dir="rtl" style="${pBase}">حرر بـ \${etude_commune} في \${date_acte}</p>
             <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">توقيع وخاتم الموثق</span></p>
             <br><br>
           </td>
@@ -306,14 +305,16 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     pageNumberingEnabled: true,
     supportedTags: [
       'notaire_nom',
-      'num_repertoire',
+      'num_acte',
       'etude_commune',
       'etude_wilaya',
       'date_acte',
       'annee_acte',
-      'contenu_acte',
       'ref_enregistrement',
       'ref_publicite',
+      'block',
+      'titre',
+      'clause',
     ],
   },
 
@@ -338,24 +339,33 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       <table dir="rtl" style="${tableStyle}">
         <tr>
           <td style="${thStyle};width:25%;">رقم الفهرس الرسمي</td>
-          <td style="${tdStyle};width:25%;">[num_repertoire]</td>
+          <td style="${tdStyle};width:25%;">\${num_acte}</td>
           <td style="${thStyle};width:25%;">تاريخ إبرام العقد</td>
-          <td style="${tdStyle};width:25%;">[date_acte]</td>
+          <td style="${tdStyle};width:25%;">\${date_acte}</td>
         </tr>
         <tr>
           <td style="${thStyle};width:25%;">الموثق المحرر</td>
-          <td style="${tdStyle};width:25%;">[notaire_nom]</td>
+          <td style="${tdStyle};width:25%;">\${notaire_nom}</td>
           <td style="${thStyle};width:25%;">مفتشية التسجيل</td>
-          <td style="${tdStyle};width:25%;">[inspection_enregistrement]</td>
+          <td style="${tdStyle};width:25%;">\${inspection_enregistrement}</td>
         </tr>
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">1. الطرف الأول (المتصرف):</span> [partie1_nom_complet]، المولود بـ [partie1_lieu_naissance] في [partie1_date_naissance]، [partie1_filiation]، رقم التعريف الوطني (NIN): [partie1_nin]، المقيم بـ [partie1_adresse].</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">2. الطرف الثاني (المتصرف إليه):</span> [partie2_nom_complet]، المولود بـ [partie2_lieu_naissance] في [partie2_date_naissance]، [partie2_filiation]، رقم التعريف الوطني (NIN): [partie2_nin]، المقيم بـ [partie2_adresse].</p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">1. الطرف الأول (المتصرف):</span> \${partie1_nom_complet}، المولود بـ \${partie1_lieu_naissance} في \${partie1_date_naissance}، \${partie1_filiation}، رقم التعريف الوطني (NIN): \${partie1_nin}، المقيم بـ \${partie1_adresse}.</p>
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">2. الطرف الثاني (المتصرف إليه):</span> \${partie2_nom_complet}، المولود بـ \${partie2_lieu_naissance} في \${partie2_date_naissance}، \${partie2_filiation}، رقم التعريف الوطني (NIN): \${partie2_nin}، المقيم بـ \${partie2_adresse}.</p>
+        <p dir="rtl" style="${pBase}"><br></p>
+      </div>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">3. التعيين العقاري:</span> \${designation_bien} (الحصة رقم \${lot_numero}، طبيعتها: \${lot_nature}، المساحة: \${lot_superficie} م²، الأجزاء المشتركة: \${lot_quote_part}).</p>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">4. الثمن والشروط المالية:</span> تم التصرف بمبلغ إجمالي قدره \${prix_chiffres} دج (\${prix_lettres}).</p>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">5. مراجع التسجيل السابقة أو الشهر:</span> \${ref_enregistrement} — \${ref_publicite}.</p>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">3. التعيين العقاري:</span> [designation_bien] (الحصة رقم [lot_numero]، طبيعتها: [lot_nature]، المساحة: [lot_superficie] م²، الأجزاء المشتركة: [lot_quote_part]).</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">4. الثمن والشروط المالية:</span> تم التصرف بمبلغ إجمالي قدره [prix_chiffres] دج ([prix_lettres]).</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">5. مراجع التسجيل السابقة أو الشهر:</span> [ref_enregistrement] — [ref_publicite].</p>
+      <div data-clause-container="true">
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
+      </div>
       <p dir="rtl" style="${pBase}"><br></p>
       <p dir="rtl" style="${pBase}">سلم هذا المستخرج لمفتشية التسجيل والطابع لاستيفاء الحقوق والرسوم المقررة قانوناً.</p>
       <p dir="rtl" style="${pBase}"><br></p>
@@ -373,7 +383,7 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     footerHtml: ``,
     pageNumberingEnabled: true,
     supportedTags: [
-      'num_repertoire',
+      'num_acte',
       'date_acte',
       'notaire_nom',
       'inspection_enregistrement',
@@ -398,6 +408,9 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       'prix_lettres',
       'ref_enregistrement',
       'ref_publicite',
+      'block',
+      'titre',
+      'clause',
     ],
   },
 
@@ -415,28 +428,37 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       ${registrationBoxHtml}
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">وزارة العدل — مكتب التوثيق</p>
-      <p dir="rtl" style="${pCenter}">مكتب الأستاذ: [notaire_nom] — الموثق بـ [etude_commune]</p>
+      <p dir="rtl" style="${pCenter}">مكتب الأستاذ: \${notaire_nom} — الموثق بـ \${etude_commune}</p>
       <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">شهادة توثيقية بالبيع والتصرف</p>
       <p dir="rtl" style="${pCenterBold}">Attestation Notariée de Vente</p>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}">يشهد الأستاذ [notaire_nom]، الموثق بمكتب التوثيق الكائن مقره بـ [etude_commune]، ولاية [etude_wilaya].</p>
-      <p dir="rtl" style="${pBase}">أنه بموجب عقد توثيقي رسمي تم تحريره وإبرامه بمكتبنا بتاريخ [date_acte]، والمقيد بسجلات الفهرس الرسمي تحت رقم [num_repertoire] لسنة [annee_acte]:</p>
-      <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">قام السيد(ة):</span> [partie1_nom_complet]، المولود بتاريخ [partie1_date_naissance] بـ [partie1_lieu_naissance]، الحامل لوثيقة الهوية: [partie1_cni] والرقم الوطني [partie1_nin]، المقيم بـ [partie1_adresse].</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">بالبيع والتنازل النهائي لفائدة السيد(ة):</span> [partie2_nom_complet]، المولود بتاريخ [partie2_date_naissance] بـ [partie2_lieu_naissance]، الحامل لوثيقة الهوية: [partie2_cni] والرقم الوطني [partie2_nin]، المقيم بـ [partie2_adresse].</p>
-      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <p dir="rtl" style="${pBase}">يشهد الأستاذ \${notaire_nom}، الموثق بمكتب التوثيق الكائن مقره بـ \${etude_commune}، ولاية \${etude_wilaya}.</p>
+        <p dir="rtl" style="${pBase}">أنه بموجب عقد توثيقي رسمي تم تحريره وإبرامه بمكتبنا بتاريخ \${date_acte}، والمقيد بسجلات الفهرس الرسمي تحت رقم \${num_acte} لسنة \${annee_acte}:</p>
+        <p dir="rtl" style="${pBase}"><br></p>
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">قام السيد(ة):</span> \${partie1_nom_complet}، المولود بتاريخ \${partie1_date_naissance} بـ \${partie1_lieu_naissance}، الحامل لوثيقة الهوية: \${partie1_cni} والرقم الوطني \${partie1_nin}، المقيم بـ \${partie1_adresse}.</p>
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">بالبيع والتنازل النهائي لفائدة السيد(ة):</span> \${partie2_nom_complet}، المولود بتاريخ \${partie2_date_naissance} بـ \${partie2_lieu_naissance}، الحامل لوثيقة الهوية: \${partie2_cni} والرقم الوطني \${partie2_nin}، المقيم بـ \${partie2_adresse}.</p>
+        <p dir="rtl" style="${pBase}"><br></p>
+      </div>
       <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">بخصوص العقار المعين كما يلي:</span></p>
-      <p dir="rtl" style="${pBase}">[designation_bien] (الحصة رقم [lot_numero]، بمساحة قدرها [lot_superficie] م²، والأجزاء المشتركة [lot_quote_part]).</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الثمن الإجمالي للبيع:</span> [prix_chiffres] دج ([prix_lettres]).</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">مراجع التسجيل:</span> [ref_enregistrement] لدى [inspection_enregistrement].</p>
+      <p dir="rtl" style="${pBase}">\${designation_bien} (الحصة رقم \${lot_numero}، بمساحة قدرها \${lot_superficie} م²، والأجزاء المشتركة \${lot_quote_part}).</p>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الثمن الإجمالي للبيع:</span> \${prix_chiffres} دج (\${prix_lettres}).</p>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">مراجع التسجيل:</span> \${ref_enregistrement} لدى \${inspection_enregistrement}.</p>
+      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-clause-container="true">
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
+      </div>
       <p dir="rtl" style="${pBase}"><br></p>
       <p dir="rtl" style="${pBase}">سلمت هذه الشهادة للمعني بالأمر بناءً على طلبه لاستعمالها والإدلاء بها لدى الهيئات والإدارات المختصة في حدود ما يقتضيه القانون والتنظيم المعمول به.</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
           <td style="${tdStyle};width:50%;text-align:center;">
-            <p dir="rtl" style="${pBase}">حرر بـ [etude_commune] في: [date_acte]</p>
+            <p dir="rtl" style="${pBase}">حرر بـ \${etude_commune} في: \${date_acte}</p>
           </td>
           <td style="${tdStyle};width:50%;text-align:center;">
             <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">خاتم وتوقيع الموثق</span></p><br><br>
@@ -451,7 +473,7 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       'etude_commune',
       'etude_wilaya',
       'date_acte',
-      'num_repertoire',
+      'num_acte',
       'annee_acte',
       'partie1_nom_complet',
       'partie1_date_naissance',
@@ -473,6 +495,9 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       'prix_lettres',
       'ref_enregistrement',
       'inspection_enregistrement',
+      'block',
+      'titre',
+      'clause',
     ],
   },
 
@@ -488,27 +513,29 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     headerHtml: '',
     bodyHtml: `
       <p dir="rtl" style="${pCenterBold}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
-      <p dir="rtl" style="${pCenter}">مكتب التوثيق — الأستاذ: [notaire_nom]</p>
-      <p dir="rtl" style="${pCenter}">العنوان: [etude_commune]، ولاية [etude_wilaya]</p>
+      <p dir="rtl" style="${pCenter}">مكتب التوثيق — الأستاذ: \${notaire_nom}</p>
+      <p dir="rtl" style="${pCenter}">العنوان: \${etude_commune}، ولاية \${etude_wilaya}</p>
       <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
       <p dir="rtl" style="${pCenterBold}">جدول إرسال وإيداع الوثائق التوثيقية</p>
       <p dir="rtl" style="${pCenterBold}">Bordereau d'Envoi Notarié</p>
       <p dir="rtl" style="${pBase}"><br></p>
-      <table dir="rtl" style="${tableStyle}">
-        <tr>
-          <td style="${thStyle};width:30%;">الجهة المرسل إليها:</td>
-          <td style="${tdStyle};width:70%;">السيد مفتش التسجيل والطابع لدى [inspection_enregistrement] / السيد المحافظ العقاري لدى [conservation_fonciere]</td>
-        </tr>
-        <tr>
-          <td style="${thStyle};width:30%;">تاريخ الإرسال:</td>
-          <td style="${tdStyle};width:70%;">[date_acte]</td>
-        </tr>
-        <tr>
-          <td style="${thStyle};width:30%;">رقم وتاريخ العقد:</td>
-          <td style="${tdStyle};width:70%;">فهرس رقم [num_repertoire] بتاريخ [date_acte]</td>
-        </tr>
-      </table>
-      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <table dir="rtl" style="${tableStyle}">
+          <tr>
+            <td style="${thStyle};width:30%;">الجهة المرسل إليها:</td>
+            <td style="${tdStyle};width:70%;">السيد مفتش التسجيل والطابع لدى \${inspection_enregistrement} / السيد المحافظ العقاري لدى \${conservation_fonciere}</td>
+          </tr>
+          <tr>
+            <td style="${thStyle};width:30%;">تاريخ الإرسال:</td>
+            <td style="${tdStyle};width:70%;">\${date_acte}</td>
+          </tr>
+          <tr>
+            <td style="${thStyle};width:30%;">رقم وتاريخ العقد:</td>
+            <td style="${tdStyle};width:70%;">فهرس رقم \${num_acte} بتاريخ \${date_acte}</td>
+          </tr>
+        </table>
+        <p dir="rtl" style="${pBase}"><br></p>
+      </div>
       <p dir="rtl" style="${pCenterBold}">بيان المعاملة والوثائق المرفقة</p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
@@ -519,7 +546,7 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
         </tr>
         <tr>
           <td style="${tdStyle};text-align:center;">01</td>
-          <td style="${tdStyle};"><span style="font-weight:bold;">أصل العقد التوثيقي:</span> بيع عقاري بين [partie1_nom] و [partie2_nom]</td>
+          <td style="${tdStyle};"><span style="font-weight:bold;">أصل العقد التوثيقي:</span> بيع عقاري بين \${partie1_nom} و \${partie2_nom}</td>
           <td style="${tdStyle};text-align:center;">01</td>
           <td style="${tdStyle};">لأجل التسجيل والشهر</td>
         </tr>
@@ -531,17 +558,24 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
         </tr>
         <tr>
           <td style="${tdStyle};text-align:center;">03</td>
-          <td style="${tdStyle};"><span style="font-weight:bold;">جدول الوصف التقسيمي والسند:</span> مراجع [ref_division]</td>
+          <td style="${tdStyle};"><span style="font-weight:bold;">جدول الوصف التقسيمي والسند:</span> مراجع \${ref_division}</td>
           <td style="${tdStyle};text-align:center;">01</td>
-          <td style="${tdStyle};">الحصة رقم [lot_numero]</td>
+          <td style="${tdStyle};">الحصة رقم \${lot_numero}</td>
         </tr>
         <tr>
           <td style="${tdStyle};text-align:center;">04</td>
-          <td style="${tdStyle};"><span style="font-weight:bold;">استمارة الشهر العقاري (PR4BIS):</span> بخصوص [conservation_fonciere]</td>
+          <td style="${tdStyle};"><span style="font-weight:bold;">استمارة الشهر العقاري (PR4BIS):</span> بخصوص \${conservation_fonciere}</td>
           <td style="${tdStyle};text-align:center;">02</td>
           <td style="${tdStyle};">لإشهار الحق العيني</td>
         </tr>
       </table>
+      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-clause-container="true">
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
+      </div>
       <p dir="rtl" style="${pBase}"><br></p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
@@ -565,11 +599,14 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       'inspection_enregistrement',
       'conservation_fonciere',
       'date_acte',
-      'num_repertoire',
+      'num_acte',
       'partie1_nom',
       'partie2_nom',
       'ref_division',
       'lot_numero',
+      'block',
+      'titre',
+      'clause',
     ],
   },
 };
@@ -676,7 +713,7 @@ export async function downloadDefaultNotaryDocxTemplate(
 
 /**
  * Splices contract body paragraphs natively into a Word template HTML,
- * replacing the <p>[contenu_acte]</p> placeholder block with genuine document-level body paragraphs
+ * replacing the placeholder block with genuine document-level body paragraphs
  * without wrapping them in spans or creating illegal nested paragraphs.
  */
 export function spliceContractBodyIntoTemplate(
@@ -899,5 +936,3 @@ export async function exportContractWithStandardTemplate(params: {
     templateName: config.name,
   };
 }
-
-

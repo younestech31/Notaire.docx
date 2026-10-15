@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import { buildVirtualTableGrid } from './table-grid';
-import { injectNotarialPaginationIntoHtml } from './notarial-pagination';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 import {
   A4_SIZE_TWIPS,
