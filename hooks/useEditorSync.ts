@@ -18,7 +18,6 @@ import {
 } from '@/lib/storage';
 import {
   computeDocumentMetrics,
-  injectNotarialPaginationIntoHtml,
   stripNotarialPaginationFromHtml,
 } from '@/lib/notarial-pagination';
 import { purifyNotarialBodyHtml } from '@/lib/notarial-body-purifier';
@@ -211,12 +210,7 @@ export function useEditorSync({
         activeValues
       );
       if (previewMergedMode) {
-        setMergedPreviewHtml(
-          injectNotarialPaginationIntoHtml(
-            rawMergedForPagination,
-            pageNumberingEnabled
-          )
-        );
+        setMergedPreviewHtml(rawMergedForPagination);
         return;
       }
 
@@ -286,12 +280,7 @@ export function useEditorSync({
           }
 
           setDocMetrics(computeDocumentMetrics(bodyHtml, true));
-          setPrintPaginatedHtml(
-            injectNotarialPaginationIntoHtml(
-              rawMergedForPagination,
-              pageNumberingEnabled
-            )
-          );
+          setPrintPaginatedHtml(rawMergedForPagination);
           await saveActiveDraftSession(draft);
           await saveDocumentRecord(draft);
           if (bodyEditorRef.current) {

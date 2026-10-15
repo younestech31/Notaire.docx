@@ -40,7 +40,6 @@ import {
 import {
   BUILTIN_STANDARD_WORD_TEMPLATES,
   exportContractWithStandardTemplate,
-  spliceContractBodyIntoTemplate,
 } from '../lib/notary-word-templates.ts';
 import { CANONICAL_NOTARY_SYMBOLS } from '../lib/symbol-map.ts';
 import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
@@ -751,19 +750,19 @@ test('Word Export & Pagination Invariants: native body paragraphs, w:jc left, w:
     <p dir="rtl" style="margin:0;line-height:1;">البند الثاني: هذا نص المتن الأصلي الثاني للعقد.</p>
   `;
 
-  // 1. Check native block splicing
-  const spliced = spliceContractBodyIntoTemplate(tpl.bodyHtml, testBody);
-  assert.ok(!spliced.includes('[contenu_acte]'));
-  assert.ok(spliced.includes('البند الأول: هذا نص المتن الأصلي'));
+  // 1. Check native block expansion
+  const expanded = expandBlockLoop(tpl.bodyHtml, [], testBody);
+  assert.ok(!expanded.includes('${block}'));
+  assert.ok(expanded.includes('البند الأول: هذا نص المتن الأصلي'));
   // Ensure no nested <p><p>
-  assert.ok(!/<p[^>]*>(?:(?!<\/p>)[\s\S])*?<p/i.test(spliced));
+  assert.ok(!/<p[^>]*>(?:(?!<\/p>)[\s\S])*?<p/i.test(expanded));
 
   // 2. Multi-page document export
   const longBody = Array.from({ length: 70 }, (_, idx) =>
     `<p dir="rtl" style="margin:0;line-height:1;">بند رسمي رقم ${idx + 1}: التزام توثيقي كامل وفقاً للتشريع التوثيقي الجزائري الصادر بمرسوم تنفيذي رسمي.</p>`
   ).join('\n');
 
-  const fullTplBody = spliceContractBodyIntoTemplate(tpl.bodyHtml, longBody);
+  const fullTplBody = expandBlockLoop(tpl.bodyHtml, [], longBody);
   const blob = await generateNotaryDocxBlob({
     title: 'عقد_توثيقي_نموذجي',
     bodyHtml: fullTplBody,

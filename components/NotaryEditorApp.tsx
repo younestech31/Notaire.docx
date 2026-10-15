@@ -30,10 +30,7 @@ import {
   exportContractWithStandardTemplate,
   StandardNotaryTemplateId,
 } from '@/lib/notary-word-templates';
-import {
-  computeDocumentMetrics,
-  injectNotarialPaginationIntoHtml,
-} from '@/lib/notarial-pagination';
+import { computeDocumentMetrics } from '@/lib/notarial-pagination';
 import { extractLiveContractClausesFromDOM } from '@/lib/clause-outline-engine';
 import {
   escapeHtml,
@@ -770,12 +767,7 @@ export default function NotaryEditorApp() {
       previewBackupHtmlRef.current = currentHtml;
       const activeVals = fieldValuesRef.current || fieldValues;
       const rawMerged = mergePlaceholdersIntoHtml(currentHtml, activeVals);
-      setMergedPreviewHtml(
-        injectNotarialPaginationIntoHtml(
-          rawMerged,
-          pageNumberingEnabled
-        )
-      );
+      setMergedPreviewHtml(rawMerged);
       setPreviewMergedMode(true);
       setSidebarTab('parties');
       setIsSidebarOpen(true);
@@ -874,9 +866,7 @@ export default function NotaryEditorApp() {
             bodyEditorRef.current?.innerHTML || INITIAL_EMPTY_PARAGRAPH;
           const activeVals = fieldValuesRef.current || fieldValues;
           const rawMerged = mergePlaceholdersIntoHtml(currentHtml, activeVals);
-          setPrintPaginatedHtml(
-            injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
-          );
+          setPrintPaginatedHtml(rawMerged);
           setTimeout(() => window.print(), 60);
         }}
         onExportCurrentToWord={() =>

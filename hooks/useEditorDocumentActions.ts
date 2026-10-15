@@ -29,7 +29,7 @@ import {
   importNotaryDocxFile,
   mergePlaceholdersIntoHtml,
 } from '@/lib/docx-engine';
-import { injectNotarialPaginationIntoHtml } from '@/lib/notarial-pagination';
+// pagination import removed
 import {
   DocumentSessionSnapshot,
   INITIAL_EMPTY_PARAGRAPH,
@@ -712,9 +712,7 @@ export function useEditorDocumentActions({
             bodyEditorRef.current.innerHTML,
             mergedVals
           );
-          setMergedPreviewHtml(
-            injectNotarialPaginationIntoHtml(rawMerged, pageNumberingEnabled)
-          );
+          setMergedPreviewHtml(rawMerged);
         }
       }
     },
