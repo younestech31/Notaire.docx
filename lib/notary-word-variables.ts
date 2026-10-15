@@ -494,8 +494,10 @@ export function expandFieldValuesWithStandardLatinTags(
     }
   }
 
-  // 2. Contract body paragraphs are spliced natively into templates at block-level,
-  // never injected as escaped raw string values into text fields.
+  // 2. Set contenu_acte for backward compatibility if contractBodyHtml is supplied
+  if (contractBodyHtml) {
+    expanded.contenu_acte = contractBodyHtml;
+  }
 
   return expanded;
 }

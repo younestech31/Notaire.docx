@@ -21,6 +21,10 @@ import {
 } from './docx-engine';
 import { escapeHtml, extractPlaceholdersFromHtml } from './editor-utils';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
+import {
+  exportContractWithStandardTemplate,
+  StandardNotaryTemplateId,
+} from './notary-word-templates';
 
 export function buildSubdivisionLotClauseHtml(
   estate: SubdivisionEstate,
@@ -131,23 +135,12 @@ export async function exportWithStandardTemplate(params: {
   bodyHtml: string;
   fieldValues: Record<string, string>;
 }): Promise<{ fileName: string; templateName: string }> {
-  // Use the same export logic as in exportEditorBodyToDocx
-  const purifiedBody = purifyNotarialBodyHtml(params.bodyHtml);
-  
-  await downloadNotaryDocx({
-    title: params.contractTitle,
-    bodyHtml: purifiedBody,
-    headerHtml: '',
-    footerHtml: '',
-    pageNumberingEnabled: true,
+  return await exportContractWithStandardTemplate({
+    templateId: params.templateId as StandardNotaryTemplateId,
+    contractTitle: params.contractTitle,
+    bodyHtml: params.bodyHtml,
     fieldValues: params.fieldValues,
-    omitRepeatingHeader: true,
   });
-
-  return {
-    fileName: `${params.contractTitle}.docx`,
-    templateName: params.templateId,
-  };
 }
 
 export async function generateAndDownloadDerivedDoc(params: {

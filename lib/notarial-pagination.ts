@@ -437,11 +437,59 @@ export function injectNotarialPaginationIntoHtml(
 
       return newRoot.innerHTML;
     } catch {
-      return cleanHtml;
+      // Fallback below
     }
   }
 
-  return cleanHtml;
+  // Headless / Node.js test runner fallback
+  const rawBlocks = cleanHtml.match(/<table\b[\s\S]*?<\/table>|<p\b[^>]*>[\s\S]*?<\/p>/gi) || [cleanHtml];
+  const pages: string[][] = [[]];
+  let curLines = 0;
+
+  for (const block of rawBlocks) {
+    const words = countLogicalWordsInHtml(block);
+    const estLines = Math.max(1, Math.ceil(words / 9));
+
+    if (estLines > LINES - 1) {
+      const wordsForFirst = Math.max(5, (LINES - 1 - curLines) * 9);
+      const split = splitHtmlParagraphPreservingTags(block, wordsForFirst);
+      if (split) {
+        pages[pages.length - 1].push(split.firstHtml);
+        pages.push([split.secondHtml]);
+        const remWords = countLogicalWordsInHtml(split.secondHtml);
+        curLines = Math.max(1, Math.ceil(remWords / 9));
+        continue;
+      }
+    }
+
+    if (curLines + estLines > LINES - 1 && pages[pages.length - 1].length > 0) {
+      pages.push([block]);
+      curLines = estLines;
+    } else {
+      pages[pages.length - 1].push(block);
+      curLines += estLines;
+    }
+  }
+
+  const totalPages = pages.length;
+  const markerStyle = `margin:0;line-height:1;font-family:${STRICT_FONT_FAMILY};font-size:${STRICT_FONT_SIZE_PT}pt;text-align:left;direction:rtl;font-weight:bold;line:${STRICT_LINE_SPACING_TWIPS};lineRule:exact;`;
+
+  let resultHtml = '';
+  pages.forEach((pBlocks, idx) => {
+    const pageNum = idx + 1;
+    const isFinal = pageNum === totalPages;
+    let pageHtml = pBlocks.join('');
+    const markerText = isFinal
+      ? buildNotarialPaginationClosingText(totalPages)
+      : buildNotarialPaginationContinueText(pageNum);
+    pageHtml += `<p dir="rtl" align="left" data-notary-pagination="true" style="${markerStyle}">${markerText}</p>`;
+    if (!isFinal) {
+      pageHtml += `<div class="page-break" contenteditable="false" data-page-break="true" data-notary-pagination="true"></div>`;
+    }
+    resultHtml += pageHtml;
+  });
+
+  return resultHtml;
 }
 
 /**

@@ -17,7 +17,10 @@
 
 import {
   downloadNotaryDocx,
+  expandBlockLoop,
+  mergeEditorVariables,
   mergePlaceholdersIntoHtml,
+  mergeTemplateSymbols,
 } from './docx-engine';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
@@ -83,22 +86,27 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       <p dir="rtl" style="${pCenterBold}">أصل عقد توثيقي رسمي</p>
       <p dir="rtl" style="${pCenter}">الجمهورية الجزائرية الديمقراطية الشعبية</p>
       <p dir="rtl" style="${pCenter}">وزارة العدل — الغرفة الوطنية للموثقين</p>
-      <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">مكتب الأستاذ:</span> [notaire_nom] — الموثق لدى محكمة [etude_commune] — ولاية [etude_wilaya]</p>
-      <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">فهرس رقم:</span> [num_repertoire] / [annee_acte] — <span style="font-weight:bold;">بتاريخ:</span> [date_acte]</p>
+      <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">مكتب الأستاذ:</span> \${office_name} — ولاية \${office_wilaya}</p>
+      <p dir="rtl" style="${pCenter}"><span style="font-weight:bold;">فهرس رقم:</span> \${num_acte} — <span style="font-weight:bold;">بتاريخ:</span> \${date_acte}</p>
       <p dir="rtl" style="${pCenter}">----------------------------------------------------------</p>
-      <p dir="rtl" style="${pBase}">في سنة [date_acte_lettres]، الموافق لـ [date_acte].</p>
-      <p dir="rtl" style="${pBase}">أمامنا نحن الأستاذ [notaire_nom]، الموثق بمكتب التوثيق الكائن مقره بـ [etude_commune]، ولاية [etude_wilaya].</p>
+      <p dir="rtl" style="${pBase}">في سنة \${date2lettre_acte}، الموافق لـ \${date_acte}.</p>
+      <p dir="rtl" style="${pBase}">أمامنا نحن الأستاذ \${office_name}، الموثق بمكتب التوثيق الكائن مقره بـ \${office_addr}، ولاية \${office_wilaya}.</p>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pCenterBold}">حـــــــــــــضـــــــــــــر</p>
-      <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الأول (المتصرف):</span> السيد [partie1_nom_complet]، المولود بتاريخ [partie1_date_naissance] بـ [partie1_lieu_naissance]، [partie1_filiation]، الحامل للرقم الوطني [partie1_nin]، المقيم بـ [partie1_adresse]، الحامل لوثيقة الهوية: [partie1_cni]، المهنة: [partie1_profession].</p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الثاني (المتصرف إليه):</span> السيد [partie2_nom_complet]، المولود بتاريخ [partie2_date_naissance] بـ [partie2_lieu_naissance]، [partie2_filiation]، الحامل للرقم الوطني [partie2_nin]، المقيم بـ [partie2_adresse]، الحامل لوثيقة الهوية: [partie2_cni]، المهنة: [partie2_profession].</p>
-      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <p dir="rtl" style="${pCenterBold}">حـــــــــــــضـــــــــــــر</p>
+        <p dir="rtl" style="${pBase}"><br></p>
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الأول (المتصرف):</span> \${c_1}.</p>
+        <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">الطرف الثاني (المتصرف إليه):</span> \${c_2}.</p>
+        <p dir="rtl" style="${pBase}"><br></p>
+      </div>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}">[contenu_acte]</p>
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
       </div>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">إثبات التلاوة والإشهاد:</span> تمت تلاوة هذا العقد على الأطراف الحاضرين، فصرحوا بفهمهم لجميع بنوده ووافقوا عليها بحضور الموثق الموقع أسفله، وحرر على أصل واحد محفوظ بأرشيف المكتب تحت رقم الفهرس [num_repertoire].</p>
+      <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">إثبات التلاوة والإشهاد:</span> تمت تلاوة هذا العقد على الأطراف الحاضرين، فصرحوا بفهمهم لجميع بنوده ووافقوا عليها بحضور الموثق الموقع أسفله، وحرر على أصل واحد محفوظ بأرشيف المكتب تحت رقم الفهرس \${num_acte}.</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
@@ -110,30 +118,20 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
     footerHtml: ``,
     pageNumberingEnabled: true,
     supportedTags: [
-      'notaire_nom',
-      'etude_commune',
-      'etude_wilaya',
-      'num_repertoire',
-      'annee_acte',
+      'office_name',
+      'office_addr',
+      'office_wilaya',
+      'office_tel',
+      'office_mail',
+      'num_acte',
+      'c_1',
+      'c_2',
       'date_acte',
-      'date_acte_lettres',
-      'partie1_nom_complet',
-      'partie1_date_naissance',
-      'partie1_lieu_naissance',
-      'partie1_filiation',
-      'partie1_nin',
-      'partie1_adresse',
-      'partie1_cni',
-      'partie1_profession',
-      'partie2_nom_complet',
-      'partie2_date_naissance',
-      'partie2_lieu_naissance',
-      'partie2_filiation',
-      'partie2_nin',
-      'partie2_adresse',
-      'partie2_cni',
-      'partie2_profession',
-      'contenu_acte',
+      'date2lettre_acte',
+      'act_value',
+      'titre',
+      'clause',
+      'block',
     ],
   },
 
@@ -175,28 +173,30 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
         </tr>
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
-      <p dir="rtl" style="${pCenterBold}">جدول الأطراف المرجعي</p>
-      <table dir="rtl" style="${tableStyle}">
-        <tr>
-          <td style="${thStyle};width:20%;">الصفة</td>
-          <td style="${thStyle};width:30%;">الاسم واللقب والنسب</td>
-          <td style="${thStyle};width:25%;">الميلاد ورقم التعريف (NIN)</td>
-          <td style="${thStyle};width:25%;">العنوان ووثيقة الهوية</td>
-        </tr>
-        <tr>
-          <td style="${tdStyle};font-weight:bold;">الطرف الأول</td>
-          <td style="${tdStyle};">[partie1_nom_complet]<br>[partie1_filiation]</td>
-          <td style="${tdStyle};">[partie1_date_naissance] بـ [partie1_lieu_naissance]<br>NIN: [partie1_nin]</td>
-          <td style="${tdStyle};">[partie1_adresse]<br>[partie1_cni]</td>
-        </tr>
-        <tr>
-          <td style="${tdStyle};font-weight:bold;">الطرف الثاني</td>
-          <td style="${tdStyle};">[partie2_nom_complet]<br>[partie2_filiation]</td>
-          <td style="${tdStyle};">[partie2_date_naissance] بـ [partie2_lieu_naissance]<br>NIN: [partie2_nin]</td>
-          <td style="${tdStyle};">[partie2_adresse]<br>[partie2_cni]</td>
-        </tr>
-      </table>
-      <p dir="rtl" style="${pBase}"><br></p>
+      <div data-template-part="parties" class="parties-wrapper">
+        <p dir="rtl" style="${pCenterBold}">جدول الأطراف المرجعي</p>
+        <table dir="rtl" style="${tableStyle}">
+          <tr>
+            <td style="${thStyle};width:20%;">الصفة</td>
+            <td style="${thStyle};width:30%;">الاسم واللقب والنسب</td>
+            <td style="${thStyle};width:25%;">الميلاد ورقم التعريف (NIN)</td>
+            <td style="${thStyle};width:25%;">العنوان ووثيقة الهوية</td>
+          </tr>
+          <tr>
+            <td style="${tdStyle};font-weight:bold;">الطرف الأول</td>
+            <td style="${tdStyle};">[partie1_nom_complet]<br>[partie1_filiation]</td>
+            <td style="${tdStyle};">[partie1_date_naissance] بـ [partie1_lieu_naissance]<br>NIN: [partie1_nin]</td>
+            <td style="${tdStyle};">[partie1_adresse]<br>[partie1_cni]</td>
+          </tr>
+          <tr>
+            <td style="${tdStyle};font-weight:bold;">الطرف الثاني</td>
+            <td style="${tdStyle};">[partie2_nom_complet]<br>[partie2_filiation]</td>
+            <td style="${tdStyle};">[partie2_date_naissance] بـ [partie2_lieu_naissance]<br>NIN: [partie2_nin]</td>
+            <td style="${tdStyle};">[partie2_adresse]<br>[partie2_cni]</td>
+          </tr>
+        </table>
+        <p dir="rtl" style="${pBase}"><br></p>
+      </div>
       <p dir="rtl" style="${pCenterBold}">جدول التعيين العقاري والبيانات المالية</p>
       <table dir="rtl" style="${tableStyle}">
         <tr>
@@ -214,7 +214,10 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       </table>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}">[contenu_acte]</p>
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
       </div>
     `.trim(),
     footerHtml: ``,
@@ -248,7 +251,9 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       'prix_chiffres',
       'prix_lettres',
       'ref_division',
-      'contenu_acte',
+      'block',
+      'titre',
+      'clause',
     ],
   },
 
@@ -274,7 +279,10 @@ export const BUILTIN_STANDARD_WORD_TEMPLATES: Record<
       <p dir="rtl" style="${pBase}">نشهد ونسلم هذه النسخة الرسمية المطابقة تماماً لأصل العقد المحفوظ بأرشيف مكتبنا، المحرر بتاريخ [date_acte]، والمقيد بالفهرس الرسمي تحت رقم [num_repertoire] لسنة [annee_acte]، والذي نصّه الآتي حرفياً:</p>
       <p dir="rtl" style="${pBase}"><br></p>
       <div data-clause-container="true">
-        <p dir="rtl" style="${pBase}">[contenu_acte]</p>
+        \${block}
+        <p dir="rtl" style="font-weight:bold; margin-bottom:4pt; text-align:justify;">\${titre}</p>
+        <div dir="rtl" style="margin:0; line-height:1; text-align:justify;">\${clause}</div>
+        \${/block}
       </div>
       <p dir="rtl" style="${pBase}"><br></p>
       <p dir="rtl" style="${pBase}"><span style="font-weight:bold;">شهادة المطابقة للأصل والصيغة التنفيذية:</span></p>
@@ -678,10 +686,18 @@ export function spliceContractBodyIntoTemplate(
   if (!templateHtml) return '';
   const cleanBody = (bodyHtml || '').trim();
   if (!cleanBody) {
-    return templateHtml.replace(
-      /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\](?:(?!<\/p>)[\s\S])*?<\/p>/gi,
-      ''
-    );
+    return templateHtml
+      .replace(/\$\{block\}[\s\S]*?\$\{\/block\}/gi, '')
+      .replace(
+        /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\](?:(?!<\/p>)[\s\S])*?<\/p>/gi,
+        ''
+      )
+      .replace(/\[\s*(?:contenu_acte|corps_acte|texte_acte|clause)\s*\]/gi, '');
+  }
+
+  // If template already utilizes ${block}...${/block}, use expandBlockLoop
+  if (/\$\{block\}[\s\S]*?\$\{\/block\}/i.test(templateHtml)) {
+    return expandBlockLoop(templateHtml, [], cleanBody);
   }
 
   if (typeof DOMParser !== 'undefined') {
@@ -750,46 +766,129 @@ export async function exportContractWithStandardTemplate(params: {
     throw new Error(`القالب "${templateId}" غير معروف في النظام`);
   }
 
-  // 1. Fully normalize all field values across Arabic, symbols, and Latin tags
+  // 1. Purify contract body
+  const purifiedBody = purifyNotarialBodyHtml(bodyHtml);
+
+  // 2. Extract active clauses via DOM outline / containers or headings
+  let clauses: Array<{ title: string; contentHtml: string }> = [];
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${purifiedBody}</div>`, 'text/html');
+      const container = doc.body.firstElementChild as HTMLElement;
+      if (container) {
+        const clauseContainers = Array.from(
+          container.querySelectorAll('[data-clause-container="true"], .clause-container, [data-clause-id]')
+        ) as HTMLElement[];
+        if (clauseContainers.length > 0) {
+          clauses = clauseContainers.map((el) => {
+            const headingEl = el.querySelector('h1, h2, h3, h4, .clause-heading, [data-clause-title]');
+            const title = headingEl ? (headingEl.textContent || '').trim() : '';
+            const clone = el.cloneNode(true) as HTMLElement;
+            const hInClone = clone.querySelector('h1, h2, h3, h4, .clause-heading, [data-clause-title]');
+            if (hInClone) hInClone.remove();
+            return {
+              title,
+              contentHtml: clone.innerHTML.trim(),
+            };
+          });
+        }
+      }
+    } catch {
+      clauses = [];
+    }
+  }
+
+  // Fallback heading splitting (# or المادة/البند)
+  if (clauses.length === 0) {
+    const rawBlocks = purifiedBody.split(/(?=<h[1-4]\b|<p\b[^>]*>[\s\S]*?(?:#|المادة|البند)\b)/i);
+    for (const b of rawBlocks) {
+      const trimB = b.trim();
+      if (!trimB) continue;
+      const hMatch = trimB.match(/^(?:<h[1-4]\b[^>]*>(.*?)<\/h[1-4]>|<p\b[^>]*>[\s\S]*?(?:#|\bالمادة\b|\bالبند\b)(.*?)<\/p>)/i);
+      if (hMatch) {
+        const title = (hMatch[1] || hMatch[2] || '').replace(/<[^>]+>/g, '').trim();
+        const content = trimB.replace(/^(?:<h[1-4]\b[^>]*>.*?<\/h[1-4]>|<p\b[^>]*>[\s\S]*?<\/p>)/i, '').trim();
+        clauses.push({ title, contentHtml: content || trimB });
+      } else {
+        clauses.push({ title: '', contentHtml: trimB });
+      }
+    }
+  }
+
+  // Mandatory execution detail 1:
+  // Before expandBlockLoop, run each clause through mergeEditorVariables(purifyNotarialBodyHtml(clauseHtml), fieldValues)
+  const processedClauses = clauses.map((c) => ({
+    title: c.title,
+    contentHtml: mergeEditorVariables(purifyNotarialBodyHtml(c.contentHtml), fieldValues),
+  }));
+
+  const processedFallbackBody = mergeEditorVariables(purifiedBody, fieldValues);
+
+  // 3. Normalize all notary field values
   const expandedValues = normalizeAllNotaryFieldValues(fieldValues, {
-    contractBodyHtml: bodyHtml,
+    contractBodyHtml: purifiedBody,
   });
 
-  // 2. Splice contract body paragraphs cleanly into the template body
-  // replacing <p...>[contenu_acte]</p> with native purified body paragraphs
-  const purifiedBody = purifyNotarialBodyHtml(bodyHtml);
-  const templateBodyWithBlocks = spliceContractBodyIntoTemplate(
-    config.bodyHtml,
-    purifiedBody
+  // 4. Deterministic Parties Preamble Handling:
+  // If the imported body already contains a parties preamble, strip the template's parties wrapper
+  let templateBody = config.bodyHtml;
+  const hasPartiesPreambleInBody =
+    /ح[\s\u0640]*ض[\s\u0640]*ر|بين\s+الموقعين|الطرف\s+الأول|المتصرف\s+إليه|المتعاقدان|السيد\s*\(ة\)/i.test(
+      purifiedBody.replace(/<[^>]+>/g, ' ')
+    );
+
+  if (hasPartiesPreambleInBody) {
+    if (typeof DOMParser !== 'undefined') {
+      try {
+        const parser = new DOMParser();
+        const tDoc = parser.parseFromString(`<div>${templateBody}</div>`, 'text/html');
+        const tContainer = tDoc.body.firstElementChild as HTMLElement;
+        if (tContainer) {
+          const partiesWrapper = tContainer.querySelector('[data-template-part="parties"], .parties-wrapper');
+          if (partiesWrapper) {
+            partiesWrapper.remove();
+            templateBody = tContainer.innerHTML;
+          }
+        }
+      } catch {
+        templateBody = templateBody.replace(
+          /<div\b[^>]*data-template-part=["']parties["'][\s\S]*?<\/div>/gi,
+          ''
+        );
+      }
+    } else {
+      templateBody = templateBody.replace(
+        /<div\b[^>]*data-template-part=["']parties["'][\s\S]*?<\/div>/gi,
+        ''
+      );
+    }
+  }
+
+  // 5. Expand ${block} loop
+  const expandedTemplateBody = expandBlockLoop(
+    templateBody,
+    processedClauses,
+    processedFallbackBody
   );
 
-  // 3. Perform placeholder injection into template body & header
-  const mergedBodyHtml = mergePlaceholdersIntoHtml(
-    templateBodyWithBlocks,
-    expandedValues
-  );
-  const mergedHeaderHtml = mergePlaceholdersIntoHtml(
-    config.headerHtml,
-    expandedValues
-  );
-  const mergedFooterHtml = mergePlaceholdersIntoHtml(
-    config.footerHtml,
-    expandedValues
-  );
+  // 6. Merge template technical symbols using strict Whitelist
+  const finalMergedBody = mergeTemplateSymbols(expandedTemplateBody, expandedValues);
+  const finalMergedHeader = mergeTemplateSymbols(config.headerHtml, expandedValues);
+  const finalMergedFooter = mergeTemplateSymbols(config.footerHtml, expandedValues);
 
-  // 4. Construct a clear notarial file name
+  // 7. Construct file name & export docx without in-body pagination
   const cleanTitle = (contractTitle || 'عقد_توثيقي')
     .trim()
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, '_');
   const fileName = `${cleanTitle}_${config.name.replace(/\s+/g, '_')}.docx`;
 
-  // 5. Generate and trigger download
   await downloadNotaryDocx({
     title: fileName.replace(/\.docx$/, ''),
-    bodyHtml: mergedBodyHtml,
-    headerHtml: '',
-    footerHtml: mergedFooterHtml,
+    bodyHtml: finalMergedBody,
+    headerHtml: finalMergedHeader,
+    footerHtml: finalMergedFooter,
     pageNumberingEnabled: config.pageNumberingEnabled,
     fieldValues: expandedValues,
     omitRepeatingHeader: true,

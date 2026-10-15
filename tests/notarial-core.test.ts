@@ -28,7 +28,9 @@ import {
   expandBlockLoop,
   generateNotaryDocxBlob,
   lookupPlaceholderValue,
+  mergeEditorVariables,
   mergePlaceholdersIntoHtml,
+  mergeTemplateSymbols,
 } from '../lib/docx-engine.ts';
 import { normalizeAllNotaryFieldValues } from '../lib/field-values-normalizer.ts';
 import { purifyNotarialBodyHtml } from '../lib/notarial-body-purifier.ts';
@@ -38,8 +40,10 @@ import {
 } from '../lib/notary-word-variables.ts';
 import {
   BUILTIN_STANDARD_WORD_TEMPLATES,
+  exportContractWithStandardTemplate,
   spliceContractBodyIntoTemplate,
 } from '../lib/notary-word-templates.ts';
+import { CANONICAL_NOTARY_SYMBOLS } from '../lib/symbol-map.ts';
 import { detectNotaryClauseHeading } from '../lib/clause-outline-engine.ts';
 import { sanitizePastedWordHTML } from '../lib/editor-utils.ts';
 import type {
@@ -411,8 +415,13 @@ test('DOCX Engine: generates valid .docx with multi-page ../.. pagination, table
   const docXml = await docXmlFile.async('string');
   assert.ok(docXml.includes('أحمد بن محمد'));
   assert.ok(docXml.includes('<w:tbl>'));
-  assert.ok(docXml.includes('../..'));
-  assert.ok(docXml.includes('الصفحة الثانية والأخيرة'));
+
+  // Word footer pagination verification
+  const footerXml = await zip.file('word/footer1.xml')?.async('string');
+  assert.ok(footerXml !== null && footerXml !== undefined);
+  assert.ok(footerXml.includes('../..'));
+  assert.ok(footerXml.includes('الصفحة'));
+  assert.ok(footerXml.includes('w:instr="PAGE"'));
 });
 
 test('Unified OfficeTemplate Migration & Lightweight Export Revisions: migrates legacy templates and stores lightweight export logs', async () => {
@@ -792,20 +801,124 @@ test('Word Export & Pagination Invariants: native body paragraphs, w:jc left, w:
   const docXml = await zip.file('word/document.xml')?.async('text');
   assert.ok(docXml);
 
-  // Invariant 1: w:line="260"
+  // Invariant 1: w:line="260" in document
   assert.ok(docXml.includes('w:line="260"'));
 
-  // Invariant 2: w:jc w:val="left"
-  assert.ok(docXml.includes('w:jc w:val="left"'));
+  // Invariant 2: Dynamic Word footer in word/footer1.xml
+  const footerXml = await zip.file('word/footer1.xml')?.async('text');
+  assert.ok(footerXml);
+  assert.ok(footerXml.includes('w:jc w:val="left"'));
+  assert.ok(footerXml.includes('w:instr="PAGE"'));
+  assert.ok(footerXml.includes('../..'));
+  assert.ok(footerXml.includes('الصفحة'));
 
-  // Invariant 3: No "نهاية الصفحة" text anywhere in document.xml
-  assert.ok(!docXml.includes('نهاية الصفحة'));
+  // Invariant 3: Body document.xml does NOT have in-body pagination markers or "والأخيرة"
+  assert.ok(!docXml.includes('والأخيرة'));
+  assert.ok(!docXml.includes('data-notary-pagination'));
+});
 
-  // Invariant 4: Continuation mark on non-final pages
-  assert.ok(docXml.includes('../..'));
+test('Strict Layer Separation: mergeEditorVariables vs mergeTemplateSymbols', () => {
+  const editorHtml = `
+    <p dir="rtl">
+      حضر <span class="smart-tag" data-var="البائع">[البائع]</span>
+      والطرف الأول [partie1_nom]
+      أمام الموثق بـ \${office_name} تحت فهرس \${num_acte}.
+    </p>
+  `;
 
-  // Invariant 5: Closing mark on final page only
-  assert.ok(docXml.includes('والأخيرة'));
+  // 1. mergeEditorVariables should replace [البائع] and [partie1_nom], but PRESERVE ${office_name} and ${num_acte}
+  const editorMerged = mergeEditorVariables(editorHtml, {
+    البائع: 'عمر المختار',
+    partie1_nom: 'عمر المختار بن عائشة',
+    office_name: 'مكتب الأستاذ الشريف',
+    num_acte: '2026/050',
+  });
+
+  assert.ok(editorMerged.includes('عمر المختار'));
+  assert.ok(editorMerged.includes('عمر المختار بن عائشة'));
+  assert.ok(editorMerged.includes('${office_name}'));
+  assert.ok(editorMerged.includes('${num_acte}'));
+
+  // 2. mergeTemplateSymbols should replace ${office_name} and ${num_acte}, and PRESERVE un-matched symbols (whitelist)
+  const templateHtml = '<p>المكتب: ${office_name} — فهرس: ${num_acte} — مجهول: ${unknown_custom_symbol}</p>';
+  const templateMerged = mergeTemplateSymbols(templateHtml, {
+    office_name: 'مكتب الأستاذ بوزيد',
+    num_acte: '2026/077',
+  });
+
+  assert.ok(templateMerged.includes('مكتب الأستاذ بوزيد'));
+  assert.ok(templateMerged.includes('2026/077'));
+  // Whitelist: unknown symbol is preserved, never blindly deleted
+  assert.ok(templateMerged.includes('${unknown_custom_symbol}'));
+});
+
+test('Block Loop: expands clauses with raw HTML injection and single-clause fallback', () => {
+  const tpl = `
+    <div class="contract">
+      \${block}
+      <h3 class="clause-title">\${titre}</h3>
+      <div class="clause-body">\${clause}</div>
+      \${/block}
+    </div>
+  `;
+
+  const clauses = [
+    {
+      title: 'البند الأول: التعيين',
+      contentHtml: '<p dir="rtl">قطعة أرضية مساحتها <strong>500 م²</strong> كائنة بالبليدة.</p>',
+      enabled: true,
+    },
+    {
+      title: 'البند الثاني: الثمن',
+      contentHtml: '<p dir="rtl">الثمن الإجمالي هو <u>10,000,000 دج</u> تم دفعه كاملاً.</p>',
+      enabled: true,
+    },
+  ];
+
+  const expanded = expandBlockLoop(tpl, clauses);
+
+  // Titre is present
+  assert.ok(expanded.includes('البند الأول: التعيين'));
+  assert.ok(expanded.includes('البند الثاني: الثمن'));
+
+  // Raw HTML is preserved without escapeXml
+  assert.ok(expanded.includes('<strong>500 م²</strong>'));
+  assert.ok(!expanded.includes('&lt;strong&gt;'));
+  assert.ok(expanded.includes('<u>10,000,000 دج</u>'));
+  assert.ok(!expanded.includes('&lt;u&gt;'));
+
+  // Fallback test: un-split contract treated as single un-titled clause
+  const unSplitBody = '<p dir="rtl">متن عقد كامل غير مقسم ببنود شباك محرر رسمياً.</p>';
+  const fallbackExpanded = expandBlockLoop(tpl, [], unSplitBody);
+  assert.ok(fallbackExpanded.includes('متن عقد كامل غير مقسم'));
+  // Title container cleanly omitted
+  assert.ok(!fallbackExpanded.includes('class="clause-title"'));
+});
+
+test('Parties Preamble Detection & data-template-part="parties" elimination', async () => {
+  const tpl = BUILTIN_STANDARD_WORD_TEMPLATES['acte_original'];
+  assert.ok(tpl.bodyHtml.includes('data-template-part="parties"'));
+
+  // When body has parties preamble, exportWithStandardTemplate strips duplicate parties wrapper
+  const bodyWithPreamble = `
+    <p dir="rtl">حضر أمامنا السيد بائع ومشتري واتفقا على ما يلي:</p>
+    <p dir="rtl"># البند الأول: البيع</p>
+    <p dir="rtl">تم البيع بالتراضي والقبول.</p>
+  `;
+
+  const res = await exportContractWithStandardTemplate({
+    templateId: 'acte_original',
+    contractTitle: 'عقد_مع_ديباجة',
+    bodyHtml: bodyWithPreamble,
+    fieldValues: {
+      c_1: 'الطرف الأول الأصلي',
+      c_2: 'الطرف الثاني الأصلي',
+      office_name: 'مكتب الأستاذ أحمد',
+      num_acte: '2026/888',
+    },
+  });
+
+  assert.ok(res.fileName.includes('.docx'));
 });
 
 

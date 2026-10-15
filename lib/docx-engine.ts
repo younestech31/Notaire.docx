@@ -207,37 +207,88 @@ export function lookupPlaceholderValue(
  * Expands ${block}...${/block} loops in Word template HTML by repeating the inner
  * block for every active, enabled clause with ${titre} and ${clause} replaced.
  */
+/**
+ * Expands ${block}...${/block} loops in Word template HTML by repeating the inner
+ * block for every active, enabled clause with ${titre} and ${clause} replaced.
+ * - ${titre} is escaped for XML.
+ * - ${clause} is injected as raw DOM/HTML (NEVER escapeXml).
+ * - If no clauses exist, fallbackBodyHtml is treated as a single un-titled clause.
+ * - Automatically upgrades legacy templates containing [contenu_acte] to official block loop.
+ */
 export function expandBlockLoop(
   templateHtml: string,
-  clauses: Array<{ title: string; contentHtml?: string; enabled?: boolean }> = []
+  clauses: Array<{ title: string; contentHtml?: string; html?: string; enabled?: boolean }> = [],
+  fallbackBodyHtml: string = ''
 ): string {
   if (!templateHtml) return '';
-  const blockRegex = /\$\{block\}([\s\S]*?)\$\{\/block\}/gi;
-  if (!blockRegex.test(templateHtml)) {
-    return templateHtml;
+
+  let processedTemplate = templateHtml;
+
+  // Auto-upgrade legacy template placeholder [contenu_acte] to official block loop
+  if (!/\$\{block\}[\s\S]*?\$\{\/block\}/i.test(processedTemplate)) {
+    if (/\[\s*(?:contenu_acte|corps_acte|texte_acte)\s*\]/i.test(processedTemplate)) {
+      processedTemplate = processedTemplate.replace(
+        /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?\[\s*(?:contenu_acte|corps_acte|texte_acte)\s*\](?:(?!<\/p>)[\s\S])*?<\/p>/gi,
+        '${block}<p style="font-weight:bold; margin-bottom:4pt;">${titre}</p><div>${clause}</div>${/block}'
+      );
+      processedTemplate = processedTemplate.replace(
+        /\[\s*(?:contenu_acte|corps_acte|texte_acte)\s*\]/gi,
+        '${block}<p style="font-weight:bold; margin-bottom:4pt;">${titre}</p><div>${clause}</div>${/block}'
+      );
+    } else {
+      return processedTemplate;
+    }
   }
 
-  const activeClauses = clauses.filter((c) => c.enabled !== false);
+  const blockRegex = /\$\{block\}([\s\S]*?)\$\{\/block\}/gi;
 
-  return templateHtml.replace(blockRegex, (_, innerTemplate: string) => {
+  let activeClauses = (clauses || []).filter((c) => c.enabled !== false);
+  if (activeClauses.length === 0) {
+    const cleanFallback = (fallbackBodyHtml || '').trim();
+    if (cleanFallback) {
+      activeClauses = [{ title: '', contentHtml: cleanFallback }];
+    }
+  }
+
+  return processedTemplate.replace(blockRegex, (_, innerTemplate: string) => {
     if (activeClauses.length === 0) {
       return '';
     }
     return activeClauses
       .map((c) => {
-        return innerTemplate
-          .replace(/\$\{titre\}|\[titre\]/gi, escapeXml(c.title || ''))
-          .replace(/\$\{clause\}|\[clause\]/gi, c.contentHtml || '');
+        const titleStr = (c.title || '').trim();
+        const contentStr = (c.contentHtml || c.html || '').trim();
+        let rendered = innerTemplate;
+        if (!titleStr) {
+          // If untitled, cleanly eliminate the paragraph/wrapper containing ${titre}
+          rendered = rendered.replace(
+            /<(?:p|h[1-6]|div)\b[^>]*>(?:(?!<\/(?:p|h[1-6]|div)>)[\s\S])*?\$\{titre\}(?:(?!<\/(?:p|h[1-6]|div)>)[\s\S])*?<\/(?:p|h[1-6]|div)>/gi,
+            ''
+          );
+          rendered = rendered.replace(/\$\{titre\}|\[titre\]/gi, '');
+        } else {
+          rendered = rendered.replace(/\$\{titre\}|\[titre\]/gi, escapeXml(titleStr));
+        }
+        // Injected as raw HTML without escapeXml
+        rendered = rendered.replace(/\$\{clause\}|\[clause\]/gi, contentStr);
+        return rendered;
       })
       .join('');
   });
 }
 
 /**
- * Replaces {{placeholder}} tokens and <span class="smart-tag" data-var="..."> elements
- * in HTML with their actual values from fieldValues.
+ * Replaces editor-level variable tokens in contract HTML:
+ * - Arabic bracket tokens [البائع], [البيان], etc.
+ * - Legacy Latin bracket tokens [partie1_nom], [num_repertoire], etc.
+ * - Legacy {{placeholder}} tokens
+ * - <span class="smart-tag" data-var="..."> and [data-var] elements
+ *
+ * CRITICAL ARCHITECTURAL BOUNDARY:
+ * Does NOT match or replace ${symbol} template placeholders. Template symbols
+ * are strictly reserved for external Word templates and processed via mergeTemplateSymbols.
  */
-export function mergePlaceholdersIntoHtml(
+export function mergeEditorVariables(
   html: string,
   fieldValues: Record<string, string> = {}
 ): string {
@@ -246,7 +297,7 @@ export function mergePlaceholdersIntoHtml(
   let workingHtml = html;
 
   // 1. If DOMParser is available in browser, replace all .smart-tag / [data-var] spans,
-  // single-node {{...}}, and cross-node split {{...}} cleanly in the DOM tree
+  // single-node [...], and cross-node split [...] cleanly in the DOM tree
   if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
     try {
       const parser = new DOMParser();
@@ -261,13 +312,17 @@ export function mergePlaceholdersIntoHtml(
         for (const span of tagSpans) {
           const rawVar =
             span.getAttribute('data-var') || (span.textContent || '');
+          if (rawVar.startsWith('${') && rawVar.endsWith('}')) {
+            // Strictly preserve template symbols in editor text
+            continue;
+          }
           const val = lookupPlaceholderValue(fieldValues, rawVar);
           if (val !== undefined && val.trim() !== '') {
             span.replaceWith(doc.createTextNode(val.trim()));
           }
         }
 
-        // 1b. Replace [...] and legacy {{...}} inside individual Text nodes
+        // 1b. Replace [...] and {{...}} inside individual Text nodes (NEVER ${...})
         const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
         const textNodes: Text[] = [];
         let curr: Node | null;
@@ -277,14 +332,13 @@ export function mergePlaceholdersIntoHtml(
         for (const tNode of textNodes) {
           const txt = tNode.nodeValue || '';
           if (
-            txt.includes('$') ||
             (txt.includes('[') && txt.includes(']')) ||
             (txt.includes('{{') && txt.includes('}}'))
           ) {
             const replaced = txt.replace(
-              /\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g,
-              (full, sKey, bKey, cKey) => {
-                const rk = sKey || bKey || cKey || '';
+              /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g,
+              (full, bKey, cKey) => {
+                const rk = bKey || cKey || '';
                 const val = lookupPlaceholderValue(fieldValues, rk);
                 return val !== undefined && val.trim() !== '' ? val.trim() : full;
               }
@@ -295,7 +349,7 @@ export function mergePlaceholdersIntoHtml(
           }
         }
 
-        // 1c. Replace cross-node split ${...}, [...], or {{...}} inside block elements
+        // 1c. Replace cross-node split [...] or {{...}} inside block elements
         const blocks = Array.from(
           container.querySelectorAll('p, li, td, th, div, h1, h2, h3, h4')
         ) as HTMLElement[];
@@ -304,10 +358,9 @@ export function mergePlaceholdersIntoHtml(
         );
         for (const block of leafBlocks) {
           const bText = block.textContent || '';
-          const hasDollar = bText.includes('$');
           const hasBrackets = bText.includes('[') && bText.includes(']');
           const hasBraces = bText.includes('{{') && bText.includes('}}');
-          if (!hasDollar && !hasBrackets && !hasBraces) continue;
+          if (!hasBrackets && !hasBraces) continue;
           const bWalker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
           const segs: { node: Text; start: number; end: number }[] = [];
           let full = '';
@@ -321,11 +374,11 @@ export function mergePlaceholdersIntoHtml(
             }
           }
           const matches = Array.from(
-            full.matchAll(/\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g)
+            full.matchAll(/\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{\s*([^}]+?)\s*\}\}/g)
           ).reverse();
           for (const m of matches) {
             if (m.index === undefined) continue;
-            const rawK = m[1] || m[2] || m[3] || '';
+            const rawK = m[1] || m[2] || '';
             const val = lookupPlaceholderValue(fieldValues, rawK);
             if (val === undefined || val.trim() === '') continue;
             const mStart = m.index;
@@ -361,6 +414,7 @@ export function mergePlaceholdersIntoHtml(
   workingHtml = workingHtml.replace(
     /<span[^>]*data-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/gi,
     (fullMatch, rawKey) => {
+      if (rawKey.startsWith('${') && rawKey.endsWith('}')) return fullMatch;
       const val = lookupPlaceholderValue(fieldValues, rawKey);
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
@@ -368,21 +422,67 @@ export function mergePlaceholdersIntoHtml(
 
   // 3. Regex replacement for <span class="...smart-tag...">...</span>
   workingHtml = workingHtml.replace(
-    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>(?:\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<]+?)\s*\]|\{\{\s*([^}<]+?)\s*\}\})<\/span>/gi,
-    (fullMatch, sKey, bKey, cKey) => {
-      const val = lookupPlaceholderValue(fieldValues, sKey || bKey || cKey || '');
+    /<span[^>]*class="[^"]*(?:smart-tag|smart-placeholder)[^"]*"[^>]*>(?:\[\s*([^\[\]<]+?)\s*\]|\{\{\s*([^}<]+?)\s*\}\})<\/span>/gi,
+    (fullMatch, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
 
-  // 4. Replace any remaining raw ${key}, [key], or {{key}} occurrences in text
+  // 4. Replace any remaining [key] or {{key}} occurrences in text (NEVER ${...})
   return workingHtml.replace(
-    /\$\{([a-zA-Z0-9_]+)\}|\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
-    (fullMatch, sKey, bKey, cKey) => {
-      const val = lookupPlaceholderValue(fieldValues, sKey || bKey || cKey || '');
+    /\[\s*([^\[\]<>]{1,45}?)\s*\]|\{\{(?:&nbsp;|\s|<[^>]+>)*([^}<]+?)(?:&nbsp;|\s|<[^>]+>)*\}\}/gi,
+    (fullMatch, bKey, cKey) => {
+      const val = lookupPlaceholderValue(fieldValues, bKey || cKey || '');
       return val !== undefined && val.trim() !== '' ? escapeXml(val.trim()) : fullMatch;
     }
   );
+}
+
+/**
+ * Backward compatibility alias for mergeEditorVariables.
+ */
+export const mergePlaceholdersIntoHtml = mergeEditorVariables;
+
+/**
+ * Merges official technical template symbols (${symbol}) into Word template HTML.
+ * Uses strict whitelist resolution:
+ * - Only replaces keys present in templateData or mapped canonical symbols.
+ * - NEVER strips arbitrary or un-matched symbols.
+ */
+export function mergeTemplateSymbols(
+  templateHtml: string,
+  templateData: Record<string, string> = {}
+): string {
+  if (!templateHtml) return '';
+
+  return templateHtml.replace(/\$\{([a-zA-Z0-9_]+)\}/g, (fullMatch, rawKey) => {
+    // 1. Direct key in templateData
+    if (
+      Object.prototype.hasOwnProperty.call(templateData, rawKey) &&
+      templateData[rawKey] !== undefined &&
+      templateData[rawKey] !== null
+    ) {
+      return escapeXml(String(templateData[rawKey]).trim());
+    }
+
+    // 2. Case-insensitive key match in templateData
+    const lowerKey = rawKey.toLowerCase();
+    for (const [k, v] of Object.entries(templateData)) {
+      if (k.toLowerCase() === lowerKey && v !== undefined && v !== null) {
+        return escapeXml(String(v).trim());
+      }
+    }
+
+    // 3. Normalized placeholder lookup as fallback
+    const val = lookupPlaceholderValue(templateData, rawKey);
+    if (val !== undefined && val.trim() !== '') {
+      return escapeXml(val.trim());
+    }
+
+    // Strict whitelist: preserve un-matched symbol without destructive stripping
+    return fullMatch;
+  });
 }
 
 /**
@@ -1063,9 +1163,10 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const zip = new JSZip();
   const purifiedBodyHtml = purifyNotarialBodyHtml(options.bodyHtml);
 
+  // In-body pagination injection is strictly disabled.
+  // Pagination is handled exclusively via the official Word footer (word/footer1.xml).
   const pageNumberingEnabled = options.pageNumberingEnabled !== false;
-  const paginatedBodyHtml = injectNotarialPaginationIntoHtml(purifiedBodyHtml, pageNumberingEnabled);
-  const pageCount = (paginatedBodyHtml.match(/data-notary-pagination=["']true["']/gi) || []).length || 1;
+  const pageCount = options.pageCount && options.pageCount > 0 ? options.pageCount : 1;
 
   const initialNormalized = options.fieldValues
     ? normalizeAllNotaryFieldValues(options.fieldValues, {
@@ -1077,10 +1178,10 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
         pageCount,
       });
 
-  const finalMergedBodyHtml = mergePlaceholdersIntoHtml(paginatedBodyHtml, initialNormalized);
+  const finalMergedBodyHtml = mergeEditorVariables(purifiedBodyHtml, initialNormalized);
 
-  const mergedHeaderHtml = mergePlaceholdersIntoHtml(options.headerHtml || '', initialNormalized);
-  const mergedFooterHtml = mergePlaceholdersIntoHtml(options.footerHtml || '', initialNormalized);
+  const mergedHeaderHtml = mergeEditorVariables(options.headerHtml || '', initialNormalized);
+  const mergedFooterHtml = mergeEditorVariables(options.footerHtml || '', initialNormalized);
 
   const mediaList: MediaRelationship[] = [];
   let bodyElementsXml = '';
@@ -1151,7 +1252,7 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
     mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
   const hasCustomFooter =
     mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter = hasCustomFooter;
+  const hasFooter = hasCustomFooter || pageNumberingEnabled;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -1219,6 +1320,13 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
         const text = mergedFooterHtml.replace(/<[^>]+>/g, '').trim();
         fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
       }
+    } else if (pageNumberingEnabled) {
+      // Official Algerian Notarial Dynamic Footer: "الصفحة {PAGE} ../.."
+      // Left aligned, bold Arial 13pt, exact line spacing 260 twips
+      fInnerXml = `<w:p>${buildParagraphPropertiesXml({
+        isRtl: true,
+        align: 'left',
+      })}<w:r>${buildRunPropertiesXml({ bold: true }, true)}<w:t xml:space="preserve">الصفحة </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r>${buildRunPropertiesXml({ bold: true }, false)}<w:t>1</w:t></w:r></w:fldSimple><w:r>${buildRunPropertiesXml({ bold: true }, true)}<w:t xml:space="preserve"> ../..</w:t></w:r></w:p>`;
     }
 
     
@@ -1319,14 +1427,22 @@ export async function downloadNotaryDocx(options: DocxExportOptions): Promise<Ui
     .replace(/\s+/g, '_');
   const fileName = safeName.endsWith('.docx') ? safeName : `${safeName}.docx`;
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  if (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    typeof URL !== 'undefined' &&
+    typeof URL.createObjectURL === 'function'
+  ) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
   return bytes;
 }
 

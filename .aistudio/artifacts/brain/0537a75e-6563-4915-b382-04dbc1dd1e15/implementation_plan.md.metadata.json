@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for fixed-line grid notarial pagination and removing Word footer PAGE numbering",
-  "updatedAt": "2026-10-14T16:10:18.486796180Z",
+  "summary": "خطة التنفيذ المعتمدة والنهائية بعد تثبيت التفصيلين التنفيذيين: دمج متغيرات التحرير داخل كل بند قبل التوسيع (mergeEditorVariables)، واعتماد أوامر التحقق المباشرة (npm test و npm run build).",
+  "updatedAt": "2026-10-15T08:45:20.520158787Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -228,11 +228,11 @@ export default function EditorA4Canvas({
             }}
           />
 
-          {/* Clean Notarial Closing Line Marker at end of body text (no artificial explanation on screen) */}
+          {/* Simulated Official Notarial Digital Footer */}
           {pageNumberingEnabled && !previewMergedMode && (
             <div
               dir="rtl"
-              className="text-left text-slate-900 font-bold select-none mt-1 relative z-10 no-print flex items-center justify-between gap-2"
+              className="text-left text-slate-900 font-bold select-none mt-2 pt-1 border-t border-slate-200 relative z-10 no-print flex items-center justify-between gap-2"
               style={{
                 fontFamily: STRICT_FONT_FAMILY,
                 fontSize: `${STRICT_FONT_SIZE_PT}pt`,
@@ -244,15 +244,17 @@ export default function EditorA4Canvas({
                   type="button"
                   onClick={onTogglePreviewMergedMode}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-900 border border-slate-200 font-sans font-semibold text-[10px] transition"
-                  title="معاينة تقسيم الصفحات ومواضع علامة ../.. تحت آخر سطر لكل صفحة كما ستخرج في الطباعة والوورد"
+                  title="معاينة محاكاة تذييل الصفحات (الصفحة {PAGE} ../..) عبر الصفحات"
                 >
                   <Eye className="w-3 h-3" />
-                  <span>معاينة مواضع (../..) عبر {estimatedPages} صفحات</span>
+                  <span>معاينة التذييل الرقمي عبر {estimatedPages} صفحات</span>
                 </button>
               ) : (
                 <span />
               )}
-              <div>{buildNotarialPaginationClosingText(estimatedPages)}</div>
+              <div className="font-bold text-slate-800 tracking-wide">
+                الصفحة 1 ../..
+              </div>
             </div>
           )}
 

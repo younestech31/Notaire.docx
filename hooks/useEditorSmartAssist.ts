@@ -733,6 +733,11 @@ export function useEditorSmartAssist({
       const rawHtml = e.clipboardData.getData('text/html');
       const plainText = e.clipboardData.getData('text/plain');
       const cleanHtml = sanitizePastedWordHTML(rawHtml, plainText);
+      if (cleanHtml.includes('${') || (plainText && plainText.includes('${'))) {
+        showToast?.(
+          'تنبيه: رموز القالب (${...}) مخصصة لملفات Word الخارجية فقط ولا تُوضع في متن العقد. استخدم وسوم التحرير [البيان] بدلاً منها.'
+        );
+      }
       if (bodyEditorRef.current) {
         const sel = window.getSelection();
         const range =
@@ -747,6 +752,7 @@ export function useEditorSmartAssist({
       ensureBodyEditable,
       recordHistorySnapshot,
       savedRangeRef,
+      showToast,
       syncPlaceholdersAndDraft,
     ]
   );

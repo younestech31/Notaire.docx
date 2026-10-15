@@ -1,32 +1,107 @@
-# Implementation Plan - Fixed-Line Grid Notarial Pagination
+# خطة التنفيذ المعتمدة النهائية — الفصل الصارم بين طبقتي التحرير والقوالب وتذييل Word الرقمي
 
-## Goal
-Replace dynamic Word footer `PAGE` numbering and variable DOM-height pagination with a strict fixed-line grid pagination system in `lib/notarial-pagination.ts` and `lib/docx-engine.ts`, adhering strictly to Algerian notarial formatting rules (46 lines per page, exact 13pt / 260 twip line height, word pagination markers like "الصفحة الأولى ../.." on continuation pages and "… والأخيرة" on the final page, left-aligned on the last line of the page grid, followed by page breaks).
+## القيود الإلزامية الصارمة
+- **`${clause}` = HTML مطهّر مدمج كعناصر DOM خام، ممنوع تماماً استخدام `escapeXml` عليه.**
+- **`[contenu_acte]` يُحوَّل حصراً إلى حلقة `${block}…${/block}` (تحتوي `${titre}` و `${clause}`) وليس إلى `${clause}` منفرداً.**
+- **تفريغ متغيرات التحرير داخل البنود قبل القالب**: تمرير كل بند على `mergeEditorVariables(purifyNotarialBodyHtml(clauseHtml), fieldValues)` قبل دخول حلقة `${block}` لتفريغ وسوم مثل `[البائع]` في المتن أولاً.
+- **رموز المكتب = مطابقة أسماء `CANONICAL_NOTARY_SYMBOLS` حرفياً** (مثل `${office_addr}`، `${office_tel}`، `${office_mail}`، وليس أسماء اجتهادية).
+- **`exportWithStandardTemplate` يستدعي مسار القالب الفعلي `exportContractWithStandardTemplate` ولا يمرّ على المسار العاري.**
+- **استخراج البنود يعتمد على الحاويات `.clause-container` / `data-clause-id` وعناوين `#` معاً عبر محرك الهيكل القائم.**
+- **الوسوم اللاتينية التراثية `[...]` داخل المتن تُعامل كبيانات تحرير في `mergeEditorVariables`، بينما رموز `${}` في المتن تُرفض وتُحظر قطعياً.**
+- **`mergeTemplateSymbols` يعتمد القائمة البيضاء (Whitelist):** يستبدل فقط الرموز المعرّفة في قاموس التصدير، ولا يحذف بصورة عشوائية نصوصاً أو وسوماً غير مطابقة.
+- **تحديد آلية تجاوز غلاف الأطراف:** تحديد كتلة الأطراف في القالب عبر السمة `data-template-part="parties"` (أو `<div class="parties-wrapper">`) وحذفها بدقة من DOM القالب قبل الدمج إذا تبيّن أن المتن يحتوي ديباجة أطراف مستقلة.
+- **ترتيب عقد التصدير ثابت ومحكم بدون أي حقن لترقيم الصفحات داخل المتن.**
 
-## User Requirements & Technical Specification
-1. **Remove Word Footer Pagination**: Remove `footer1.xml` generation and `PAGE` field insertions in `lib/docx-engine.ts`. All pagination markers must be injected directly into the document body text before OOXML serialization.
-2. **Fixed-Line Grid in `lib/notarial-pagination.ts`**:
-   - Use `NOTARIAL_PAGE_CONTENT_LINES` and `STRICT_LINE_SPACING_TWIPS` (260 twips = 13pt).
-   - Strip existing pagination (`stripNotarialPaginationFromHtml`).
-   - Collect atomic block elements (`<p>`, `<li>`, `<table>`).
-   - Fill each page up to `LINES` (46 lines). Pad remaining space with blank lines/paragraphs if needed to ensure exact vertical grid alignment.
-   - Insert page marker paragraph:
-     - Non-final pages: `buildNotarialPaginationContinueText(n)` -> «الصفحة الأولى ../..»
-     - Final page: `buildNotarialPaginationClosingText(total)` -> «الصفحة … والأخيرة»
-   - Follow continuation marker with `<div class="page-break" data-page-break="true"></div>` (no text).
-3. **OOXML Serialization in `lib/docx-engine.ts`**:
-   - For `data-notary-pagination="true"` paragraphs:
-     ```xml
-     <w:pPr>
-       <w:spacing w:before="0" w:after="0" w:line="260" w:lineRule="exact"/>
-       <w:jc w:val="left"/>
-     </w:pPr>
+---
+
+## 1. فصل محرّكي الدمج وحلقة البنود (`lib/docx-engine.ts`)
+- **`mergeEditorVariables(html, fieldValues)`**:
+  - يطابق وسوم التحرير العربية `[البيان]` والوسوم التراثية اللاتينية `[partie1_nom]` وعناصر `span.smart-tag[data-var="..."]` داخل المتن فقط.
+  - لا يمس أي رمز `${...}` إن وُجد في المتن ويتركه دون تعديل.
+- **`expandBlockLoop(templateHtml, clauses, fallbackBodyHtml)`**:
+  - يبحث عن مقطع حلقة البنود:
+    ```html
+    ${block}
+    <p class="clause-title"><b>${titre}</b></p>
+    <div class="clause-body">${clause}</div>
+    ${/block}
+    ```
+  - يكرر المقطع لكل بند مفعّل مستخرج من محرك الهيكل:
+    - `${titre}`: عنوان البند كنص مُهرَّب (`escapeXml`).
+    - `${clause}`: محتوى البند كـ HTML مطهر ومفرغ من متغيرات التحرير مسبقاً، مدمج كعناصر DOM حقيقية، بدون `escapeXml` لنص HTML حتى لا يتسرب ككود نصي.
+  - **في حال عدم وجود بنود مصنفة**: يُعامل المتن كاملاً كبند واحد غير معنون (`titre = ""` و `clause = fallbackBodyHtml`).
+  - **ترقية القوالب المخصصة التراثية**: إذا كان القالب يحتوي `[contenu_acte]` بدلاً من `${block}`، يتم استبدال فقرة `[contenu_acte]` بحلقة البنود التوثيقية تلقائياً.
+- **`mergeTemplateSymbols(templateHtml, templateData)` (القائمة البيضاء Whitelist)**:
+  - يستبدل حصراً الرموز الرسمية المعتمدة في `CANONICAL_NOTARY_SYMBOLS` المطابقة لقاموس التصدير:
+    - بيانات المكتب: `${office_name}`، `${office_name_fr}`، `${office_addr}`، `${office_addr_fr}`، `${office_wilaya}`، `${office_tasjil}`، `${office_tel}`، `${office_fax}`، `${office_mail}`.
+    - بيانات العقد والأطراف: `${num_acte}`، `${c_1}`، `${c_2}`، `${client_name}`، `${act_value}`، `${total}`، `${totalLettre}`، `${date_acte}`، `${date2lettre_acte}`، `${pages_acte}`، `${pages2lettre_acte}`.
+  - **حماية الوسوم**: استبدال آمن للقائمة البيضاء فقط دون مساس بأي نصوص أو وسوم أخرى خارج القاموس.
+
+---
+
+## 2. ترقية القوالب الرسمية وغلاف الأطراف (`lib/notary-word-templates.ts`)
+- تأطير غلاف الأطراف في القوالب الرسمية:
+  - تغليف قسم الأطراف التمهيدي بسمة واضحة ومحددة:
+    `<div data-template-part="parties" class="parties-wrapper">...</div>`
+  - بحيث يسهل كشفه وحذفه برمجياً دون المساس بباقي عناصر القالب.
+- تحديث كافة القوالب المدمجة (أصل العقد، نسخة عادية، مستخرج، شهادة، إلخ):
+  - استبدال الرموز بالرموز المعتمدة: `${num_acte}`، `${c_1}`، `${c_2}`، `${date_acte}`، `${office_addr}`، `${office_tel}`، `${office_mail}`، `${act_value}`.
+  - استبدال `[contenu_acte]` في القالب بحلقة البنود الرسمية:
+    ```html
+    ${block}
+    <p style="font-weight:bold; margin-bottom:4pt;">${titre}</p>
+    <div>${clause}</div>
+    ${/block}
+    ```
+
+---
+
+## 3. جسر التطبيع باتجاه واحد (`lib/field-values-normalizer.ts`)
+- تحديث دالة التطبيع لتعمل كجسر تصدير باتجاه واحد:
+  - قراءة مدخلات الموثق من `fieldValues` (مثل `الطرف_الأول`، `البائع`، `رقم_الفهرس`).
+  - تعبئة المفاتيح القياسية اللاتينية للقالب: `${c_1}`، `${c_2}`، `${num_acte}`، `${office_addr}`، `${office_tel}`، `${office_mail}`، إلخ.
+  - **حظر تام**: عدم كتابة أو إعادة حقن رموز `${...}` داخل مسودة `bodyHtml` المخزنة للمستند في قاعدة البيانات.
+
+---
+
+## 4. تدفق التصدير وتصحيح `lib/document-io-workflows.ts`
+- **إصلاح `exportWithStandardTemplate`**:
+  - توجيه الاستدعاء مباشرة إلى `exportContractWithStandardTemplate` لتطبيق القالب الفعلي بدلاً من التصدير العاري.
+- **عقد ترتيب مسار التصدير بالقالب**:
+  1. `purifyNotarialBodyHtml(bodyHtml)` لتطهير وضبط تباعد الفقرات ونقاء الـ HTML.
+  2. استخراج البنود المفعّلة عبر `collectDomClauseSegments` ومحرك الهيكل (حاويات `clause-container` + وسوم `#`).
+  3. **تفريغ متغيرات التحرير لكل بند على حدة**:
+     - تطبيق `mergeEditorVariables(purifyNotarialBodyHtml(clause.html), fieldValues)` على كل بند مستخرج (أو المتن كاملاً كبند واحد إن لم توجد بنود)، لتفريغ وسوم التحرير (مثل `[البائع]`) داخل محتوى البند قبل دخوله القالب.
+  4. **معالجة غلاف الأطراف الإجرائية**:
+     - فحص المتن المطهّر: إذا تبيّن وجود ديباجة للأطراف (بواسطة كواشف الأطراف مثل "بين الموقعين"، "حضر"، "طرف أول"، "بائع")، يتم استئصال عنصر `[data-template-part="parties"]` من DOM القالب قبل إدراج البنود، لتفادي تكرار غلاف الأطراف الفارغ تماماً.
+  5. استدعاء `expandBlockLoop(template.bodyHtml, clauses, purifiedBody)`.
+  6. استدعاء `mergeTemplateSymbols` على الناتج وعلى الترويسة والتذييل باستخدام قاموس الرموز المطبع (وفق القائمة البيضاء).
+  7. تمرير الناتج إلى `generateNotaryDocxBlob` **دون تفعيل حقن ترقيم المتن** (`injectNotarialPaginationIntoHtml` لا يُحقن في المتن).
+  8. بناء تذييل Word المستقل في `word/footer1.xml` بحقل `PAGE` الديناميكي:
+     ```text
+     الصفحة {PAGE} ../..
      ```
-     (No `<w:bidi/>` on marker paragraphs).
-   - `div.page-break` -> `<w:br w:type="page"/>` only.
-   - Body paragraphs: `line=260`, `lineRule=exact`, `before/after=0`.
-4. **Page Count Calculation**:
-   - `pageCount = number of p[data-notary-pagination]`.
-   - Pass `pageCount` to `normalizeAllNotaryFieldValues` for `pages2lettre_acte`.
-5. **Export Pipeline**:
-   - Purify -> Merge (plain text) -> insertActeBodyHtml -> injectNotarialPaginationIntoHtml (fixed grid) -> serialize to document.xml.
+     (محاذاة لليسار، خط Arial عريض 13pt، تباعد أسطر 260 twips، بدون فقرات ترقيم داخل المتن).
+- **حساب `${pages_acte}` و `${pages2lettre_acte}`**:
+  - اعتماد التقدير المكتبي أو القيمة المدخلة في الفهرس/المتغيرات، دون الاعتماد على عد علامات داخل المتن بعد إلغائها.
+
+---
+
+## 5. ضوابط الواجهة والمحرر (`components/NotaryEditorApp.tsx`)
+- شريط التحرير: «إدراج بيان» ينشئ حصراً وسوماً عربية `[...]` أو عناصر `data-var`.
+- حظر الرموز التقنية: إظهار تنبيه لطيف للموثق عند كتابة أو لصق `${...}` في المتن: «رموز القالب (${...}) مخصصة لملفات القوالب الخارجية فقط ولا تُوضع في متن العقد».
+- محاكاة التذييل في شاشة العرض/المعاينة: طبقة بصرية محايدة (CSS overlay / preview-only footer) عند فواصل الصفحات بدون تعديل أو تلويث لـ DOM المحرر المحفوظ.
+
+---
+
+## 6. تحديث الاختبارات والتحقق البرمجي (`tests/notarial-core.test.ts`)
+- مواءمة الاختبارات القائمة لتتوافق مع المعمارية الجديدة:
+  - إزالة التوقعات القديمة الخاصة بصيغ «والأخيرة» أو وجود `[contenu_acte]` داخل المتن.
+  - اختبار `mergeEditorVariables` على الوسوم العربية واللاتينية التراثية وتأكيد عدم المساس بـ `${office_name}`.
+  - اختبار `expandBlockLoop` مع بنود متعددة، ومع متن غير مقسم كبند واحد غير معنون، والتأكد من إدراج `${clause}` كـ HTML سليم بدون هروب وسوم.
+  - اختبار احتواء ملف docx على `word/footer1.xml` مع حقل `PAGE` وصيغة `../..`.
+  - اختبار استئصال عنصر `[data-template-part="parties"]` بنجاح عند وجود ديباجة في المتن.
+  - التأكد من أن `mergeTemplateSymbols` لا يحذف رموزاً خارج القائمة البيضاء.
+- **التنفيذ والتحقق**:
+  - تشغيل `npm test` للتحقق من نجاح كافة الاختبارات التوثيقية.
+  - تشغيل `npm run build` للتأكد من خلو المشروع من أخطاء TypeScript وتجميع Next.js بنجاح.
