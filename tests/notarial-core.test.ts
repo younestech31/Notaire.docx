@@ -394,12 +394,13 @@ test('DOCX Engine: generates valid .docx with multi-page ../.. pagination, table
   assert.ok(docXml.includes('أحمد بن محمد'));
   assert.ok(docXml.includes('<w:tbl>'));
 
-  // Word footer pagination verification
-  const footerXml = await zip.file('word/footer1.xml')?.async('string');
-  assert.ok(footerXml !== null && footerXml !== undefined);
-  assert.ok(footerXml.includes('../..'));
-  assert.ok(footerXml.includes('الصفحة'));
-  assert.ok(footerXml.includes('w:instr="PAGE"'));
+  // Word in-body pagination verification (directly after body text)
+  assert.ok(docXml.includes('../..'));
+  assert.ok(docXml.includes('الصفحة'));
+  assert.ok(docXml.includes('PAGE'));
+  assert.ok(docXml.includes('NUMPAGES'));
+  assert.ok(docXml.includes('الأولى'));
+  assert.ok(docXml.includes('والأخيرة'));
 });
 
 test('Unified OfficeTemplate Migration & Lightweight Export Revisions: migrates legacy templates and stores lightweight export logs', async () => {
@@ -782,16 +783,17 @@ test('Word Export & Pagination Invariants: native body paragraphs, w:jc left, w:
   // Invariant 1: w:line="260" in document
   assert.ok(docXml.includes('w:line="260"'));
 
-  // Invariant 2: Dynamic Word footer in word/footer1.xml
-  const footerXml = await zip.file('word/footer1.xml')?.async('text');
-  assert.ok(footerXml);
-  assert.ok(footerXml.includes('w:jc w:val="left"'));
-  assert.ok(footerXml.includes('w:instr="PAGE"'));
-  assert.ok(footerXml.includes('../..'));
-  assert.ok(footerXml.includes('الصفحة'));
+  // Invariant 2: Dynamic Word pagination attached directly after text in word/document.xml
+  assert.ok(docXml.includes('w:jc w:val="left"'));
+  assert.ok(docXml.includes('PAGE'));
+  assert.ok(docXml.includes('NUMPAGES'));
+  assert.ok(docXml.includes('../..'));
+  assert.ok(docXml.includes('الصفحة'));
+  assert.ok(docXml.includes('الأولى'));
+  assert.ok(docXml.includes('والأخيرة'));
 
-  // Invariant 3: Body document.xml does NOT have in-body pagination markers or "والأخيرة"
-  assert.ok(!docXml.includes('والأخيرة'));
+  // Invariant 3: Body document.xml does NOT have arbitrary injected headings
+  assert.ok(!docXml.includes('مقدمة العقد والديباجة'));
   assert.ok(!docXml.includes('data-notary-pagination'));
 });
 
@@ -899,5 +901,129 @@ test('Parties Preamble Detection & data-template-part="parties" elimination', as
   assert.ok(res.fileName.includes('.docx'));
 });
 
+test('Imported Contract Export: continuous paragraphs, zero invented headings, zero duplicate parties', async () => {
+  const importedBody = `
+    <p dir="rtl">حضر أمام الموثق الموقع أسفله الطرف الأول والطرف الثاني.</p>
+    <p dir="rtl">المادة الأولى: اتفق الطرفان على إبرام عقد بيع العقار الكائن بمدينة الجزائر.</p>
+    <p dir="rtl">المادة الثانية: تم الاتفاق على ثمن قدره [الثمن_بالأرقام] دينار جزائري.</p>
+    <p dir="rtl">المادة الثالثة: صرح الطرفان بتمام التراضي والتسليم الفعلي.</p>
+  `;
 
+  const res = await exportContractWithStandardTemplate({
+    templateId: 'acte_original',
+    contractTitle: 'عقد_مستورد_مباشر',
+    bodyHtml: importedBody,
+    fieldValues: {
+      الثمن_بالأرقام: '10000000',
+      office_name: 'مكتب الأستاذ الشريف',
+      num_acte: '2026/999',
+    },
+  });
 
+  assert.ok(res.fileName.includes('.docx'));
+  // Note: exportContractWithStandardTemplate does not invent 'مقدمة العقد والديباجة'
+  // or 'نص العقد' because it injects continuous body without parsing into artificial clauses.
+});
+
+test('Block Loop: literal dollar and special pattern safety ($100, $&)', () => {
+  const tpl = '${block}<div class="clause-box">${titre}: ${clause}</div>${/block}';
+  const clauses = [
+    { title: 'بند الثمن $&', contentHtml: '<p>المبلغ هو 100$ دولار أمريكي أو ما يعادله $1 و $2</p>' },
+  ];
+  const rendered = expandBlockLoop(tpl, clauses);
+  assert.ok(rendered.includes('100$ دولار أمريكي'));
+  assert.ok(rendered.includes('$1 و $2'));
+  // Does NOT contain literal replacement code ${clause} from regex $& expansion
+  assert.ok(!rendered.includes('${clause}'));
+});
+
+test('Word Dynamic In-Body Pagination: IF PAGE < NUMPAGES conditional syntax in word/document.xml', async () => {
+  const blob = await generateNotaryDocxBlob({
+    title: 'فحص_الترقيم_المباشر_بعد_المتن',
+    bodyHtml: '<p dir="rtl">فقرة للتأكد من الترقيم المباشر بعد المتن</p>',
+    pageNumberingEnabled: true,
+  });
+
+  const arrayBuffer = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXml = await zip.file('word/document.xml')?.async('text');
+  assert.ok(docXml);
+  assert.ok(docXml.includes('IF'));
+  assert.ok(docXml.includes('PAGE'));
+  assert.ok(docXml.includes('NUMPAGES'));
+  assert.ok(docXml.includes('../..'));
+  assert.ok(docXml.includes('w:jc w:val="left"'));
+});
+
+test('Parties Preamble Detection: preserves template parties when الطرف is mentioned only later in clauses', async () => {
+  // Body has no opening preamble; it starts with pure clause text, mentioning الطرف later
+  const bodyWithoutPreamble = `
+    <p dir="rtl">المادة الأولى: موضوع الاتفاقية هو تنظيم إدارة العقار المشترك الكائن ببلدية القبة.</p>
+    <p dir="rtl">المادة الثانية: يلتزم الطرف الأول بتسليم المفاتيح والمستندات في موعد أقصاه شهر من تاريخه.</p>
+    <p dir="rtl">المادة الثالثة: يتعهد الطرف الثاني بسداد المصاريف المشتركة بانتظام.</p>
+  `;
+
+  const res = await exportContractWithStandardTemplate({
+    templateId: 'acte_original',
+    contractTitle: 'عقد_بدون_ديباجة_حضور',
+    bodyHtml: bodyWithoutPreamble,
+    fieldValues: {
+      الطرف_الأول: 'السيد بوعلام محمد',
+      الطرف_الثاني: 'السيد رابح قدور',
+      المكتب: 'مكتب الأستاذ رضوان',
+      ولاية_المكتب: 'الجزائر',
+      الثمن: '8500000',
+    },
+  });
+
+  assert.ok(res.fileName.includes('.docx'));
+});
+
+test('Canonical Symbol Expansion: date2lettre_acte and act_value generated automatically for standard templates', async () => {
+  const body = `<p dir="rtl">نص العقد المستورد بمبلغ [الثمن] دج</p>`;
+  const res = await exportContractWithStandardTemplate({
+    templateId: 'acte_original',
+    contractTitle: 'فحص_تفقيط_الرموز',
+    bodyHtml: body,
+    fieldValues: {
+      تاريخ_العقد: '2026/10/18',
+      الثمن: '2500000',
+      المكتب: 'مكتب الأستاذ كريم',
+    },
+  });
+
+  assert.ok(res.fileName.includes('.docx'));
+});
+
+test('Arabic Notarial Word In-Body Pagination: Page numbers written in Arabic words with ../.. and والأخيرة directly after body text', async () => {
+  const blob = await generateNotaryDocxBlob({
+    title: 'فحص_ترقيم_الصفحات_بالحروف_العربية',
+    bodyHtml: '<p dir="rtl">نص العقد التوثيقي المكتمل</p>',
+    pageNumberingEnabled: true,
+  });
+
+  const arrayBuffer = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docXml = await zip.file('word/document.xml')?.async('text');
+  assert.ok(docXml, 'document.xml must exist');
+
+  // Prefix "الصفحة "
+  assert.ok(docXml.includes('الصفحة'));
+
+  // Left alignment
+  assert.ok(docXml.includes('w:jc w:val="left"'));
+
+  // Word fields
+  assert.ok(docXml.includes('PAGE'));
+  assert.ok(docXml.includes('NUMPAGES'));
+
+  // Arabic feminine ordinal words for pages
+  assert.ok(docXml.includes('الأولى'), 'Must contain الأولى for page 1');
+  assert.ok(docXml.includes('الثانية'), 'Must contain الثانية for page 2');
+  assert.ok(docXml.includes('الثالثة'), 'Must contain الثالثة for page 3');
+  assert.ok(docXml.includes('العاشرة'), 'Must contain العاشرة for page 10');
+
+  // Continuation marker and closing marker
+  assert.ok(docXml.includes('../..'), 'Must contain ../.. marker for non-final pages');
+  assert.ok(docXml.includes('والأخيرة'), 'Must contain والأخيرة marker for final page');
+});

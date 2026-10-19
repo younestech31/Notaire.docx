@@ -401,29 +401,21 @@ export function injectNotarialPaginationIntoHtml(
         const pageNum = idx + 1;
         const isFinal = pageNum === totalPages;
 
-        while (page.linesUsed < LINES - 1) {
-          const emptyP = doc.createElement('p');
-          emptyP.setAttribute('dir', 'rtl');
-          emptyP.setAttribute('style', pBaseStyle);
-          emptyP.innerHTML = '<br>';
-          page.elements.push(emptyP);
-          page.linesUsed++;
+        for (const el of page.elements) {
+          newRoot.appendChild(el.cloneNode(true));
         }
 
         const markerP = doc.createElement('p');
         markerP.setAttribute('dir', 'rtl');
         markerP.setAttribute('align', 'left');
         markerP.setAttribute('data-notary-pagination', 'true');
+        markerP.setAttribute('data-page-num', String(pageNum));
+        markerP.setAttribute('data-total-pages', String(totalPages));
         markerP.setAttribute('style', markerStyle);
         markerP.textContent = isFinal
           ? buildNotarialPaginationClosingText(totalPages)
           : buildNotarialPaginationContinueText(pageNum);
-        page.elements.push(markerP);
-        page.linesUsed++;
-
-        for (const el of page.elements) {
-          newRoot.appendChild(el.cloneNode(true));
-        }
+        newRoot.appendChild(markerP);
 
         if (!isFinal) {
           const pbDiv = doc.createElement('div');
@@ -482,7 +474,7 @@ export function injectNotarialPaginationIntoHtml(
     const markerText = isFinal
       ? buildNotarialPaginationClosingText(totalPages)
       : buildNotarialPaginationContinueText(pageNum);
-    pageHtml += `<p dir="rtl" align="left" data-notary-pagination="true" style="${markerStyle}">${markerText}</p>`;
+    pageHtml += `<p dir="rtl" align="left" data-notary-pagination="true" data-page-num="${pageNum}" data-total-pages="${totalPages}" style="${markerStyle}">${markerText}</p>`;
     if (!isFinal) {
       pageHtml += `<div class="page-break" contenteditable="false" data-page-break="true" data-notary-pagination="true"></div>`;
     }

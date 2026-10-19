@@ -1,30 +1,58 @@
-# Implementation Plan - Final Cleanup & Template Canonicalization
+# خطة التطبيق النهائية — ضبط تصدير العقود المستوردة وتوحيد القوالب والتذييل
 
-## Objectives
-1. **Unify Templates 2–6 to Canonical Symbols**: Replace legacy extended Latin keys (`partie1_nom_complet`, `notaire_nom`, etc.) across the 5 remaining built-in templates in `lib/notary-word-templates.ts` with canonical notary symbols (`${c_1}`, `${c_2}`, `${office_name}`, `${office_addr}`, `${num_acte}`, `${date_acte}`, `${act_value}`, etc.).
-2. **Purge Legacy Pagination in UI**: Remove `injectNotarialPaginationIntoHtml` calls and imports from `components/NotaryEditorApp.tsx` and related components, ensuring the app preview uses clean CSS/digital footers without in-text paragraph injection.
-3. **Remove Dead Legacy Code**: Delete `spliceContractBodyIntoTemplate`, `mergePlaceholdersIntoHtml`, and obsolete references to `[contenu_acte]` from `lib/notary-word-templates.ts` and `lib/docx-engine.ts`.
-4. **Verification**: Run `npm test` and `npm run build` to confirm all 18+ tests and production build pass successfully.
+وفقاً للصياغة المعتمدة لمتطلبات الموثق: «عقد Word يُفتح ويُطبع كما يكتبه الموثق: فقرات متصلة، بلا عناوين مخترعة، بلا رموز ظاهرة، وترقيم أسفل الصفحة يساراً فقط».
 
-## Proposed Changes
+---
 
-### 1. `lib/notary-word-templates.ts`
-- Update templates 2 through 6 (Contrat Référence, Copie, Extrait, Certificat de Vente, Tableau d'Envoi) to use canonical symbols:
-  - Parties header using `${c_1}` and `${c_2}` within `parties-wrapper`.
-  - Notary info using `${office_name}`, `${office_addr}`, `${office_tel}`.
-  - Act details using `${num_acte}`, `${date_acte}`, `${act_value}`.
-  - Body using `${block}`, `${titre}`, `${clause}`, `${/block}`.
-- Remove dead legacy functions `spliceContractBodyIntoTemplate`, `mergePlaceholdersIntoHtml`, and old bracket tag patterns.
-- Refine `supportedTags` to list only canonical symbols.
+## 1. تصدير العقد المستورد (Imported Contract Export)
 
-### 2. `components/NotaryEditorApp.tsx` (and editor UI)
-- Remove `injectNotarialPaginationIntoHtml` imports and usage from the app preview/print pipeline.
-- Keep the digital footer preview in `EditorA4Canvas` and document header/footer generation clean.
+### الواقع الحالي
+كانت دالة `exportContractWithStandardTemplate` تستدعي `parseContractIntoClauses` تلقائياً على كل متن، مما ينتج عنه توليد عناوين مصطنعة مثل «مقدمة العقد والديباجة» أو «نص العقد» وتقسيم الفقرات قسراً.
 
-### 3. Tests & Build
-- Update any test assertions in `tests/notarial-core.test.ts` that reference old template tags or legacy pagination functions.
-- Run `npm test` and `npm run build`.
+### التعديل المطلوب
+- **منع التقسيم التلقائي**: إذا لم تكن البنود مقسمة صراحة من قِبل المستخدم في المحرر (`clauses`)، لا يتم استدعاء أي تقسيم تلقائي.
+- **المتن كما هو**: يمر المتن فقط بعملية التنقية القياسية (`purifyNotarialBodyHtml`: تنظيف الفراغات الزائدة، وضبط التنسيق، وتوحيد الخط Arial 13pt)، ثم يُفرّغ من متغيرات المحرر المتبقية `[...]` عبر `mergeEditorVariables`.
+- **حقن حلقة `${block}`**: تُمرَّر مصفوفة بنود فارغة إلى `expandBlockLoop` مع المتن المنقى، فيقوم المحرك بحذف حاوية `${titre}` تماماً وحقن المتن بالكامل ككتلة فقرات متصلة متتالية داخل `${clause}` دون أي عنوان مخترع أو إعادة ترتيب.
 
-## Verification Plan
-- Automated unit tests: `npm test`
-- Production build: `npm run build`
+---
+
+## 2. إدارة غلاف الأطراف في القالب (`parties-wrapper`)
+
+### التعديل المطلوب
+- التحقق الذكي من وجود ديباجة الأطراف في المتن عبر نمط شامل:
+  `/(?:حضر|حضرا|الطرف\s*(?:الأول|الثاني)|الأطراف|طرف\s*أول|طرف\s*ثان)/i`
+- **إذا كان المتن يحتوي على ديباجة**: يُحذف غلاف الأطراف `[data-template-part="parties"]` من القالب كلياً، لمنع تكرار الأطراف.
+- **إذا خلا المتن من الديباجة**: يُبقى على غلاف الأطراف في القالب وتُحقن بيانات الأطراف من الحقول عبر الرموز القياسية `${c_1}` و `${c_2}`.
+
+---
+
+## 3. محركا الدمج (فصل الطبقتين الصارم)
+
+- **طبقة المحرر / المتن (`mergeEditorVariables`)**:
+  - معالجة متغيرات المحرر التحريرية فقط (`[اسم_المتغير]` أو `<span data-var="...">`).
+  - عدم المساس بأي رمز قياسي بصيغة `${...}`.
+- **طبقة القالب (`mergeTemplateSymbols`)**:
+  - استبدال الرموز القياسية المعتمدة فقط: `${c_1}`، `${c_2}`، `${office_name}`، `${office_addr}`، `${office_tel}`، `${office_mail}`، `${num_acte}`، `${date_acte}`، إلخ.
+- **تنبيه الواجهة**:
+  - التأكد من ثبات شريط التنبيه الكهرماني في `EditorA4Canvas` عند كتابة أي موثق لرمز `${...}` في متن المحرر لتوجيهه لاستخدام المتغيرات الذكية `[...]`.
+
+---
+
+## 4. الترقيم والتذييل في Word
+
+- **التذييل في `word/footer1.xml` فقط**:
+  - ترقيم ديناميكي محاذى لليسار: «الصفحة {PAGE} ../..».
+  - دعم الحقل الشرطي `{ IF { PAGE } < { NUMPAGES } " ../.." "" }` في حقول Word بحيث تختفي علامة المتابعة `../..` أو التذييل في الصفحة الأخيرة.
+- **المتن نظيف 100%**:
+  - منع حقن أي ترقيم أو أسطر سد فراغات في متن المستند (`document.xml`).
+
+---
+
+## 5. القوالب الستة والاختبارات
+
+- التأكد من مطابقة القوالب الستة لنفس المعمارية (`${block}`، غلاف الأطراف `data-template-part="parties"`، والرموز القياسية).
+- تحديث وإضافة اختبارات وحدة في `tests/notarial-core.test.ts` للتحقق من:
+  1. تصدير متن مستورد يخرج كفقرات متصلة بدون عناوين مصطنعة مثل "مقدمة العقد والديباجة" أو "نص العقد".
+  2. حذف غلاف الأطراف عند وجود ديباجة، واستبقاؤه وحقنه بـ `${c_1}` و `${c_2}` عند عدم وجودها.
+  3. تذييل Word بالترقيم القياسي وعدم وجود ترقيم أو سد في المتن.
+  4. اجتياز `npm test` و `npm run build`.

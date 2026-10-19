@@ -20,6 +20,7 @@ import {
   SYMBOL_KEY_TO_ARABIC_KEYS_MAP,
 } from './symbol-map';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
+import { getArabicOrdinalPageWord } from './notarial-pagination';
 
 export type { DocxImportResult };
 export { importNotaryDocxFile };
@@ -266,10 +267,10 @@ export function expandBlockLoop(
           );
           rendered = rendered.replace(/\$\{titre\}|\[titre\]/gi, '');
         } else {
-          rendered = rendered.replace(/\$\{titre\}|\[titre\]/gi, escapeXml(titleStr));
+          rendered = rendered.replace(/\$\{titre\}|\[titre\]/gi, () => escapeXml(titleStr));
         }
-        // Injected as raw HTML without escapeXml
-        rendered = rendered.replace(/\$\{clause\}|\[clause\]/gi, contentStr);
+        // Injected as raw HTML without escapeXml, using functional replacer to avoid $& / $' regex corruption
+        rendered = rendered.replace(/\$\{clause\}|\[clause\]/gi, () => contentStr);
         return rendered;
       })
       .join('');
@@ -1154,6 +1155,177 @@ function buildSettingsXml(): string {
 }
 
 /**
+ * Builds the official Algerian notarial dynamic Word footer:
+ * - Left aligned (w:jc w:val="left"), bold Arial 13pt, exact line spacing 260 twips
+ * - Dynamic Arabic ordinal numbers:
+ *     Page 1 (if not last): "الصفحة الأولى ../.."
+ *     Page 2 (if not last): "الصفحة الثانية ../.."
+ *     ...
+ *     Page N (and last):    "الصفحة [رقم الصفحة بالحروف] والأخيرة"
+ */
+export function buildNotarialDynamicWordFooterXml(maxPages: number = 60): string {
+  const rProps = buildRunPropertiesXml({ bold: true }, true);
+  const pProps = buildParagraphPropertiesXml({ isRtl: true, align: 'left' });
+
+  // 1. Static Prefix: "الصفحة "
+  const prefixRun = `<w:r>${rProps}<w:t xml:space="preserve">الصفحة </w:t></w:r>`;
+
+  // 2. Sequential dynamic condition for page ordinal in Arabic words:
+  // Evaluates sequential fields: { IF { PAGE } = i "word" "" }
+  const ordinalRuns: string[] = [];
+  for (let i = 1; i <= maxPages; i++) {
+    const word = getArabicOrdinalPageWord(i);
+    const cachedText = i === 1 ? word : '';
+    ordinalRuns.push(
+      `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve"> = ${i} "${word}" "" </w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r>${rProps}<w:t>${cachedText}</w:t></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`
+    );
+  }
+
+  // Fallback for deeds exceeding maxPages: { IF { PAGE } > maxPages { PAGE } "" }
+  const fallbackRun =
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> &gt; ${maxPages} </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> "" </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t></w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`;
+
+  // 3. Space separator between the ordinal word and suffix
+  const spaceRun = `<w:r>${rProps}<w:t xml:space="preserve"> </w:t></w:r>`;
+
+  // 4. Dynamic suffix: { IF { PAGE } = { NUMPAGES } "والأخيرة" "../.." }
+  const suffixRun =
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> = </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">NUMPAGES</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> "والأخيرة" "../.." </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>../..</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`;
+
+  return `<w:p>${pProps}${prefixRun}${ordinalRuns.join('')}${fallbackRun}${spaceRun}${suffixRun}</w:p>`;
+}
+
+/**
+ * Builds the official Algerian notarial body-attached pagination paragraph XML:
+ * - Placed directly after the last line in the body text (المتن)
+ * - Preceded by a dashed closing separator line: ----------------------------------------------------
+ * - Left aligned (w:jc w:val="left"), bold Arial 13pt
+ * - Written in Arabic feminine ordinal words:
+ *     الصفحة الأولى ../..
+ *     الصفحة الثانية ../..
+ *     ...
+ *     الصفحة [رقم الصفحة بالحروف] والأخيرة
+ */
+export function buildNotarialBodyPaginationParagraphXml(maxPages: number = 60): string {
+  const rProps = buildRunPropertiesXml({ bold: true }, true);
+  const pProps = buildParagraphPropertiesXml({
+    isRtl: true,
+    align: 'left',
+    spacingBeforeTwips: 120,
+  });
+
+  // 1. Static Prefix: "الصفحة "
+  const prefixRun = `<w:r>${rProps}<w:t xml:space="preserve">الصفحة </w:t></w:r>`;
+
+  // 2. Sequential dynamic condition for page ordinal in Arabic words:
+  const ordinalRuns: string[] = [];
+  for (let i = 1; i <= maxPages; i++) {
+    const word = getArabicOrdinalPageWord(i);
+    const cachedText = i === 1 ? word : '';
+    ordinalRuns.push(
+      `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r>${rProps}<w:instrText xml:space="preserve"> = ${i} "${word}" "" </w:instrText></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r>${rProps}<w:t>${cachedText}</w:t></w:r>` +
+      `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`
+    );
+  }
+
+  // Fallback for deeds exceeding maxPages: { IF { PAGE } > maxPages { PAGE } "" }
+  const fallbackRun =
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> &gt; ${maxPages} </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> "" </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t></w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`;
+
+  // 3. Space separator between ordinal and suffix
+  const spaceRun = `<w:r>${rProps}<w:t xml:space="preserve"> </w:t></w:r>`;
+
+  // 4. Dynamic suffix: { IF { PAGE } = { NUMPAGES } "والأخيرة" "../.." }
+  const suffixRun =
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> IF </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">PAGE</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> = </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve">NUMPAGES</w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>1</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>` +
+    `<w:r>${rProps}<w:instrText xml:space="preserve"> "والأخيرة" "../.." </w:instrText></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${rProps}<w:t>../..</w:t></w:r>` +
+    `<w:r>${rProps}<w:fldChar w:fldCharType="end"/></w:r>`;
+
+  return `<w:p>${pProps}${prefixRun}${ordinalRuns.join('')}${fallbackRun}${spaceRun}${suffixRun}</w:p>`;
+}
+
+/**
  * Generates a complete, standard-compliant Microsoft Word (.docx) Blob
  * with strict Arial 13pt, 1.0 single line spacing, 0 paragraph spacing,
  * and fixed Notarial margins (Top: 1cm, Right: 7cm, Bottom: 6cm, Left: 2cm).
@@ -1162,8 +1334,8 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
   const zip = new JSZip();
   const purifiedBodyHtml = purifyNotarialBodyHtml(options.bodyHtml);
 
-  // In-body pagination injection is strictly disabled.
-  // Pagination is handled exclusively via the official Word footer (word/footer1.xml).
+  // Pagination is placed directly after the last line in the body (relative to text, left-aligned)
+  // as mandated by Algerian notarial practice and verified in actual deed samples.
   const pageNumberingEnabled = options.pageNumberingEnabled !== false;
   const pageCount = options.pageCount && options.pageCount > 0 ? options.pageCount : 1;
 
@@ -1246,12 +1418,17 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
     bodyElementsXml += `<w:p>${buildParagraphPropertiesXml({ isRtl: true })}</w:p>`;
   }
 
+  // Always and forever place pagination directly after the last line of the body text (المتن)
+  if (pageNumberingEnabled) {
+    bodyElementsXml += buildNotarialBodyPaginationParagraphXml();
+  }
+
   const hasHeader =
     options.omitRepeatingHeader !== true &&
     mergedHeaderHtml.replace(/<[^>]+>/g, '').trim().length > 0;
   const hasCustomFooter =
     mergedFooterHtml.replace(/<[^>]+>/g, '').trim().length > 0;
-  const hasFooter = hasCustomFooter || pageNumberingEnabled;
+  const hasFooter = hasCustomFooter;
 
   // Section Properties with strict Notarial Margins (Right: 7cm=3969, Left: 2cm=1134, Top: 1cm=567, Bottom: 6cm=3402)
   const sectRefs: string[] = [];
@@ -1320,12 +1497,12 @@ export async function generateNotaryDocxBlob(options: DocxExportOptions): Promis
         fInnerXml = `<w:p>${buildParagraphPropertiesXml({ isRtl: true, align: 'center' })}<w:r>${buildRunPropertiesXml({}, true)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
       }
     } else if (pageNumberingEnabled) {
-      // Official Algerian Notarial Dynamic Footer: "الصفحة {PAGE} ../.."
-      // Left aligned, bold Arial 13pt, exact line spacing 260 twips
-      fInnerXml = `<w:p>${buildParagraphPropertiesXml({
-        isRtl: true,
-        align: 'left',
-      })}<w:r>${buildRunPropertiesXml({ bold: true }, true)}<w:t xml:space="preserve">الصفحة </w:t></w:r><w:fldSimple w:instr="PAGE"><w:r>${buildRunPropertiesXml({ bold: true }, false)}<w:t>1</w:t></w:r></w:fldSimple><w:r>${buildRunPropertiesXml({ bold: true }, true)}<w:t xml:space="preserve"> ../..</w:t></w:r></w:p>`;
+      // Official Algerian Notarial Dynamic Footer:
+      // Page 1 (if not last): "الصفحة الأولى ../.."
+      // Page 2 (if not last): "الصفحة الثانية ../.."
+      // ...
+      // Page N (and last):    "الصفحة [رقم الصفحة بالحروف] والأخيرة"
+      fInnerXml = buildNotarialDynamicWordFooterXml();
     }
 
     

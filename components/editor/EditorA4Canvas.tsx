@@ -212,7 +212,7 @@ export default function EditorA4Canvas({
           {/* MAIN CONTRACT BODY: Always preserved in DOM, toggled via CSS hidden/block */}
           <div
             dir="rtl"
-            className={`notary-editor-zone relative z-10 min-h-[210mm] ${
+            className={`notary-editor-zone relative z-10 min-h-[140px] ${
               previewMergedMode ? 'block' : 'hidden'
             }`}
             dangerouslySetInnerHTML={{
@@ -238,46 +238,54 @@ export default function EditorA4Canvas({
             onMouseDown={previewMergedMode ? undefined : onEditorMouseDown}
             onClick={previewMergedMode ? undefined : onEditorClick}
             onDoubleClick={previewMergedMode ? undefined : onEditorDoubleClick}
-            className={`notary-editor-zone relative z-10 outline-none min-h-[210mm] print:hidden ${
+            className={`notary-editor-zone relative z-10 outline-none min-h-[140px] print:hidden ${
               isBodyLocked ? 'cursor-default select-text' : ''
             } ${previewMergedMode ? 'hidden' : 'block'}`}
           />
 
-          {/* Print-Only Paginated Layer with exact ../.. on non-final pages and الصفحة … والأخيرة on final page */}
+          {/* Print-Only Paginated Layer */}
           <div
             dir="rtl"
-            className="hidden print:block notary-editor-zone relative z-10 min-h-[210mm]"
+            className="hidden print:block notary-editor-zone relative z-10 min-h-[140px]"
             dangerouslySetInnerHTML={{
               __html: printPaginatedHtml,
             }}
           />
 
-          {/* Simulated Official Notarial Digital Footer */}
-          {pageNumberingEnabled && !previewMergedMode && (
+          {/* Official Algerian Notarial Body-Attached Pagination:
+              Directly after the last line in the body, aligned to the left (no dashed lines) */}
+          {pageNumberingEnabled && (
             <div
               dir="rtl"
-              className="text-left text-slate-900 font-bold select-none mt-2 pt-1 border-t border-slate-200 relative z-10 no-print flex items-center justify-between gap-2"
+              className="relative z-10 select-none mt-2 pt-0.5"
               style={{
                 fontFamily: STRICT_FONT_FAMILY,
                 fontSize: `${STRICT_FONT_SIZE_PT}pt`,
                 lineHeight: 1,
               }}
             >
-              {estimatedPages > 1 && onTogglePreviewMergedMode ? (
-                <button
-                  type="button"
-                  onClick={onTogglePreviewMergedMode}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-900 border border-slate-200 font-sans font-semibold text-[10px] transition"
-                  title="معاينة محاكاة تذييل الصفحات (الصفحة {PAGE} ../..) عبر الصفحات"
-                >
-                  <Eye className="w-3 h-3" />
-                  <span>معاينة التذييل الرقمي عبر {estimatedPages} صفحات</span>
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="font-bold text-slate-800 tracking-wide">
-                الصفحة 1 ../..
+              <div className="flex items-center justify-between gap-2">
+                {estimatedPages > 1 && onTogglePreviewMergedMode ? (
+                  <button
+                    type="button"
+                    onClick={onTogglePreviewMergedMode}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-900 border border-slate-200 font-sans font-semibold text-[10px] transition no-print"
+                    title="معاينة محاكاة تذييل الصفحات (الصفحة الأولى ../..) عبر الصفحات"
+                  >
+                    <Eye className="w-3 h-3" />
+                    <span>
+                      {previewMergedMode
+                        ? 'العودة لوضع التحرير'
+                        : `معاينة التذييل الرقمي عبر ${estimatedPages} صفحات`}
+                    </span>
+                  </button>
+                ) : (
+                  <span />
+                )}
+                {/* Always directly after the last line in the body, aligned left */}
+                <div className="font-bold text-slate-900 tracking-wide text-left ml-0">
+                  {estimatedPages > 1 ? 'الصفحة الأولى ../..' : 'الصفحة الأولى والأخيرة'}
+                </div>
               </div>
             </div>
           )}

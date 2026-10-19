@@ -18,6 +18,7 @@ import {
 } from '@/lib/storage';
 import {
   computeDocumentMetrics,
+  injectNotarialPaginationIntoHtml,
   stripNotarialPaginationFromHtml,
 } from '@/lib/notarial-pagination';
 import { purifyNotarialBodyHtml } from '@/lib/notarial-body-purifier';
@@ -209,8 +210,12 @@ export function useEditorSync({
         bodyHtml,
         activeValues
       );
+      const paginatedMergedHtml = pageNumberingEnabled
+        ? injectNotarialPaginationIntoHtml(rawMergedForPagination, true)
+        : rawMergedForPagination;
+
       if (previewMergedMode) {
-        setMergedPreviewHtml(rawMergedForPagination);
+        setMergedPreviewHtml(paginatedMergedHtml);
         return;
       }
 

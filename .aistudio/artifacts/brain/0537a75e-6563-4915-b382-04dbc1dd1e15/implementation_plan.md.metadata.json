@@ -1,6 +1,6 @@
 {
-  "summary": "Final implementation plan for unifying templates 2-6 with canonical symbols (c_1, c_2, office_name, num_acte, etc.), removing legacy pagination injection from app preview, and purging dead legacy code (spliceContractBodyIntoTemplate, mergePlaceholdersIntoHtml).",
-  "updatedAt": "2026-10-15T10:01:05.820029790Z",
+  "summary": "خطة التطبيق التفصيلية لضبط تصدير العقود المستوردة، ومنع تقسيم البنود أو إضافة عناوين مصطنعة، وضبط غلاف الأطراف والتذييل الشرطي في Word، وتوحيد القوالب الستة.",
+  "updatedAt": "2026-10-15T22:57:16.897055887Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -18,11 +18,11 @@ import {
   mergeEditorVariables,
   mergePlaceholdersIntoHtml,
   mergeTemplateSymbols,
-  parseContractIntoClauses,
 } from './docx-engine';
 import { normalizeAllNotaryFieldValues } from './field-values-normalizer';
 import { purifyNotarialBodyHtml } from './notarial-body-purifier';
 import { expandFieldValuesWithStandardLatinTags } from './notary-word-variables';
+import { expandFieldValuesWithCanonicalSymbols } from './symbol-map';
 import { STRICT_FONT_FAMILY, STRICT_FONT_SIZE_PT } from './types';
 
 export type StandardNotaryTemplateId =
@@ -601,38 +601,76 @@ export async function exportContractWithStandardTemplate(params: {
   contractTitle: string;
   bodyHtml: string;
   fieldValues: Record<string, string>;
+  clauses?: Array<{ title: string; contentHtml?: string; enabled?: boolean }>;
 }): Promise<{ fileName: string; templateName: string }> {
-  const { templateId, contractTitle, bodyHtml, fieldValues } = params;
+  const {
+    templateId,
+    contractTitle,
+    bodyHtml,
+    fieldValues,
+    clauses: explicitClauses,
+  } = params;
   const config =
     BUILTIN_STANDARD_WORD_TEMPLATES[templateId] ||
     BUILTIN_STANDARD_WORD_TEMPLATES.acte_original;
 
-  const normalizedVals = normalizeAllNotaryFieldValues(fieldValues);
-  const activeVals = expandFieldValuesWithStandardLatinTags(normalizedVals);
-
   const cleanedBody = purifyNotarialBodyHtml(bodyHtml);
-  const clauses = parseContractIntoClauses(cleanedBody);
-  const processedClauses = clauses.map((c) => ({
-    title: c.title,
-    contentHtml: mergeEditorVariables(
-      purifyNotarialBodyHtml(c.contentHtml || ''),
-      activeVals
-    ),
-    enabled: true,
-  }));
+
+  const normalizedVals = normalizeAllNotaryFieldValues(fieldValues);
+  const latinVals = expandFieldValuesWithStandardLatinTags(normalizedVals);
+  const activeVals = expandFieldValuesWithCanonicalSymbols(latinVals, {
+    contractBodyHtml: cleanedBody,
+  });
+
+  // If explicit structured clauses are provided, process them directly.
+  // Otherwise (imported contract / continuous text): NEVER auto-parse or invent headings.
+  // The continuous body is merged and injected directly into ${clause} with no added ${titre}.
+  let processedClauses: Array<{ title: string; contentHtml: string; enabled: boolean }> = [];
+  if (explicitClauses && explicitClauses.length > 0) {
+    processedClauses = explicitClauses.map((c) => ({
+      title: c.title || '',
+      contentHtml: mergeEditorVariables(
+        purifyNotarialBodyHtml(c.contentHtml || ''),
+        activeVals
+      ),
+      enabled: c.enabled !== false,
+    }));
+  }
 
   let templateBody = config.bodyHtml;
-  if (cleanedBody.includes('حضر') || cleanedBody.includes('الطرف')) {
+
+  // Robust detection of parties preamble at the BEGINNING of the contract body.
+  // We inspect the opening text (~1500 chars) so that an incidental mention of "الطرف الأول"
+  // later in the contract (e.g. in clause 4) does NOT mistakenly strip the template's parties wrapper.
+  const leadingText = cleanedBody
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1500);
+
+  const hasPartiesPreamble =
+    /^(?:في\s+سنة|في\s+يوم|بتاريخ|أمامنا\s+نحن|حضر|حضرا|بين\s+كل\s+من|الأطراف|الطرف\s*(?:الأول|الثاني)|طرف\s*(?:أول|ثان))/i.test(leadingText) ||
+    /(?:حضر|حضرا|أمامنا\s*نحن|بين\s+كل\s+من|طرف\s*أول|الطرف\s*الأول)/i.test(leadingText);
+
+  if (hasPartiesPreamble) {
+    // Strip parties wrapper and any immediate trailing empty spacer paragraph
     templateBody = templateBody.replace(
-      /<div\b[^>]*data-template-part=["']parties["'][^>]*>([\s\S]*?)<\/div>/gi,
+      /<div\b[^>]*data-template-part=["']parties["'][^>]*>([\s\S]*?)<\/div>(?:\s*<p\b[^>]*>\s*(?:<br\s*\/?>)?\s*<\/p>)?/gi,
       ''
     );
   }
 
+  // Pre-process continuous body with mergeEditorVariables so any [tags] in body are cleanly resolved
+  const mergedCleanedBody = mergeEditorVariables(cleanedBody, activeVals);
+
+  // Expand block loop:
+  // - If processedClauses is non-empty: renders each clause with ${titre} and ${clause}
+  // - If processedClauses is empty: uses mergedCleanedBody as fallbackBodyHtml,
+  //   cleanly strips ${titre} and paragraph, and injects the raw continuous paragraphs into ${clause}.
   const mergedBody = expandBlockLoop(
     templateBody,
     processedClauses,
-    cleanedBody
+    mergedCleanedBody
   );
 
   const finalBody = mergeTemplateSymbols(mergedBody, activeVals);
